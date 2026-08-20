@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -14,7 +13,6 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/mcp"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
@@ -22,15 +20,29 @@ import (
 )
 
 var (
-	transport       = flag.String("transport", "stdio", "Transport mode: stdio or http")
-	httpAddr        = flag.String("http-addr", ":8080", "HTTP server address")
-	searxngURL      = flag.String("searxng-url", "http://10.0.0.201:8080", "SearxNG URL")
-	cacheTTL        = flag.Int("cache-ttl", 300, "Cache TTL in seconds")
-	memoryURL       = flag.String("memory-url", "http://127.0.0.1:7438", "IA_Recuerdo service URL")
-	memoryKey       = flag.String("memory-apikey", "", "IA_Recuerdo API key")
-	fetchTimeoutMs  = flag.Int("fetch-timeout-ms", 30000, "Fetch timeout in milliseconds")
-	authKey         = flag.String("auth-key", "", "API key for authentication (optional)")
+	transport          = flag.String("transport", "stdio", "Transport mode: stdio or http")
+	httpAddr           = flag.String("http-addr", ":8080", "HTTP server address")
+	searxngURL         = flag.String("searxng-url", "http://10.0.0.201:8080", "SearxNG URL")
+	cacheTTL           = flag.Int("cache-ttl", 300, "In-process cache TTL in seconds")
+	fetchTimeoutMs     = flag.Int("fetch-timeout-ms", 30000, "Fetch timeout in milliseconds")
+	authKey            = flag.String("auth-key", "", "API key for authentication (optional)")
+	redditUserAgent    = flag.String("reddit-user-agent", envDefault("REDDIT_USER_AGENT", "ia-buscar/1.0 (by /r/ThisCloudServices)"), "User-Agent header for Reddit requests (Reddit requires a unique, descriptive UA)")
+	redditClientID     = flag.String("reddit-client-id", envDefault("REDDIT_CLIENT_ID", ""), "Reddit OAuth client ID; empty disables OAuth")
+	redditClientSecret = flag.String("reddit-client-secret", envDefault("REDDIT_CLIENT_SECRET", ""), "Reddit OAuth client secret; empty disables OAuth")
+	redditBaseURL      = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", "https://www.reddit.com"), "Reddit base URL; switch to https://oauth.reddit.com when using OAuth")
 )
+
+// envDefault returns the value of the named environment variable when
+// it is set and non-empty, otherwise the fallback. It lets operators
+// configure the Reddit connector through environment variables without
+// changing the command line, following the same env-flag convention
+// used elsewhere in IA_Buscar's existing flags.
+func envDefault(name, fallback string) string {
+	if v, ok := os.LookupEnv(name); ok && v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
 	flag.Parse()
@@ -39,33 +51,38 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cacheSvc := cache.NewService(*cacheTTL)
-	historySvc := cache.NewHistoryService("")
-	searchSvc := search.NewService(*searxngURL)
 	fetchSvc := fetch.NewFetcherService(30000)
 	synthSvc := synthesis.NewService()
-	memClient := memory.NewClient(*memoryURL, "ia-buscar", *memoryKey)
-	_ = observability.New()
+	// One Metrics instance is wired into both surfaces: the package-level
+	// default (so connectors that call observability.Default().Record... hit
+	// it) and the MCP server (so /metrics serves the same registry). Two
+	// independent registries would silently drop every counter on the floor.
+	met := observability.New()
+	observability.SetDefault(met)
 	observability.InitTracing("ia-buscar")
 	authValidator := auth.NewValidator(*authKey)
 
-	cm := search.NewConnectorManager(cacheSvc, memClient)
+	cm := search.NewConnectorManager(cacheSvc)
 	planner := search.NewPlanner()
-	cm.Register(connectors.NewWebConnector(*searxngURL, cacheSvc, memClient))
-	cm.Register(connectors.NewGitHubConnector("", cacheSvc, memClient))
-	cm.Register(connectors.NewStackOverflowConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewNPMConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewNuGetConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewPyPIConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewDockerHubConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewAcademicConnector(*searxngURL, cacheSvc, memClient))
-	cm.Register(connectors.NewRedditConnector(cacheSvc, memClient))
-	cm.Register(connectors.NewYouTubeConnector(*searxngURL, cacheSvc, memClient))
-	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc, memClient))
-	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc, memClient))
+	cm.Register(connectors.NewWebConnector(*searxngURL, cacheSvc))
+	cm.Register(connectors.NewGitHubConnector("", cacheSvc))
+	cm.Register(connectors.NewStackOverflowConnector(cacheSvc))
+	cm.Register(connectors.NewNPMConnector(cacheSvc))
+	cm.Register(connectors.NewNuGetConnector(cacheSvc))
+	cm.Register(connectors.NewPyPIConnector(cacheSvc))
+	cm.Register(connectors.NewDockerHubConnector(cacheSvc))
+	cm.Register(connectors.NewAcademicConnector(*searxngURL, cacheSvc))
+	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{
+		BaseURL:      *redditBaseURL,
+		UserAgent:    *redditUserAgent,
+		ClientID:     *redditClientID,
+		ClientSecret: *redditClientSecret,
+	}, cacheSvc))
+	cm.Register(connectors.NewYouTubeConnector(*searxngURL, cacheSvc))
+	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc))
+	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc))
 
-	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *memoryURL, *memoryKey, *fetchTimeoutMs, fetchSvc, synthSvc, cacheSvc, historySvc, authValidator)
-	_ = searchSvc
-	_ = memClient
+	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met)
 	var trans mcp.Transport
 	switch *transport {
 	case "stdio":
@@ -79,11 +96,6 @@ func main() {
 		log.Fatalf("Failed to start transport: %v", err)
 	}
 	log.Printf("IA_Buscar running with %s transport", trans.Name())
-	memClient.Save(ctx, &memory.Observation{
-		Title:   "IA_Buscar started",
-		Content: fmt.Sprintf("**Transport**: %s\n**SearxNG**: %s", trans.Name(), *searxngURL),
-		Type:    "discovery",
-	})
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan

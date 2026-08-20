@@ -22,8 +22,6 @@ spec:
           env:
             - name: SEARXNG_URL
               value: "http://searxng:8080"
-            - name: MEMORY_URL
-              value: "http://ia-recuerdo:7438"
           resources:
             requests:
               memory: "128Mi"

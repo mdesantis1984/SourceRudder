@@ -2,5 +2,14 @@ transport: stdio
 http_addr: :8080
 searxng_url: http://localhost:8888
 cache_ttl: 300
-memory_url: http://127.0.0.1:7438
-memory_apikey: ""
+
+# Reddit connector configuration seam. When client_id and client_secret
+# are both empty, the connector issues anonymous requests and returns
+# strategy="reddit_unconfigured" if Reddit rejects them with 401/403.
+# Set both to a Reddit OAuth app's client_id / client_secret to enable
+# authenticated requests; switch base_url to https://oauth.reddit.com.
+reddit:
+  user_agent: "ia-buscar/<deployment> (by /r/ThisCloudServices)"
+  client_id: ""
+  client_secret: ""
+  base_url: "https://www.reddit.com"

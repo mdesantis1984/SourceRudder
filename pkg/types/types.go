@@ -32,13 +32,21 @@ type SearchResultItem struct {
 	CanonicalURL string   `json:"canonicalUrl,omitempty"`
 }
 
+// SearchResponse is the stable wire contract returned by every MCP search
+// tool. The Results field is always serialized as a JSON array, never null
+// or omitted, even when empty, so downstream AI agents can iterate over it
+// without nil checks. Strategy, when non-empty, names the concrete backend
+// that produced the response (e.g. "reddit", "searxng", "official_doc_web_fallback",
+// "local_index_unavailable"); it lets the AI distinguish a genuine empty
+// result from a tool that is not actually wired.
 type SearchResponse struct {
-	Query       string              `json:"query"`
-	Results     []SearchResultItem `json:"results,omitempty"`
-	Summary     string              `json:"summary,omitempty"`
-	KeyFindings []string            `json:"keyFindings,omitempty"`
+	Query       string             `json:"query"`
+	Results     []SearchResultItem `json:"results"`
+	Summary     string             `json:"summary,omitempty"`
+	KeyFindings []string           `json:"keyFindings,omitempty"`
 	SourcesUsed []string           `json:"sourcesUsed,omitempty"`
-	Confidence  float64           `json:"confidence,omitempty"`
+	Strategy    string             `json:"strategy,omitempty"`
+	Confidence  float64            `json:"confidence,omitempty"`
 	Cached      bool               `json:"cached,omitempty"`
 	Partial     bool               `json:"partial,omitempty"`
 	Warnings    []string           `json:"warnings,omitempty"`

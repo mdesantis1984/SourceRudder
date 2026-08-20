@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/normalization"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -13,14 +12,12 @@ import (
 type ConnectorManager struct {
 	connectors map[string]types.SearchConnector
 	cache      *cache.Service
-	memory     *memory.Client
 }
 
-func NewConnectorManager(cacheSvc *cache.Service, memClient *memory.Client) *ConnectorManager {
+func NewConnectorManager(cacheSvc *cache.Service) *ConnectorManager {
 	return &ConnectorManager{
 		connectors: make(map[string]types.SearchConnector),
 		cache:      cacheSvc,
-		memory:     memClient,
 	}
 }
 

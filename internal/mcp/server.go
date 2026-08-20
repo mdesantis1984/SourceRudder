@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/thiscloud/ia-buscar/internal/auth"
-	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
@@ -17,21 +16,18 @@ import (
 )
 
 type Server struct {
-	transport        string
-	httpAddr         string
-	searxngURL       string
-	cacheTTL         int
-	memoryURL        string
-	memoryAPIKey     string
-	toolsRegistry    []Tool
-	connectorManager *search.ConnectorManager
-	planner          *search.Planner
-	met              *observability.Metrics
-	fetcherService   *fetch.FetcherService
-	synthesisService *synthesis.Service
-	cacheService     *cache.Service
-	historyService   *cache.HistoryService
-	authValidator    *auth.Validator
+	transport         string
+	httpAddr          string
+	searxngURL        string
+	cacheTTL          int
+	toolsRegistry     []Tool
+	resourcesRegistry []Resource
+	connectorManager  *search.ConnectorManager
+	planner           *search.Planner
+	met               *observability.Metrics
+	fetcherService    *fetch.FetcherService
+	synthesisService  *synthesis.Service
+	authValidator     *auth.Validator
 }
 
 type Tool struct {
@@ -41,58 +37,84 @@ type Tool struct {
 	Handler     func(ctx context.Context, args json.RawMessage) (interface{}, error)
 }
 
-func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, memoryURL, memoryAPIKey string, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, cacheSvc *cache.Service, historySvc *cache.HistoryService, authValidator *auth.Validator) *Server {
+// NewServer wires an MCP server. met MUST be the same *observability.Metrics
+// instance that main wires into observability.SetDefault so the counters
+// connectors increment (e.g. ia_buscar_search_degraded_total) are the
+// same ones the /metrics endpoint serves. Passing nil is a programming
+// error: the Server has no metrics surface, /metrics will panic on
+// scrape, and a future regression could re-introduce the production
+// split where /metrics was empty while connectors still ticked counters.
+func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, authValidator *auth.Validator, met *observability.Metrics) *Server {
+	_ = fetchTimeoutMs
+	if met == nil {
+		// Fail loud, not silent: a nil metrics here is the exact
+		// shape of the bug this Server was hardened against.
+		panic("mcp.NewServer: met is required; the same *observability.Metrics wired into observability.SetDefault must be passed here so /metrics reflects what connectors increment")
+	}
 	s := &Server{
 		transport:        transport,
 		httpAddr:         httpAddr,
 		searxngURL:       searxngURL,
 		cacheTTL:         cacheTTL,
-		memoryURL:        memoryURL,
-		memoryAPIKey:     memoryAPIKey,
 		connectorManager: connectorManager,
 		planner:          planner,
-		met:              observability.New(),
+		met:              met,
 		fetcherService:   fetchSvc,
 		synthesisService: synthSvc,
-		cacheService:     cacheSvc,
-		historyService:   historySvc,
 		authValidator:    authValidator,
 	}
 	s.buildToolsRegistry()
 	s.registerTools()
+	s.buildResourcesRegistry()
 	return s
+}
+
+// Handler returns the production HTTP handler chain for this Server:
+// the same mux (/mcp, /healthz, /metrics) wrapped by the auth middleware
+// when one is configured. It is the single source of truth for the wire
+// surface so HTTPTransport.Start and end-to-end tests drive the same
+// boundary instead of two diverging copies.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", s.HandleHTTP)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+	})
+	mux.HandleFunc("/metrics", s.met.Handler())
+	var handler http.Handler = mux
+	if s.authValidator != nil {
+		handler = s.authValidator.Middleware(handler)
+	}
+	return handler
 }
 
 func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
-		{Name: "search_web", Description: "Búsqueda web amplia", InputSchema: searchInputSchema()},
-		{Name: "search_news", Description: "Noticias y actualidad", InputSchema: searchInputSchema()},
-		{Name: "search_doc_oficial", Description: "Documentación oficial de productos, frameworks o servicios", InputSchema: searchInputSchema()},
-		{Name: "search_local_index", Description: "Índice local de workspace o fuentes indexadas", InputSchema: searchInputSchema()},
-		{Name: "search_github", Description: "Repositorios, archivos y commits", InputSchema: searchInputSchema()},
-		{Name: "search_github_pr", Description: "Pull requests", InputSchema: searchInputSchema()},
-		{Name: "search_github_issue", Description: "Issues", InputSchema: searchInputSchema()},
-		{Name: "search_stackoverflow", Description: "Q&A técnica", InputSchema: searchInputSchema()},
-		{Name: "search_npm", Description: "Paquetes Node/TS", InputSchema: searchInputSchema()},
-		{Name: "search_nuget", Description: "Paquetes .NET", InputSchema: searchInputSchema()},
-		{Name: "search_pypi", Description: "Paquetes Python", InputSchema: searchInputSchema()},
-		{Name: "search_docker_hub", Description: "Imágenes Docker", InputSchema: searchInputSchema()},
-		{Name: "search_academic", Description: "Papers, preprints y referencias académicas", InputSchema: searchInputSchema()},
-		{Name: "search_reddit", Description: "Discusiones y experiencias reales", InputSchema: searchInputSchema()},
-		{Name: "search_youtube", Description: "Tutoriales y demos", InputSchema: searchInputSchema()},
-		{Name: "search_images", Description: "Diagramas, capturas o material visual", InputSchema: searchInputSchema()},
-		{Name: "fetch_url", Description: "Obtener una URL", InputSchema: fetchURLInputSchema()},
-		{Name: "fetch_and_extract", Description: "Extraer contenido útil", InputSchema: fetchURLInputSchema()},
-		{Name: "extract_structured", Description: "Extraer tablas, listas, metadatos o estructura", InputSchema: fetchURLInputSchema()},
-		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad de URL", InputSchema: urlInputSchema()},
-		{Name: "check_link_status", Description: "Validar lote de enlaces", InputSchema: urlListInputSchema()},
-		{Name: "summarize_results", Description: "Síntesis breve", InputSchema: synthesisInputSchema()},
-		{Name: "deep_research", Description: "Síntesis consolidada de múltiples fuentes", InputSchema: synthesisInputSchema()},
-		{Name: "compare_sources", Description: "Comparar resultados o explicaciones", InputSchema: synthesisInputSchema()},
-		{Name: "get_cached", Description: "Recuperar caché", InputSchema: cacheKeyInputSchema()},
-		{Name: "invalidate_cache", Description: "Borrar caché", InputSchema: cacheKeyInputSchema()},
-		{Name: "get_search_history", Description: "Historial de búsquedas", InputSchema: historyInputSchema()},
-		{Name: "get_current_date", Description: "Fecha/hora consistente para contexto", InputSchema: emptyInputSchema()},
+		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
+		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
+		{Name: "search_doc_oficial", Description: "Documentación oficial de productos, frameworks o servicios. NO consulta un índice curado: hoy hace fallback explícito a búsqueda web y devuelve strategy=\"official_doc_web_fallback\" con un warning. No generes contenido como si fuera un índice curado.", InputSchema: searchInputSchema()},
+		{Name: "search_local_index", Description: "Índice local de workspace o fuentes indexadas. Sin proveedor configurado, devuelve strategy=\"local_index_unavailable\" y NO redirige a búsqueda web. Treat the empty result as \"tool no wired todavía\".", InputSchema: searchInputSchema()},
+		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
+		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
+		{Name: "search_github_issue", Description: "Issues en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
+		{Name: "search_stackoverflow", Description: "Q&A técnica en StackOverflow. Backend: StackOverflow API.", InputSchema: searchInputSchema()},
+		{Name: "search_npm", Description: "Paquetes Node/TS en el registro npm.", InputSchema: searchInputSchema()},
+		{Name: "search_nuget", Description: "Paquetes .NET en NuGet Gallery.", InputSchema: searchInputSchema()},
+		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
+		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
+		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
+		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: Reddit API. Si OAuth no está configurado (REDDIT_CLIENT_ID/SECRET) y Reddit rechaza anónimos con 401/403, devuelve strategy=\"reddit_unconfigured\" y un warning con cada variable.", InputSchema: searchInputSchema()},
+		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
+		{Name: "search_images", Description: "Diagramas, capturas o material visual. Backend: SearxNG (bing images).", InputSchema: searchInputSchema()},
+		{Name: "fetch_url", Description: "Obtener el HTML de una URL con extracción básica de title y metadata. Usa fetch_and_extract si necesitas el contenido principal. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
+		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},
+		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
+		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad (no SSRF) de una URL. Devuelve {url, valid, error}.", InputSchema: urlInputSchema()},
+		{Name: "check_link_status", Description: "Validar un lote de URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
+		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "get_current_date", Description: "Fecha y hora UTC consistente para citación: {date, time, timezone:\"UTC\", timestamp}.", InputSchema: emptyInputSchema()},
 	}
 }
 
@@ -100,24 +122,61 @@ func searchInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda"},
-			"sources":    map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Fuentes a consultar"},
-			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados"},
-			"language":   map[string]interface{}{"type": "string", "description": "Código de idioma (ej: en, es)"},
-			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Filtrar contenido seguro"},
-			"timeRange":  map[string]interface{}{"type": "string", "description": "Rango temporal (day, week, month, year)"},
+			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda (requerido)"},
+			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados (default 10, lo aplica el planner)"},
+			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47, ej: 'en', 'es'. Solo se reenvía a SearxNG."},
+			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Activar safesearch en SearxNG (default false)"},
+			"timeRange": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"", "day", "week", "month", "year"},
+				"description": "Rango temporal que se reenvía a SearxNG. Vacío = sin restricción.",
+			},
 		},
 		"required": []string{"query"},
 	}
+}
+
+// githubFiltersInputSchema is the variant of searchInputSchema that
+// exposes the filters bag used by search_github_pr and
+// search_github_issue. The connector reads filters.state to narrow by
+// open / closed.
+func githubFiltersInputSchema() map[string]interface{} {
+	schema := searchInputSchema()
+	props := schema["properties"].(map[string]interface{})
+	props["filters"] = map[string]interface{}{
+		"type":        "object",
+		"description": "Filtros específicos del conector. Solo search_github_pr / search_github_issue leen filters.state ('open' | 'closed').",
+		"properties": map[string]interface{}{
+			"state": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"open", "closed"},
+				"description": "Estado del PR o issue (solo search_github_pr / search_github_issue)",
+			},
+		},
+	}
+	return schema
 }
 
 func fetchURLInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"url":       map[string]interface{}{"type": "string", "description": "URL a obtener"},
-			"mode":      map[string]interface{}{"type": "string", "description": "Modo de extracción"},
-			"timeoutMs": map[string]interface{}{"type": "integer", "description": "Timeout en milisegundos"},
+			"url": map[string]interface{}{"type": "string", "description": "URL http(s) a obtener (requerido). SSRF bloquea localhost, *.local y privadas."},
+		},
+		"required": []string{"url"},
+	}
+}
+
+func fetchAndExtractInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"url": map[string]interface{}{"type": "string", "description": "URL http(s) a obtener (requerido). SSRF bloquea localhost, *.local y privadas."},
+			"mode": map[string]interface{}{
+				"type": []string{"string", "null"},
+				"enum": []string{"", "auto", "article", "documentation", "raw"},
+				"description": "Modo de extracción del contenido principal. auto=detección por defecto; article=texto de artículo; documentation=texto de página de docs; raw=HTML sin extracción.",
+			},
 		},
 		"required": []string{"url"},
 	}
@@ -127,7 +186,7 @@ func urlInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"url": map[string]interface{}{"type": "string", "description": "URL a validar"},
+			"url": map[string]interface{}{"type": "string", "description": "URL a validar (requerido). SSRF bloquea localhost, *.local y privadas."},
 		},
 		"required": []string{"url"},
 	}
@@ -137,9 +196,34 @@ func urlListInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"urls": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Lista de URLs"},
+			"urls": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Lista de URLs a validar en paralelo (requerido)."},
 		},
 		"required": []string{"urls"},
+	}
+}
+
+// searchResultItemSchema is the JSON schema that the synthesis tools
+// expect for each element of the `results` array. Synthesizers read
+// title, url, snippet, source, score, publishedAt, author,
+// citationId. Agents composing summarize_results / deep_research /
+// compare_sources should use this shape as their input contract.
+func searchResultItemSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"title":       map[string]interface{}{"type": "string", "description": "Título del resultado"},
+			"url":         map[string]interface{}{"type": "string", "description": "URL canónica del resultado"},
+			"snippet":     map[string]interface{}{"type": "string", "description": "Resumen o extracto"},
+			"source":      map[string]interface{}{"type": "string", "description": "Nombre del conector que produjo el item"},
+			"type":        map[string]interface{}{"type": "string", "description": "Tipo de resultado (ej: 'web', 'article')"},
+			"score":       map[string]interface{}{"type": "number", "description": "Puntuación de relevancia"},
+			"publishedAt": map[string]interface{}{"type": "string", "format": "date-time", "description": "Fecha de publicación en RFC3339"},
+			"author":      map[string]interface{}{"type": "string", "description": "Autor"},
+			"tags":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Etiquetas"},
+			"citationId":  map[string]interface{}{"type": "string", "description": "Identificador estable entre invocaciones (lo produce el conector)"},
+			"canonicalUrl": map[string]interface{}{"type": "string", "description": "URL canónica normalizada (la produce el connector manager)"},
+		},
+		"required": []string{"title", "url", "source"},
 	}
 }
 
@@ -147,31 +231,14 @@ func synthesisInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"query":   map[string]interface{}{"type": "string", "description": "Consulta original"},
-			"results": map[string]interface{}{"type": "array", "description": "Resultados a sintetizar"},
-			"goal":    map[string]interface{}{"type": "string", "description": "Objetivo de la síntesis"},
-			"style":   map[string]interface{}{"type": "string", "description": "Estilo de síntesis"},
+			"query": map[string]interface{}{"type": "string", "description": "Consulta original (requerido)"},
+			"results": map[string]interface{}{
+				"type":        "array",
+				"description": "Resultados a sintetizar (requerido). Cada elemento sigue el schema SearchResultItem; usa el campo citationId si necesitas enlazar con un SearchResponse cacheado.",
+				"items":       searchResultItemSchema(),
+			},
 		},
 		"required": []string{"query"},
-	}
-}
-
-func cacheKeyInputSchema() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"cacheKey": map[string]interface{}{"type": "string", "description": "Clave de caché"},
-		},
-	}
-}
-
-func historyInputSchema() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"limit":  map[string]interface{}{"type": "integer", "description": "Límite de resultados"},
-			"offset": map[string]interface{}{"type": "integer", "description": "Offset de paginación"},
-		},
 	}
 }
 
@@ -181,6 +248,13 @@ func emptyInputSchema() map[string]interface{} {
 
 func (s *Server) Tools() []Tool {
 	return s.toolsRegistry
+}
+
+// Resources returns the static MCP resources exposed by this Server.
+// Tests and any future in-process consumer can iterate the slice
+// without having to round-trip through HandleResourcesList.
+func (s *Server) Resources() []Resource {
+	return s.resourcesRegistry
 }
 
 func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -195,15 +269,16 @@ func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (
 	if req.ClientID == "" {
 		req.ClientID = "anonymous-" + uuid.New().String()[:8]
 	}
-	sessionID := uuid.New().String()
+sessionID := uuid.New().String()
 	return map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]interface{}{
-			"name":    "ia-buscar",
+			"name": "ia-buscar",
 			"version": "1.0.0",
 		},
 		"capabilities": map[string]interface{}{
-			"tools": map[string]interface{}{"listChanged": false},
+			"tools":     map[string]interface{}{"listChanged": false},
+			"resources": map[string]interface{}{"listChanged": false, "subscribe": false},
 		},
 		"sessionId": sessionID,
 	}, nil
@@ -325,6 +400,10 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		resp = s.handleMCPToolsList(req.ID)
 	case "tools/call", "mcp.tools.call":
 		resp = s.handleMCPToolsCall(r.Context(), req.ID, req.Params)
+	case "resources/list", "mcp.resources.list":
+		resp = s.handleMCPResourcesList(req.ID, req.Params)
+	case "resources/read", "mcp.resources.read":
+		resp = s.handleMCPResourcesRead(req.ID, req.Params)
 	case "ping":
 		resp = map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{}}
 	default:
@@ -351,9 +430,36 @@ func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {
 		"result": map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"serverInfo":     map[string]interface{}{"name": "ia-buscar", "version": "1.0.0"},
-			"capabilities":   map[string]interface{}{"tools": map[string]interface{}{"listChanged": false}},
+			"capabilities": map[string]interface{}{
+				"tools":     map[string]interface{}{"listChanged": false},
+				"resources": map[string]interface{}{"listChanged": false, "subscribe": false},
+			},
 		},
 	}
+}
+
+func (s *Server) handleMCPResourcesList(id interface{}, params json.RawMessage) map[string]interface{} {
+	res, err := s.HandleResourcesList(context.Background(), params)
+	if err != nil {
+		return map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      id,
+			"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
+		}
+	}
+	return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": res}
+}
+
+func (s *Server) handleMCPResourcesRead(id interface{}, params json.RawMessage) map[string]interface{} {
+	res, err := s.HandleResourcesRead(context.Background(), params)
+	if err != nil {
+		return map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      id,
+			"error":   map[string]interface{}{"code": -32602, "message": err.Error()},
+		}
+	}
+	return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": res}
 }
 
 func (s *Server) handleMCPToolsList(id interface{}) map[string]interface{} {
@@ -440,21 +546,7 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Start(ctx context.Context) error {
 	if s.transport == "http" {
-		mux := http.NewServeMux()
-
-		var handler http.Handler
-		handler = mux
-
-		if s.authValidator != nil {
-			handler = s.authValidator.Middleware(handler)
-		}
-
-		mux.HandleFunc("/mcp", s.HandleHTTP)
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
-		})
-		mux.HandleFunc("/metrics", s.met.Handler())
-		srv := &http.Server{Addr: s.httpAddr, Handler: handler}
+		srv := &http.Server{Addr: s.httpAddr, Handler: s.Handler()}
 		go srv.ListenAndServe()
 		return nil
 	}
@@ -468,4 +560,3 @@ func (s *Server) Stop(ctx context.Context) error {
 func (s *Server) Name() string {
 	return s.transport
 }
-

@@ -7,45 +7,43 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
 	"github.com/thiscloud/ia-buscar/internal/mcp"
+	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
 func TestServerStart(t *testing.T) {
-	cm := search.NewConnectorManager(nil, nil)
+	cacheSvc := cache.NewService(300)
+	cm := search.NewConnectorManager(cacheSvc)
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	cacheSvc := cache.NewService(300)
-	historySvc := cache.NewHistoryService("")
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, "http://127.0.0.1:7438", "", 5000, fetchSvc, synthSvc, cacheSvc, historySvc)
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New())
 	if server == nil {
 		t.Fatal("expected non-nil server")
 	}
 }
 
 func TestToolsCount(t *testing.T) {
-	cm := search.NewConnectorManager(nil, nil)
+	cacheSvc := cache.NewService(300)
+	cm := search.NewConnectorManager(cacheSvc)
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	cacheSvc := cache.NewService(300)
-	historySvc := cache.NewHistoryService("")
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, "http://127.0.0.1:7438", "", 5000, fetchSvc, synthSvc, cacheSvc, historySvc)
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New())
 	tools := server.Tools()
-	if len(tools) != 28 {
-		t.Errorf("expected 28 tools, got %d", len(tools))
+	if len(tools) != 25 {
+		t.Errorf("expected 25 tools, got %d", len(tools))
 	}
 }
 
 func TestHandleInitialize(t *testing.T) {
-	cm := search.NewConnectorManager(nil, nil)
+	cacheSvc := cache.NewService(300)
+	cm := search.NewConnectorManager(cacheSvc)
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	cacheSvc := cache.NewService(300)
-	historySvc := cache.NewHistoryService("")
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, "http://127.0.0.1:7438", "", 5000, fetchSvc, synthSvc, cacheSvc, historySvc)
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New())
 	result, err := server.HandleInitialize(context.Background(), []byte(`{"clientId": "test"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

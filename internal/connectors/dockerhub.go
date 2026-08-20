@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type DockerHubConnector struct {
 	baseURL    string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewDockerHubConnector(cacheSvc *cache.Service, memClient *memory.Client) *DockerHubConnector {
+func NewDockerHubConnector(cacheSvc *cache.Service) *DockerHubConnector {
 	return &DockerHubConnector{
 		baseURL:    "https://hub.docker.com",
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -71,7 +68,6 @@ func (c *DockerHubConnector) Search(ctx context.Context, req *types.SearchReques
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[dockerhub] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -136,18 +132,6 @@ func (c *DockerHubConnector) doDockerHubRequest(ctx context.Context, apiURL stri
 	}
 
 	return results, nil
-}
-
-func (c *DockerHubConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("Docker Hub search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("dockerhub-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *DockerHubConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

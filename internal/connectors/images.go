@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type ImagesConnector struct {
 	searxngURL string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewImagesConnector(searxngURL string, cacheSvc *cache.Service, memClient *memory.Client) *ImagesConnector {
+func NewImagesConnector(searxngURL string, cacheSvc *cache.Service) *ImagesConnector {
 	return &ImagesConnector{
 		searxngURL: searxngURL,
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -66,10 +63,10 @@ func (c *ImagesConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
+		resp.Partial = true
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[images] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -150,19 +147,20 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 		})
 	}
 
-	return results, nil
-}
-
-func (c *ImagesConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
+	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
+		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+		for _, entry := range searxngResp.UnresponsiveEngines {
+			if len(entry) > 0 {
+				if name, ok := entry[0].(string); ok {
+					engines = append(engines, name)
+				}
+			}
+		}
+		observability.Default().RecordSearchDegraded("images", "unresponsive_engines")
+		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
 	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("Images search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("images-%s", sanitizeTopicKey(query)),
-	})
+
+	return results, nil
 }
 
 func (c *ImagesConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

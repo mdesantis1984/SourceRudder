@@ -33,8 +33,10 @@ func (s *Server) registerTools() {
 			t.Handler = s.makeSearchHandler("pypi")
 		case "search_docker_hub":
 			t.Handler = s.makeSearchHandler("dockerhub")
-		case "search_doc_oficial", "search_local_index":
-			t.Handler = s.makeSearchHandler("web")
+		case "search_doc_oficial":
+			t.Handler = s.makeDocOficialHandler()
+		case "search_local_index":
+			t.Handler = s.makeLocalIndexHandler()
 		case "search_academic":
 			t.Handler = s.makeSearchHandler("academic")
 		case "search_reddit":
@@ -61,12 +63,6 @@ func (s *Server) registerTools() {
 			t.Handler = s.makeSynthesizeHandler("deep_research")
 		case "compare_sources":
 			t.Handler = s.makeSynthesizeHandler("compare_sources")
-		case "get_cached":
-			t.Handler = s.makeCacheHandler("get")
-		case "invalidate_cache":
-			t.Handler = s.makeCacheHandler("invalidate")
-		case "get_search_history":
-			t.Handler = s.makeCacheHandler("history")
 		case "get_current_date":
 			t.Handler = s.getCurrentDateHandler
 		}
@@ -80,11 +76,11 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 			return nil, fmt.Errorf("invalid args: %w", err)
 		}
 		if s.connectorManager == nil {
-			return &types.SearchResponse{
+			return normalizeSearchResponse(&types.SearchResponse{
 				Query:       req.Query,
 				Results:     []types.SearchResultItem{},
-				Errors:     []string{"connector manager not initialized"},
-			}, nil
+				Errors:      []string{"connector manager not initialized"},
+			}), nil
 		}
 
 		var plan *search.SearchPlan
@@ -106,8 +102,103 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 			}
 		}
 
-		return resp, nil
+		return normalizeSearchResponse(resp), nil
 	}
+}
+
+// makeDocOficialHandler is the truthful fallback for search_doc_oficial.
+// No specialized official-documentation provider is wired into IA_Buscar
+// today, so the tool explicitly says so: it falls back to the configured
+// web connector (SearxNG) and stamps Strategy = "official_doc_web_fallback"
+// plus a warning naming the source. AI agents reading the response can tell
+// that no real official-doc index was queried.
+func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req types.SearchRequest
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if s.connectorManager == nil {
+			return normalizeSearchResponse(&types.SearchResponse{
+				Query:       req.Query,
+				Results:     []types.SearchResultItem{},
+				Strategy:    "official_doc_web_fallback",
+				SourcesUsed: []string{},
+				Warnings: []string{
+					"strategy: official_doc_web_fallback — no specialized official-documentation provider is wired; falling back to general web search",
+				},
+				Errors: []string{"connector manager not initialized"},
+			}), nil
+		}
+
+		resp, err := s.connectorManager.Search(ctx, "web", &req)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Strategy = "official_doc_web_fallback"
+		if resp.SourcesUsed == nil {
+			resp.SourcesUsed = []string{}
+		}
+		resp.Warnings = append(resp.Warnings,
+			"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from a curated official-documentation index")
+
+		return normalizeSearchResponse(resp), nil
+	}
+}
+
+// makeLocalIndexHandler returns an explicit unavailable signal instead of
+// silently routing to a generic web search. Until a real local-index
+// provider is wired (e.g. a workspace embedder or a downloaded corpus),
+// the tool returns a stable empty result with Strategy =
+// "local_index_unavailable" and a warning the AI can act on.
+func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req types.SearchRequest
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+
+		return normalizeSearchResponse(&types.SearchResponse{
+			Query:       req.Query,
+			Results:     []types.SearchResultItem{},
+			Strategy:    "local_index_unavailable",
+			SourcesUsed: []string{},
+			Partial:     false,
+			Warnings: []string{
+				"local_index_unavailable: no local-index provider is configured for IA_Buscar; this tool does not fall back to web search",
+			},
+			Errors: []string{
+				"local_index_unavailable",
+			},
+		}), nil
+	}
+}
+
+// normalizeSearchResponse guarantees the stable wire contract: every
+// response handed back to an MCP client serializes Results as a JSON
+// array (never null, never omitted), even when the underlying connector
+// or cache-decoded payload left it nil. It is intentionally idempotent.
+func normalizeSearchResponse(resp *types.SearchResponse) *types.SearchResponse {
+	if resp == nil {
+		return &types.SearchResponse{Results: []types.SearchResultItem{}}
+	}
+	if resp.Results == nil {
+		resp.Results = []types.SearchResultItem{}
+	}
+	if resp.SourcesUsed == nil {
+		resp.SourcesUsed = []string{}
+	}
+	if resp.Warnings == nil {
+		resp.Warnings = []string{}
+	}
+	if resp.Errors == nil {
+		resp.Errors = []string{}
+	}
+	if resp.KeyFindings == nil {
+		resp.KeyFindings = []string{}
+	}
+	return resp
 }
 
 func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
@@ -118,21 +209,25 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
-			return &types.SearchResponse{
+			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,
 				Results: []types.SearchResultItem{},
 				Errors:  []string{"github connector not available"},
-			}, nil
+			}), nil
 		}
 		ghConn, ok := conn.(*connectors.GitHubConnector)
 		if !ok {
-			return &types.SearchResponse{
+			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,
 				Results: []types.SearchResultItem{},
 				Errors:  []string{"invalid github connector type"},
-			}, nil
+			}), nil
 		}
-		return ghConn.SearchPR(ctx, &req)
+		resp, err := ghConn.SearchPR(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+		return normalizeSearchResponse(resp), nil
 	}
 }
 
@@ -144,21 +239,25 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
-			return &types.SearchResponse{
+			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,
 				Results: []types.SearchResultItem{},
 				Errors:  []string{"github connector not available"},
-			}, nil
+			}), nil
 		}
 		ghConn, ok := conn.(*connectors.GitHubConnector)
 		if !ok {
-			return &types.SearchResponse{
+			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,
 				Results: []types.SearchResultItem{},
 				Errors:  []string{"invalid github connector type"},
-			}, nil
+			}), nil
 		}
-		return ghConn.SearchIssue(ctx, &req)
+		resp, err := ghConn.SearchIssue(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+		return normalizeSearchResponse(resp), nil
 	}
 }
 
@@ -311,80 +410,6 @@ func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args
 			return result, nil
 		}
 		return nil, fmt.Errorf("unknown synthesis operation: %s", op)
-	}
-}
-
-func (s *Server) makeCacheHandler(op string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req struct {
-			CacheKey string   `json:"cacheKey"`
-			Query    string   `json:"query"`
-			Sources  []string `json:"sources"`
-			Limit    int      `json:"limit"`
-			Offset   int      `json:"offset"`
-		}
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
-		}
-
-		switch op {
-		case "get":
-			if s.cacheService == nil {
-				return map[string]interface{}{"cacheKey": req.CacheKey, "hit": false, "warnings": []string{"Cache service not initialized"}}, nil
-			}
-			result, hit, err := s.cacheService.GetCached(ctx, req.Query, req.Sources)
-			if err != nil {
-				return nil, err
-			}
-			if hit && result != nil {
-				return result, nil
-			}
-			return map[string]interface{}{
-				"cacheKey": req.CacheKey,
-				"hit":      hit,
-				"query":    req.Query,
-				"sources":  req.Sources,
-				"warnings": []string{},
-			}, nil
-
-		case "invalidate":
-			if s.cacheService == nil {
-				return map[string]interface{}{"cacheKey": req.CacheKey, "invalidated": false, "warnings": []string{"Cache service not initialized"}}, nil
-			}
-			err := s.cacheService.InvalidateCache(ctx, req.Query, req.Sources)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{
-				"cacheKey":   req.CacheKey,
-				"invalidated": true,
-				"query":      req.Query,
-				"sources":    req.Sources,
-			}, nil
-
-		case "history":
-			if s.historyService == nil {
-				return map[string]interface{}{"history": []interface{}{}, "warnings": []string{"History service not initialized"}}, nil
-			}
-			limit := req.Limit
-			if limit <= 0 {
-				limit = 20
-			}
-			offset := req.Offset
-			if offset < 0 {
-				offset = 0
-			}
-			history, err := s.historyService.GetSearchHistory(ctx, limit, offset)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{
-				"history": history,
-				"limit":   limit,
-				"offset":  offset,
-			}, nil
-		}
-		return nil, fmt.Errorf("unknown cache operation: %s", op)
 	}
 }
 
