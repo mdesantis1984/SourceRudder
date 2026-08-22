@@ -59,6 +59,27 @@ type FetchResponse struct {
 	Content   string            `json:"content,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 	Warnings  []string          `json:"warnings,omitempty"`
+
+	// Outcome names the final classification of the fetch. Allowed
+	// values (Phase 6 wire contract): "success", "blocked-target",
+	// "blocked-redirect", "too-many-redirects", "timeout",
+	// "transport-error", "http-error", "non-transient-failure",
+	// "transient-failure-retried-exhausted". MCP clients should switch
+	// on this value instead of inspecting the Go error string.
+	Outcome string `json:"outcome,omitempty"`
+
+	// Status is the upstream HTTP status code or zero when no response
+	// was received (timeout, transport error, blocked).
+	Status int `json:"status,omitempty"`
+
+	// RedirectChain records every Location the fetcher followed,
+	// excluding the initial URL. Empty when the request did not
+	// redirect or never reached a response.
+	RedirectChain []string `json:"redirectChain,omitempty"`
+
+	// Attempts counts how many times the fetcher tried to reach the
+	// target, including transient retries. 1 means no retry occurred.
+	Attempts int `json:"attempts,omitempty"`
 }
 
 type SearchConnector interface {

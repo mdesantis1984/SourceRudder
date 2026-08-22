@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/thiscloud/ia-buscar/internal/auth"
+	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
@@ -28,6 +32,22 @@ type Server struct {
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
 	authValidator     *auth.Validator
+	// history and mem are the stateful dependencies restored by the
+	// restore-runtime-contract change: history backs get_search_history,
+	// mem backs the IA_Recuerdo observation shipping through
+	// stateful handlers. Both are intentionally non-nil at
+	// construction; an integration-disabled memory client short-circuits
+	// Save to nil so callers don't need to nil-check.
+	history *cache.HistoryService
+	mem     *memory.Client
+	// httpSrv is the live HTTP server. It is set by Start (when
+	// transport == "http") and closed by Stop via Shutdown. Outside
+	// of HTTP transport it stays nil.
+	httpSrv *http.Server
+	// httpLn is the listening socket the httpSrv is bound to. It is
+	// stored so Stop can be invoked even after the server has been
+	// started in a goroutine.
+	httpLn net.Listener
 }
 
 type Tool struct {
@@ -44,7 +64,7 @@ type Tool struct {
 // error: the Server has no metrics surface, /metrics will panic on
 // scrape, and a future regression could re-introduce the production
 // split where /metrics was empty while connectors still ticked counters.
-func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, authValidator *auth.Validator, met *observability.Metrics) *Server {
+func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, authValidator *auth.Validator, met *observability.Metrics, history *cache.HistoryService, mem *memory.Client) *Server {
 	_ = fetchTimeoutMs
 	if met == nil {
 		// Fail loud, not silent: a nil metrics here is the exact
@@ -62,6 +82,8 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 		fetcherService:   fetchSvc,
 		synthesisService: synthSvc,
 		authValidator:    authValidator,
+		history:          history,
+		mem:              mem,
 	}
 	s.buildToolsRegistry()
 	s.registerTools()
@@ -70,22 +92,45 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 }
 
 // Handler returns the production HTTP handler chain for this Server:
-// the same mux (/mcp, /healthz, /metrics) wrapped by the auth middleware
-// when one is configured. It is the single source of truth for the wire
-// surface so HTTPTransport.Start and end-to-end tests drive the same
-// boundary instead of two diverging copies.
+// /healthz is always open so Kubernetes liveness/readiness probes
+// can hit it without credentials, while /mcp and /metrics stay
+// wrapped by the auth middleware when one is configured. When the
+// operator passes a nil validator the protected routes still get a
+// rejecting fallback so /mcp and /metrics never become silently
+// open in production. It is the single source of truth for the
+// wire surface so HTTPTransport.Start and end-to-end tests drive
+// the same boundary instead of two diverging copies.
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", s.HandleHTTP)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	// Resolve the effective validator: a non-nil configured
+	// validator wins; otherwise install the rejecting fallback so
+	// the protected routes stay closed when the operator forgot to
+	// wire a key.
+	var validator *auth.Validator
+	if s.authValidator != nil {
+		validator = s.authValidator
+	} else {
+		validator = auth.NewValidator("")
+	}
+
+	// Sub-mux for the protected routes. /healthz is registered on
+	// the outer root mux so the probe path bypasses auth entirely.
+	protected := http.NewServeMux()
+	protected.HandleFunc("/mcp", s.HandleHTTP)
+	protected.HandleFunc("/metrics", s.met.Handler())
+	protectedHandler := validator.Middleware(protected)
+
+	root := http.NewServeMux()
+	root.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 	})
-	mux.HandleFunc("/metrics", s.met.Handler())
-	var handler http.Handler = mux
-	if s.authValidator != nil {
-		handler = s.authValidator.Middleware(handler)
-	}
-	return handler
+	// Register the same wrapped protected handler for both
+	// /mcp and /metrics: ServeMux dispatches by path INSIDE the
+	// wrapped handler, so /metrics reaches s.met.Handler() and
+	// /mcp reaches s.HandleHTTP even though they share the
+	// validator's middleware instance.
+	root.Handle("/mcp", protectedHandler)
+	root.Handle("/metrics", protectedHandler)
+	return root
 }
 
 func (s *Server) buildToolsRegistry() {
@@ -103,7 +148,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
 		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
-		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: Reddit API. Si OAuth no está configurado (REDDIT_CLIENT_ID/SECRET) y Reddit rechaza anónimos con 401/403, devuelve strategy=\"reddit_unconfigured\" y un warning con cada variable.", InputSchema: searchInputSchema()},
+		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: Reddit API, anonymous-only (sin OAuth). Si Reddit rechaza un pedido anónimo con 401/403, devuelve strategy=\"reddit_unconfigured\" y un warning que menciona REDDIT_USER_AGENT.", InputSchema: searchInputSchema()},
 		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
 		{Name: "search_images", Description: "Diagramas, capturas o material visual. Backend: SearxNG (bing images).", InputSchema: searchInputSchema()},
 		{Name: "fetch_url", Description: "Obtener el HTML de una URL con extracción básica de title y metadata. Usa fetch_and_extract si necesitas el contenido principal. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
@@ -114,6 +159,9 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "get_cached", Description: "Recupera una entrada de la caché en proceso por clave exacta. Devuelve {cache_hit:bool, entry:CacheEntry|null}. Si no hay entrada o expiró, devuelve cache_hit=false sin error.", InputSchema: cachedEntryInputSchema()},
+		{Name: "invalidate_cache", Description: "Elimina una entrada de la caché en proceso por clave exacta. Devuelve {key:string, invalidated:bool}. Idempotente: cuando la clave no existe, devuelve invalidated=false sin error.", InputSchema: cachedEntryInputSchema()},
+		{Name: "get_search_history", Description: "Lista las últimas invocaciones de búsqueda retenidas en el proceso (newest-first). Argumentos: limit (int, requerido) y query opcional como filtro substring case-sensitive sobre la Query almacenada. Devuelve {history:Entry[], limit:int, query:string}.", InputSchema: historyInputSchema()},
 		{Name: "get_current_date", Description: "Fecha y hora UTC consistente para citación: {date, time, timezone:\"UTC\", timestamp}.", InputSchema: emptyInputSchema()},
 	}
 }
@@ -246,6 +294,43 @@ func emptyInputSchema() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
 }
 
+// cachedEntryInputSchema is the schema shared by get_cached and
+// invalidate_cache. Both take a single required `key` string so the
+// MCP client never has to guess which argument to pass.
+func cachedEntryInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"key": map[string]interface{}{
+				"type":        "string",
+				"description": "Clave exacta de la caché en proceso (requerido). La búsqueda es case-sensitive y NO hash-ea el input.",
+			},
+		},
+		"required": []string{"key"},
+	}
+}
+
+// historyInputSchema is the schema for get_search_history. limit is
+// required so the MCP client always picks a cap; query is optional
+// and narrows the result by substring (case-sensitive) over the
+// stored Query field.
+func historyInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Máximo de entradas a devolver (requerido). El servicio de historial acota por su bound interno y por este limit; lo que sea menor gana.",
+			},
+			"query": map[string]interface{}{
+				"type":        "string",
+				"description": "Filtro substring case-sensitive sobre la Query almacenada. Vacío = sin filtro.",
+			},
+		},
+		"required": []string{"limit"},
+	}
+}
+
 func (s *Server) Tools() []Tool {
 	return s.toolsRegistry
 }
@@ -274,7 +359,7 @@ sessionID := uuid.New().String()
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]interface{}{
 			"name": "ia-buscar",
-			"version": "1.0.0",
+			"version": "1.2.0",
 		},
 		"capabilities": map[string]interface{}{
 			"tools":     map[string]interface{}{"listChanged": false},
@@ -429,7 +514,7 @@ func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {
 		"id":      id,
 		"result": map[string]interface{}{
 			"protocolVersion": "2024-11-05",
-			"serverInfo":     map[string]interface{}{"name": "ia-buscar", "version": "1.0.0"},
+			"serverInfo":     map[string]interface{}{"name": "ia-buscar", "version": "1.2.0"},
 			"capabilities": map[string]interface{}{
 				"tools":     map[string]interface{}{"listChanged": false},
 				"resources": map[string]interface{}{"listChanged": false, "subscribe": false},
@@ -545,16 +630,37 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	if s.transport == "http" {
-		srv := &http.Server{Addr: s.httpAddr, Handler: s.Handler()}
-		go srv.ListenAndServe()
+	if s.transport != "http" {
 		return nil
 	}
+	s.httpSrv = &http.Server{Addr: s.httpAddr, Handler: s.Handler()}
+	// Listen synchronously so address-conflict errors surface to the
+	// caller instead of being silently logged from a goroutine.
+	ln, err := net.Listen("tcp", s.httpAddr)
+	if err != nil {
+		s.httpSrv = nil
+		return fmt.Errorf("listen %s: %w", s.httpAddr, err)
+	}
+	s.httpLn = ln
+	go func() {
+		if err := s.httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server %s: %v", s.httpAddr, err)
+		}
+	}()
 	return nil
 }
 
 func (s *Server) Stop(ctx context.Context) error {
-	return nil
+	if s.httpSrv == nil {
+		return nil
+	}
+	err := s.httpSrv.Shutdown(ctx)
+	s.httpSrv = nil
+	if s.httpLn != nil {
+		_ = s.httpLn.Close()
+		s.httpLn = nil
+	}
+	return err
 }
 
 func (s *Server) Name() string {

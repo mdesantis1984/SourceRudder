@@ -49,3 +49,8 @@ vendor/
 deploy/kubernetes/secret.yaml
 # Índice local de codebase-memory-mcp
 .codebase-memory/
+# Tooling indexes
+.atl/
+.codegraph/
+# Generated coverage reports
+coverage.html

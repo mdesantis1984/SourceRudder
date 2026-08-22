@@ -41,7 +41,7 @@ func (c *NuGetConnector) Search(ctx context.Context, req *types.SearchRequest) (
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"nuget"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"nuget"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[nuget] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -65,7 +65,7 @@ func (c *NuGetConnector) Search(ctx context.Context, req *types.SearchRequest) (
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("nuget", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -75,8 +75,6 @@ func (c *NuGetConnector) Search(ctx context.Context, req *types.SearchRequest) (
 }
 
 func (c *NuGetConnector) doNuGetRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err

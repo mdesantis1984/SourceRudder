@@ -43,7 +43,7 @@ func (c *PyPIConnector) Search(ctx context.Context, req *types.SearchRequest) (*
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"pypi"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"pypi"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[pypi] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}

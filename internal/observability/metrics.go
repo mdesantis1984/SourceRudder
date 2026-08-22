@@ -120,6 +120,14 @@ func (m *Metrics) Handler() http.HandlerFunc {
 	}
 }
 
+// Registry exposes the underlying Prometheus registry so tests in other
+// packages can read counter values via prometheus.Registry.Gather()
+// without having to spin up an HTTP scrape. Production callers should
+// use Handler() instead.
+func (m *Metrics) Registry() *prometheus.Registry {
+	return m.registry
+}
+
 func (m *Metrics) JSON() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

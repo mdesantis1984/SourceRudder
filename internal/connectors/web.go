@@ -41,7 +41,7 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"searxng", req.TimeRange})
+	cacheKey := cache.GenerateCacheKey(query, []string{"searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[web] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -82,8 +82,6 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 }
 
 func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")

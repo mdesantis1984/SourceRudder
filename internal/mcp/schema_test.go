@@ -250,7 +250,7 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 		"search_news":            {"searxng"},
 		"search_doc_oficial":     {"official_doc_web_fallback"},
 		"search_local_index":     {"local_index_unavailable"},
-		"search_reddit":          {"reddit_unconfigured", "REDDIT_CLIENT_ID"},
+		"search_reddit":          {"reddit_unconfigured", "REDDIT_USER_AGENT"},
 		"search_github":          {"github"},
 		"search_github_pr":       {"github", "filters.state"},
 		"search_github_issue":    {"github", "filters.state"},

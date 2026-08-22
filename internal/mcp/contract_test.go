@@ -11,6 +11,7 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
@@ -35,7 +36,7 @@ func TestStableEmptyArrayContract(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	args, _ := json.Marshal(map[string]interface{}{"query": "stable-empty-fresh"})
 	resp, err := s.callToolByName(context.Background(), "search_web", args)
@@ -66,7 +67,7 @@ func TestStableEmptyArrayContract(t *testing.T) {
 	// Cache-hit path: seed the cache with a payload that predates the
 	// contract fix (no `results` field at all), then issue the same
 	// query again. The response must still surface `results: []`.
-	cacheSvc.Set(context.Background(), cache.GenerateCacheKey("stable-empty-fresh", []string{"searxng", ""}), []byte(`{"query":"stable-empty-fresh","partial":false}`), []string{"searxng"})
+	cacheSvc.Set(context.Background(), cache.GenerateCacheKey("stable-empty-fresh", []string{"searxng"}, ""), []byte(`{"query":"stable-empty-fresh","partial":false}`), []string{"searxng"})
 
 	resp2, err := s.callToolByName(context.Background(), "search_web", args)
 	if err != nil {
@@ -109,7 +110,7 @@ func TestSearchDocOficialStrategySignal(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	resp, err := s.callToolByName(context.Background(), "search_doc_oficial", []byte(`{"query":"official docs"}`))
 	if err != nil {
@@ -163,7 +164,7 @@ func TestSearchLocalIndexUnavailableSignal(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	resp, err := s.callToolByName(context.Background(), "search_local_index", []byte(`{"query":"find in repo"}`))
 	if err != nil {

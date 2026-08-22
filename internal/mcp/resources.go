@@ -62,7 +62,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 - search_local_index — NO redirige a búsqueda web. Mientras no haya un proveedor real de índice local configurado, devuelve strategy="local_index_unavailable", results=[] y un warning local_index_unavailable. No lo confundas con un resultado vacío real: es una señal de "esta tool no está wired todavía".
 - search_github, search_github_pr, search_github_issue — endpoints de GitHub. search_github_pr y search_github_issue leen filters.state ("open" / "closed") para reducir el resultado.
 - search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_youtube, search_images — conectores dedicados a un proveedor.
-- search_reddit — Reddit API. Si OAuth no está configurado (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET) y Reddit rechaza un pedido anónimo con 401/403, devuelve strategy="reddit_unconfigured" con un warning que menciona cada variable de entorno. Si OAuth está configurado y Reddit igual rechaza, la respuesta se clasifica como degradación upstream (partial=true), no como configuración.
+- search_reddit — Reddit API. Esta entrega es anonymous-only: IA_Buscar no soporta OAuth ni tokens de portador. Cuando Reddit rechaza un pedido anónimo con 401/403, la respuesta devuelve strategy="reddit_unconfigured" con un warning que menciona REDDIT_USER_AGENT (Reddit requiere un User-Agent único y descriptivo por despliegue).
 
 ## 3. Input schema estable para tools de búsqueda
 
@@ -186,9 +186,45 @@ agent-guide://ia-buscar/wire-contract (este documento) es accesible vía resourc
 - "name is required" — falta el campo name en tools/call.
 - "invalid args: <reason>" — el JSON de arguments no parsea contra el input schema. Revisa enums (timeRange, mode) y obligatorios (query, url, urls).
 
+## 10b. Contrato de fetch (FetchResponse)
+
+Los tools fetch, fetch_and_extract, extract_structured, validate_url y check_link_status comparten el mismo motor de fetch y exponen la misma FetchResponse con cuatro campos nuevos (a partir de 1.2.0):
+
+- outcome — taxonomía fija de strings:
+  - success — 2xx recibido.
+  - blocked-target — DNS o texto detectó IP no pública / loopback / host interno. No se marca el dial.
+  - blocked-redirect — un Location apuntaba a una IP no pública y fue rechazado.
+  - too-many-redirects — la cadena excedió el cap (5 hops por defecto).
+  - timeout — request lifecycle excedió el timeout configurado y no se reintentó.
+  - transport-error — fallo TCP/TLS/DNS no clasificado como timeout.
+  - http-error — status upstream no-2xx no retryable (404, 500 fuera de 502-504, etc.).
+  - non-transient-failure — body/classification/argument errors.
+  - transient-failure-retried-exhausted — se agotaron los reintentos sobre 429/502/503/504/timeout.
+- status — código HTTP final, o 0 si nunca se recibió respuesta.
+- redirectChain — lista de URLs seguidas, sin incluir el destino final.
+- attempts — cantidad total de intentos (incluye reintentos). 1 = sin retry.
+
+Configuración expuesta al operador:
+
+- --fetch-timeout-ms (default 30000) — timeout del ciclo completo. También leíble vía env var FETCH_TIMEOUT_MS; el flag CLI gana cuando ambos están configurados.
+- Variable de entorno FETCH_USER_AGENT (default: Mozilla compatible con IA-Buscar/1.2).
+- FETCH_MAX_REDIRECTS (default 5).
+- FETCH_MAX_ATTEMPTS (default 3).
+- Backoff: exponencial con jitter determinístico, base 200ms.
+
+Política de retry: SOLO 429 y 502-504 más timeouts del transporte se reintentan. 4xx fuera de 429 NO se reintenta y se clasifica como http-error.
+
+SSRF: el motor resuelve A/AAAA en cada hop (target inicial Y cada redirect), rechaza el hop si ALGUNA dirección cae en rango no público (loopback, RFC1918, link-local, CGNAT, multicast, reservados), y diala solo a la IP aprobada preservando el Host header y TLS ServerName. Rebinding entre validación y dial queda bloqueado porque la IP se fija en Transport.DialContext.
+
+Reddit es anonymous-only: sin OAuth, sin client_id/secret. La estrategia reddit_unconfigured se emite cuando Reddit rechaza con 401/403.
+
 ## 11. Versionado
 
 El contrato SearchResponse y los nombres de tools están congelados en esta rama. Cambios incompatibles requieren bump mayor del servidor y un changelog explícito en el README. Los IDs de estrategia ("reddit_unconfigured", "local_index_unavailable", "official_doc_web_fallback") también son estables — puedes hacer pattern matching sobre ellos.
+
+## 12. Changelog
+
+- **1.2.0** — Anonymous-only Reddit (sin OAuth, sin client_id/secret), release gate ejecutable con carve-out por nombre exacto de rama, fetch engine con outcomes explícitos (success / blocked-target / blocked-redirect / too-many-redirects / timeout / transport-error / http-error / non-transient-failure / transient-failure-retried-exhausted), degradación centralizada vía recordDegraded, cache key incluye TimeRange.
 `
 
 // buildResourcesRegistry returns the static MCP resources that

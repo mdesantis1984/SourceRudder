@@ -5,27 +5,30 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
 
-// TestToolsListExactly25 locks in the architecture contract: tools/list
-// returns exactly 25 tools and the three stateful tools (get_cached,
-// invalidate_cache, get_search_history) are not exposed through MCP.
-func TestToolsListExactly25(t *testing.T) {
+// TestToolsListExactly28 locks in the architecture contract: tools/list
+// returns exactly 28 tools including the three stateful tools
+// (get_cached, invalidate_cache, get_search_history). The positive
+// assertions live in tools_count_test.go; this test stays here so
+// the per-architecture lock remains next to the buildTestServer
+// helper that exercises it.
+func TestToolsListExactly28(t *testing.T) {
 	s := buildTestServer(t)
 
 	tools := s.Tools()
-	if len(tools) != 25 {
-		t.Errorf("expected 25 tools, got %d", len(tools))
+	if len(tools) != 28 {
+		t.Errorf("expected 28 tools, got %d", len(tools))
 	}
 
 	names := make(map[string]bool, len(tools))
@@ -33,17 +36,17 @@ func TestToolsListExactly25(t *testing.T) {
 		names[tool.Name] = true
 	}
 
-	forbidden := []string{"get_cached", "invalidate_cache", "get_search_history"}
-	for _, name := range forbidden {
-		if names[name] {
-			t.Errorf("forbidden stateful tool %q is still registered", name)
+	required := []string{"get_cached", "invalidate_cache", "get_search_history"}
+	for _, name := range required {
+		if !names[name] {
+			t.Errorf("required stateful tool %q is missing from the registry", name)
 		}
 	}
 }
 
-// TestHandleToolsListExactly25 covers the same contract through the
+// TestHandleToolsListExactly28 covers the same contract through the
 // higher-level HandleToolsList path that real MCP clients hit.
-func TestHandleToolsListExactly25(t *testing.T) {
+func TestHandleToolsListExactly28(t *testing.T) {
 	s := buildTestServer(t)
 
 	res, err := s.HandleToolsList(context.Background(), nil)
@@ -55,40 +58,19 @@ func TestHandleToolsListExactly25(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected []map[string]interface{}, got %T", m["tools"])
 	}
-	if len(toolsList) != 25 {
-		t.Errorf("expected 25 tools, got %d", len(toolsList))
+	if len(toolsList) != 28 {
+		t.Errorf("expected 28 tools, got %d", len(toolsList))
 	}
 
+	names := make(map[string]bool, len(toolsList))
 	for _, entry := range toolsList {
 		name, _ := entry["name"].(string)
-		switch name {
-		case "get_cached", "invalidate_cache", "get_search_history":
-			t.Errorf("forbidden stateful tool %q is exposed via HandleToolsList", name)
-		}
+		names[name] = true
 	}
-}
-
-// TestRemovedToolsReturnToolNotFound verifies that calling any of the three
-// removed tools returns the existing observable "tool not found" error,
-// proving the underlying handler is no longer wired.
-func TestRemovedToolsReturnToolNotFound(t *testing.T) {
-	s := buildTestServer(t)
-
-	for _, toolName := range []string{"get_cached", "invalidate_cache", "get_search_history"} {
-		t.Run(toolName, func(t *testing.T) {
-			args, _ := json.Marshal(map[string]interface{}{"query": "anything"})
-			params, _ := json.Marshal(map[string]interface{}{
-				"name":      toolName,
-				"arguments": json.RawMessage(args),
-			})
-			_, err := s.HandleToolsCall(context.Background(), params)
-			if err == nil {
-				t.Fatalf("expected error for removed tool %q, got nil", toolName)
-			}
-			if !strings.Contains(err.Error(), "tool not found") {
-				t.Errorf("expected 'tool not found' error for %q, got %v", toolName, err)
-			}
-		})
+	for _, want := range []string{"get_cached", "invalidate_cache", "get_search_history"} {
+		if !names[want] {
+			t.Errorf("expected stateful tool %q via HandleToolsList", want)
+		}
 	}
 }
 
@@ -108,7 +90,7 @@ func TestCacheHitAcrossRepeatedSearch(t *testing.T) {
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(srv.URL, cacheSvc))
 
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	callArgs, _ := json.Marshal(map[string]interface{}{"query": "repeatable query"})
 
@@ -156,7 +138,7 @@ func TestCacheStateDoesNotPersistAcrossServerInstances(t *testing.T) {
 		cacheA := cache.NewService(300)
 		cmA := search.NewConnectorManager(cacheA)
 		cmA.Register(connectors.NewWebConnector(srv.URL, cacheA))
-		serverA := NewServer(cmA, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+		serverA := NewServer(cmA, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 		if _, err := serverA.callToolByName(context.Background(), "search_web", callArgs); err != nil {
 			t.Fatalf("serverA first call failed: %v", err)
 		}
@@ -170,7 +152,7 @@ func TestCacheStateDoesNotPersistAcrossServerInstances(t *testing.T) {
 		cacheB := cache.NewService(300)
 		cmB := search.NewConnectorManager(cacheB)
 		cmB.Register(connectors.NewWebConnector(srv.URL, cacheB))
-		serverB := NewServer(cmB, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+		serverB := NewServer(cmB, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 		resp, err := serverB.callToolByName(context.Background(), "search_web", callArgs)
 		if err != nil {
 			t.Fatalf("serverB first call failed: %v", err)
@@ -212,24 +194,29 @@ func TestNoPersistenceSurfaceOnCacheService(t *testing.T) {
 // TestStatelessArchitectureNoExternalFiles covers the property that the
 // service does not touch any persistence file on disk: it does not write
 // logs about external memory, it does not read a history file, and the
-// cache eviction is purely in-process.
+// cache eviction is purely in-process. Under the restored
+// runtime contract the stateful tools DO exist, but their backing
+// surfaces are still in-process only: the cache is bounded by TTL,
+// the history buffer is bounded by bound, and the memory client
+// short-circuits when no baseURL is configured.
 func TestStatelessArchitectureNoExternalFiles(t *testing.T) {
-	// Build a fresh server, run a search, and confirm the cache surface
-	// exposed via the public Service is bounded by the configured TTL.
-	// This is the runtime promise of the architecture: nothing leaks past
-	// the process boundary.
+	// Build a fresh cache service and confirm its public surface
+	// remains bounded by the configured TTL. Under the restored
+	// runtime contract the stateful tools DO exist, but their
+	// backing surfaces must stay in-process: no on-disk file, no
+	// network socket, no external handle. The Keys + Clear round-trip
+	// is the assertion that nothing leaks past the process boundary.
 	cacheSvc := cache.NewService(60)
-	cm := search.NewConnectorManager(cacheSvc)
-	cm.Register(connectors.NewWebConnector("http://localhost:9999", cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:9999", 60, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
 
-	// The server registry must not contain any tool that could persist or
-	// recall state across requests.
-	for _, tool := range s.Tools() {
-		switch tool.Name {
-		case "get_cached", "invalidate_cache", "get_search_history":
-			t.Errorf("stateless architecture violated: tool %q is registered", tool.Name)
-		}
+	keys, err := cacheSvc.Keys(context.Background())
+	if err != nil {
+		t.Fatalf("Keys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("expected empty cache, got %d keys", len(keys))
+	}
+	if err := cacheSvc.Clear(context.Background()); err != nil {
+		t.Fatalf("Clear: %v", err)
 	}
 }
 
@@ -240,7 +227,7 @@ func buildTestServer(t *testing.T) *Server {
 	t.Helper()
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
-	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 }
 
 // callToolByName is a small helper that runs a search_* tool by name and

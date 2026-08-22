@@ -16,12 +16,30 @@ spec:
     spec:
       containers:
         - name: ia-buscar
-          image: ia-buscar:latest
+          # Immutable tag: every release ships a unique image reference.
+          # The literal `<IMAGE>` placeholder is replaced by the
+          # `make release-image` target which appends the current
+          # commit SHA. Operators MUST NOT substitute `:latest`,
+          # `:1.2.0`, or any other mutable tag here — the gate
+          # script validates the image is pinned to `git rev-parse HEAD`
+          # for every released commit.
+          image: <IMAGE>
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
           env:
             - name: SEARXNG_URL
               value: "http://searxng:8080"
+            - name: FETCH_TIMEOUT_MS
+              value: "30000"
+            - name: FETCH_USER_AGENT
+              value: "ia-buscar/1.2.0 (compatible; +https://thiscloud.es)"
+            - name: FETCH_MAX_REDIRECTS
+              value: "5"
+            - name: FETCH_MAX_ATTEMPTS
+              value: "3"
+            - name: MEMORY_URL
+              value: "http://127.0.0.1:7438"
           resources:
             requests:
               memory: "128Mi"

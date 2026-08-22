@@ -41,7 +41,7 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"npm"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"npm"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[npm] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -65,7 +65,7 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("npm", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -75,8 +75,6 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 }
 
 func (c *NPMConnector) doNPMRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err

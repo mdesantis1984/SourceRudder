@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thiscloud/ia-buscar/internal/auth"
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
@@ -57,7 +59,12 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
 
-	s := NewServer(cm, search.NewPlanner(), "http", ":0", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, met)
+	// Wire an auth validator with a known key. The /mcp and
+	// /metrics endpoints are wrapped in the auth middleware, so
+	// every request below carries X-Api-Key to reach the handler.
+	authVal := auth.NewValidator("test-key-e2e")
+
+	s := NewServer(cm, search.NewPlanner(), "http", ":0", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), authVal, met, cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	// 3. The actual production HTTP boundary. s.Handler() is the same
 	// chain HTTPTransport.Start serves on a real port; wrapping it in
@@ -93,7 +100,13 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal rpc payload: %v", err)
 	}
-	resp, err := http.Post(srv.URL+"/mcp", "application/json", bytes.NewReader(rpcBody))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", bytes.NewReader(rpcBody))
+	if err != nil {
+		t.Fatalf("build /mcp request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", "test-key-e2e")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /mcp: %v", err)
 	}
@@ -130,10 +143,16 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 // scrapeHTTP fetches the response body at a URL and returns it as a
 // string. It does not interpret the body; the assertions are made by
 // the counterValue helper below so the parsing rules stay local to
-// each assertion.
+// each assertion. /metrics is auth-protected under the post-fix
+// contract, so the helper carries the test key.
 func scrapeHTTP(t *testing.T, url string) string {
 	t.Helper()
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("scrape %s: build request: %v", url, err)
+	}
+	req.Header.Set("X-Api-Key", "test-key-e2e")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("scrape %s: %v", url, err)
 	}

@@ -41,7 +41,7 @@ func (c *ImagesConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"images", "searxng"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"images", "searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[images] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -74,8 +74,6 @@ func (c *ImagesConnector) Search(ctx context.Context, req *types.SearchRequest) 
 }
 
 func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxResults int) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")

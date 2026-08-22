@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/pkg/types"
@@ -63,6 +64,12 @@ func (s *Server) registerTools() {
 			t.Handler = s.makeSynthesizeHandler("deep_research")
 		case "compare_sources":
 			t.Handler = s.makeSynthesizeHandler("compare_sources")
+		case "get_cached":
+			t.Handler = s.makeGetCachedHandler()
+		case "invalidate_cache":
+			t.Handler = s.makeInvalidateCacheHandler()
+		case "get_search_history":
+			t.Handler = s.makeGetSearchHistoryHandler()
 		case "get_current_date":
 			t.Handler = s.getCurrentDateHandler
 		}
@@ -101,6 +108,14 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 				resp.Warnings = append(resp.Warnings, "intent: "+plan.Intent)
 			}
 		}
+
+		// Record the completed production search into the in-process
+		// HistoryService so get_search_history returns organically
+		// recorded invocations instead of an empty list. Recording
+		// happens after the connector returns successfully — failed
+		// calls are intentionally not recorded so the history reflects
+		// what the operator actually saw, not what we tried.
+		s.recordSearch(ctx, source, resp)
 
 		return normalizeSearchResponse(resp), nil
 	}
@@ -142,6 +157,12 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 		}
 		resp.Warnings = append(resp.Warnings,
 			"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from a curated official-documentation index")
+
+		// Record the completed production search with the connector
+		// name that actually answered (web, in the fallback case).
+		// This keeps history consistent with the search_web / search_news
+		// / etc. paths, which record the connector name they route to.
+		s.recordSearch(ctx, "web", resp)
 
 		return normalizeSearchResponse(resp), nil
 	}
@@ -227,6 +248,12 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 		if err != nil {
 			return nil, err
 		}
+		// Record the completed production search so get_search_history
+		// returns PR queries alongside regular search_* calls. Source
+		// is the connector name (github) for consistency with the
+		// search_github / search_github_issue handlers and the simple
+		// search_* handlers (which already record the connector name).
+		s.recordSearch(ctx, "github", resp)
 		return normalizeSearchResponse(resp), nil
 	}
 }
@@ -257,6 +284,12 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 		if err != nil {
 			return nil, err
 		}
+		// Record the completed production search so get_search_history
+		// returns issue queries alongside regular search_* calls. Source
+		// is the connector name (github) for consistency with the
+		// search_github / search_github_pr handlers and the simple
+		// search_* handlers.
+		s.recordSearch(ctx, "github", resp)
 		return normalizeSearchResponse(resp), nil
 	}
 }
@@ -423,6 +456,128 @@ func (s *Server) getCurrentDateHandler(ctx context.Context, args json.RawMessage
 	}, nil
 }
 
+// makeGetCachedHandler returns the get_cached tool handler. The
+// handler is intentionally narrow: it accepts a single `key`
+// argument and returns JSON
+// `{"cache_hit": <bool>, "entry": <CacheEntry|null> }` decoded
+// from the same cache the connectors share. A miss (no entry, or
+// only an expired entry) returns `cache_hit: false, entry: null`
+// without surfacing an error — the contract is "tell me whether
+// you have it" not "fail when you don't". Empty / missing key is
+// rejected as an invalid argument so the MCP client never
+// accidentally queries the whole cache.
+func (s *Server) makeGetCachedHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req struct {
+			Key string `json:"key"`
+		}
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if req.Key == "" {
+			return nil, fmt.Errorf("key is required")
+		}
+		if s.connectorManager == nil {
+			return map[string]interface{}{
+				"cache_hit": false,
+				"entry":     nil,
+			}, nil
+		}
+		cacheSvc := s.connectorManager.Cache()
+		entry, ok, err := cacheSvc.Get(ctx, req.Key)
+		if err != nil {
+			return nil, fmt.Errorf("cache get: %w", err)
+		}
+		if !ok || entry == nil {
+			return map[string]interface{}{
+				"cache_hit": false,
+				"entry":     nil,
+			}, nil
+		}
+		return map[string]interface{}{
+			"cache_hit": true,
+			"entry": map[string]interface{}{
+				"cacheKey":  entry.CacheKey,
+				"createdAt": entry.CreatedAt,
+				"expiresAt": entry.ExpiresAt,
+				"payload":   string(entry.Payload),
+				"sourceSet": entry.SourceSet,
+			},
+		}, nil
+	}
+}
+
+// makeInvalidateCacheHandler returns the invalidate_cache tool
+// handler. The handler calls DeleteIfPresent so the wire response
+// can distinguish "I removed your entry" from "there was nothing
+// to remove" without a follow-up Get. Both outcomes are successful
+// tools/call responses; only an empty key surfaces as an error.
+func (s *Server) makeInvalidateCacheHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req struct {
+			Key string `json:"key"`
+		}
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if req.Key == "" {
+			return nil, fmt.Errorf("key is required")
+		}
+		invalidated := false
+		if s.connectorManager != nil {
+			invalidated = s.connectorManager.Cache().DeleteIfPresent(ctx, req.Key)
+		}
+		return map[string]interface{}{
+			"key":         req.Key,
+			"invalidated": invalidated,
+		}, nil
+	}
+}
+
+// makeGetSearchHistoryHandler returns the get_search_history tool
+// handler. The handler is intentionally narrow: it accepts
+// `limit` (required, positive integer) and `query` (optional
+// case-sensitive substring) and returns JSON
+// `{"history": [Entry], "limit": N, "query": "..."}`. A missing
+// `limit` is rejected as an invalid argument; the HistoryService
+// itself enforces its own bound so an oversized limit just returns
+// everything up to the bound.
+func (s *Server) makeGetSearchHistoryHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req struct {
+			Limit int    `json:"limit"`
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if req.Limit <= 0 {
+			return nil, fmt.Errorf("limit is required and must be positive")
+		}
+		if s.history == nil {
+			return map[string]interface{}{
+				"history": []interface{}{},
+				"limit":   req.Limit,
+				"query":   req.Query,
+			}, nil
+		}
+		entries := s.history.List(ctx, req.Limit, req.Query)
+		history := make([]map[string]interface{}, len(entries))
+		for i, e := range entries {
+			history[i] = map[string]interface{}{
+				"query":     e.Query,
+				"source":    e.Source,
+				"timestamp": e.Timestamp,
+			}
+		}
+		return map[string]interface{}{
+			"history": history,
+			"limit":   req.Limit,
+			"query":   req.Query,
+		}, nil
+	}
+}
+
 func (s *Server) ListTools() []map[string]interface{} {
 	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
 	for _, t := range s.toolsRegistry {
@@ -433,4 +588,64 @@ func (s *Server) ListTools() []map[string]interface{} {
 		})
 	}
 	return tools
+}
+
+// recordSearch appends one entry to the in-process HistoryService so
+// get_search_history returns the operator's actual searches organically.
+// It is the single hook that wires the production search paths back into
+// the HistoryService restored by the restore-runtime-contract change:
+// every handler that successfully delegates to a connector calls this
+// AFTER the connector returns (so failed connectors do not pollute the
+// history). A nil history is treated as no-op so test fixtures that omit
+// the HistoryService still work; a nil connector manager is also a no-op
+// (handled by the caller not invoking recordSearch in that branch).
+//
+// The third arg is the connector response so the gate can distinguish
+// between three classes of call:
+//
+//  1. Hard failure (err != nil from the connector): never reaches this
+//     helper because every handler bails on err before invoking it.
+//  2. Degraded/empty response (Partial=true, Results=[]): skipped. A
+//     connector that swallowed an upstream 5xx (e.g. searxng 500 or
+//     github 403) returns a response the operator never saw results
+//     from — recording it would pollute the audit trail with failed
+//     attempts. The corrected gate keeps the operator's history
+//     truthful: only completed searches with real (or honestly
+//     empty) results appear.
+//  3. Successful response (Partial=false): recorded. This covers
+//     results-bearing responses AND successful-but-empty searches
+//     (Partial stays false because no error occurred); both deserve
+//     to appear in the history.
+//
+// Empty queries are also skipped so accidental whitespace-only inputs
+// do not crowd out real searches. Errors from Append are swallowed:
+// a failed in-process append MUST NOT bubble up and turn a successful
+// search into a 5xx for the AI agent. The history is best-effort
+// observability, not part of the contract.
+func (s *Server) recordSearch(ctx context.Context, source string, resp *types.SearchResponse) {
+	if s.history == nil {
+		return
+	}
+	if resp == nil {
+		return
+	}
+	if resp.Query == "" {
+		return
+	}
+	if resp.Partial && len(resp.Results) == 0 {
+		return
+	}
+	_ = s.history.Append(ctx, cache.Entry{Query: resp.Query, Source: source})
+	// Ship the same observation to IA_Recuerdo through the *memory.Client
+	// injected at NewServer. Save is a no-op when the integration is
+	// disabled (empty baseURL) so callers do not need to branch. Errors
+	// are intentionally swallowed: a failed memory write MUST NOT bubble
+	// up and turn a successful search into a 5xx for the AI agent — the
+	// memory layer is best-effort observability, not part of the contract.
+	if s.mem != nil {
+		_ = s.mem.Save(ctx, map[string]interface{}{
+			"query":  resp.Query,
+			"source": source,
+		})
+	}
 }

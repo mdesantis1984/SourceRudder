@@ -12,17 +12,16 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
 // TestRedditConfigurationDegradation_AnonymousRejected covers the
-// "configuration / policy prevents Reddit search" path from item 2:
-// when the connector is not configured with OAuth credentials and
-// Reddit rejects the anonymous request with 403, the MCP response must
-// surface Strategy="reddit_unconfigured" with an actionable warning
-// naming REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET / REDDIT_USER_AGENT.
+// anonymous-only contract: when Reddit rejects the anonymous request
+// with 403, the MCP response must surface Strategy="reddit_unconfigured"
+// with an actionable warning about anonymous-only delivery.
 func TestRedditConfigurationDegradation_AnonymousRejected(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -35,7 +34,7 @@ func TestRedditConfigurationDegradation_AnonymousRejected(t *testing.T) {
 		BaseURL:   srv.URL,
 		UserAgent: "ia-buscar/test",
 	}, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	resp, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"config-anon-403"}`))
 	if err != nil {
@@ -45,7 +44,7 @@ func TestRedditConfigurationDegradation_AnonymousRejected(t *testing.T) {
 		t.Errorf("expected Strategy=reddit_unconfigured, got %q", resp.Strategy)
 	}
 	if resp.Partial {
-		t.Errorf("expected Partial=false (config issue, not partial result), got true (warnings=%v)", resp.Warnings)
+		t.Errorf("expected Partial=false (anonymous-only blocked is config outcome, not partial result), got true (warnings=%v)", resp.Warnings)
 	}
 	if len(resp.Results) != 0 {
 		t.Errorf("expected empty Results, got %d", len(resp.Results))
@@ -54,42 +53,40 @@ func TestRedditConfigurationDegradation_AnonymousRejected(t *testing.T) {
 		t.Fatal("expected at least one actionable warning")
 	}
 	joined := strings.ToLower(strings.Join(resp.Warnings, " | "))
-	for _, mustHave := range []string{"reddit_unconfigured", "reddit_client_id", "reddit_client_secret", "reddit_user_agent"} {
+	for _, mustHave := range []string{"reddit_unconfigured", "reddit_user_agent"} {
 		if !strings.Contains(joined, mustHave) {
 			t.Errorf("expected warning to mention %q, got %v", mustHave, resp.Warnings)
 		}
 	}
 }
 
-// TestRedditConfigurationDegradation_OAuthStillRejected covers the
-// "OAuth configured but Reddit still rejected" path: the connector
-// must report this as upstream degradation (Partial=true), NOT as a
-// configuration problem.
-func TestRedditConfigurationDegradation_OAuthStillRejected(t *testing.T) {
+// TestRedditAnonymousBlockedIsClassifiedAsUnconfigured locks in the
+// Phase 4 contract: anonymous delivery means a 401/403 is NEVER a
+// "configured-but-still-rejected" path — that distinction does not
+// exist anymore. Every 401/403 is the anonymous-blocked outcome.
+func TestRedditAnonymousBlockedIsClassifiedAsUnconfigured(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
 
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{
-		BaseURL:      srv.URL,
-		UserAgent:    "ia-buscar/test",
-		ClientID:     "configured",
-		ClientSecret: "configured",
+		BaseURL:   srv.URL,
+		UserAgent: "ia-buscar/test",
 	}, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
-	resp, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"config-oauth-403"}`))
+	resp, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"anon-401"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Strategy == "reddit_unconfigured" {
-		t.Errorf("must NOT classify as unconfigured when OAuth is set, got %q", resp.Strategy)
+	if resp.Strategy != "reddit_unconfigured" {
+		t.Fatalf("anonymous 401 must classify as reddit_unconfigured, got %q", resp.Strategy)
 	}
-	if !resp.Partial {
-		t.Errorf("expected Partial=true when OAuth is configured but Reddit still rejected, got false (warnings=%v)", resp.Warnings)
+	if resp.Partial {
+		t.Fatalf("anonymous 401 must NOT set Partial; got warnings=%v", resp.Warnings)
 	}
 }
 
@@ -104,7 +101,7 @@ func TestRedditRateLimitIsPartial(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{BaseURL: srv.URL, UserAgent: "ia-buscar/test"}, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	resp, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"rate-limited"}`))
 	if err != nil {
@@ -138,7 +135,7 @@ func TestRedditUserAgentIsPluggable(t *testing.T) {
 		BaseURL:   srv.URL,
 		UserAgent: customUA,
 	}, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	if _, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"ua-pluggable"}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -168,7 +165,7 @@ func TestRedditStableEmptyArrayOnDegradedResponse(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{BaseURL: srv.URL}, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
 	resp, err := s.callToolByName(context.Background(), "search_reddit", []byte(`{"query":"degraded-wire"}`))
 	if err != nil {

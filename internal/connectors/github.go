@@ -49,7 +49,7 @@ func (c *GitHubConnector) searchRepositories(ctx context.Context, req *types.Sea
 		observability.EndSpan(span, len(results), err)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"github", "repo"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"github", "repo"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[github] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -76,7 +76,7 @@ func (c *GitHubConnector) searchRepositories(ctx context.Context, req *types.Sea
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("github", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -90,7 +90,7 @@ func (c *GitHubConnector) SearchPR(ctx context.Context, req *types.SearchRequest
 	query := sanitizeQuery(req.Query)
 	maxResults := getMaxResults(req.MaxResults, 10)
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"github", "pr"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"github", "pr"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[github] cache hit for PR query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -122,7 +122,7 @@ func (c *GitHubConnector) SearchPR(ctx context.Context, req *types.SearchRequest
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("github", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -136,7 +136,7 @@ func (c *GitHubConnector) SearchIssue(ctx context.Context, req *types.SearchRequ
 	query := sanitizeQuery(req.Query)
 	maxResults := getMaxResults(req.MaxResults, 10)
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"github", "issue"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"github", "issue"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[github] cache hit for issue query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -168,7 +168,7 @@ func (c *GitHubConnector) SearchIssue(ctx context.Context, req *types.SearchRequ
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("github", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -178,7 +178,6 @@ func (c *GitHubConnector) SearchIssue(ctx context.Context, req *types.SearchRequ
 }
 
 func (c *GitHubConnector) doGitHubRequest(ctx context.Context, apiURL string, resultType string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {

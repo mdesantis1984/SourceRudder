@@ -41,7 +41,7 @@ func (c *DockerHubConnector) Search(ctx context.Context, req *types.SearchReques
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"dockerhub"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"dockerhub"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[dockerhub] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -65,7 +65,7 @@ func (c *DockerHubConnector) Search(ctx context.Context, req *types.SearchReques
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("dockerhub", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -75,8 +75,6 @@ func (c *DockerHubConnector) Search(ctx context.Context, req *types.SearchReques
 }
 
 func (c *DockerHubConnector) doDockerHubRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err

@@ -12,9 +12,9 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
 
 - 13 conectores de búsqueda: web, GitHub, StackOverflow, npm, NuGet, PyPI, DockerHub, Academic, Reddit, YouTube, Images.
 - Herramientas de extracción y síntesis de contenido.
-- Caché en proceso con TTL limitado (sin persistencia, sin superficie MCP).
+- Caché en proceso con TTL limitado (sin persistencia en disco).
 - Protección SSRF en fetch/extract.
-- 25 tools MCP registradas.
+- 28 tools MCP registradas (16 search, 3 fetch, 2 validate, 3 synthesis, 3 cache/history, 1 date).
 - Recurso estático `agent-guide://ia-buscar/wire-contract` para discoverability de agentes IA.
 
 ---
@@ -111,13 +111,14 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
 }
 ```
 
-Los flags equivalentes en la línea de comando son
-`--reddit-user-agent`, `--reddit-client-id`, `--reddit-client-secret` y
-`--reddit-base-url`, con variables de entorno
-`REDDIT_USER_AGENT`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` y
-`REDDIT_BASE_URL`. Sin `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`, el
-conector intenta pedidos anónimos y devuelve
-`strategy: "reddit_unconfigured"` cuando Reddit los rechaza con 401/403.
+Los flags equivalentes en la línea de comando son `--reddit-user-agent` y
+`--reddit-base-url`, con variables de entorno `REDDIT_USER_AGENT` y
+`REDDIT_BASE_URL`. Esta entrega es **anonymous-only**: no hay OAuth, ni
+client_id, ni client_secret, ni bearer-token. Cuando Reddit rechaza un
+pedido anónimo con 401/403, la respuesta devuelve
+`strategy: "reddit_unconfigured"` y un warning accionable que menciona
+`REDDIT_USER_AGENT` (Reddit exige un User-Agent único y descriptivo por
+despliegue).
 
 ---
 
@@ -166,6 +167,79 @@ de la request actual.
 
 ## Changelog
 
+### 1.5.0 — 2026-08-21 (`restore-runtime-contract`)
+- **Contrato restaurado**: 28 tools MCP registradas (25 → 28). Se
+  re-introdujeron los 3 tools stateful `get_cached`,
+  `invalidate_cache` y `get_search_history` respaldados por un
+  `HistoryService` bounded en proceso y por la superficie
+  `DeleteIfPresent` (race-safe) del cache.
+- **IA_Recuerdo re-introducido**: paquete `internal/memory` con
+  `Client` que short-circuitea `Save` a `nil` cuando `baseURL==""`
+  (preserva la propiedad "no I/O cuando la integración está
+  deshabilitada"). Flags `-memory-url` / `-memory-apikey` con
+  defaults de `MEMORY_URL` / `MEMORY_APIKEY`, precedence
+  flag-sobrescribe-env. `mcp.NewServer` extendido a 13 args con el
+  mismo `*memory.Client` y `*cache.HistoryService` propagados a los
+  handlers.
+- **Deploy re-sincronizado**: `deploy/systemd/ia-buscar.service`
+  expone `Environment=MEMORY_URL` y `Environment=MEMORY_APIKEY`;
+  `deploy/kubernetes/deployment.yaml` expone `MEMORY_URL` en el
+  container `ia-buscar`. Sin cambios al proceso de deploy.
+- **Override documentado**: autorizado por decisión `#4280` con
+  `size:exception` (precedente `#4125`). Override del baseline
+  no-regression de 12 objetivos de
+  `close-fetch-resilience-and-release-gates`. La fase 16 de ese
+  change sigue `pending` hasta que este PR merge y `local-docker-qa`
+  pase.
+- **Sin deploy de producción**: este cambio es puramente de código
+  + manifests. No se ejecutó `kubectl apply`, `systemctl
+  daemon-reload`, ni push de contenedor.
+
+### 1.2.0 — 2026-08-20 (exception delivery)
+- **Reddit anonymous-only**: se removieron todos los campos OAuth
+  (`ClientID`, `ClientSecret`, `HasOAuthCredentials`, bearer-token
+  storage) y los flags/env (`--reddit-client-id`, `--reddit-client-secret`,
+  `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`). El conector hit el
+  endpoint público anónimo de Reddit; cuando Reddit lo rechaza con
+  401/403 la respuesta es `strategy="reddit_unconfigured"` con un
+  warning que nombra `REDDIT_USER_AGENT` como única remediación.
+  Métrica: `ia_buscar_search_degraded_total{source="reddit",kind="anonymous_blocked"}`.
+- **Fetch engine explícito**: `internal/fetch/fetcher.go` ahora expone
+  `Config{UserAgent, TimeoutMs, MaxRedirects, MaxAttempts, BaseBackoff}`
+  y `NewFetcherServiceWithConfig(Config)`. `NewFetcherService(int)` se
+  conserva para legacy callers. La respuesta de fetch lleva cuatro
+  campos nuevos (`Outcome`, `Status`, `RedirectChain`, `Attempts`) con
+  la taxonomía: `success`, `blocked-target`, `blocked-redirect`,
+  `too-many-redirects`, `timeout`, `transport-error`, `http-error`,
+  `non-transient-failure`, `transient-failure-retried-exhausted`. SSRF:
+  pre-resuelve A/AAAA en cada hop (target + cada redirect), rechaza
+  si alguna dirección cae en rango no público, diala la IP aprobada
+  preservando Host/TLS. Retry policy: SOLO 429/502-504/timeout con
+  backoff exponencial y jitter determinístico.
+- **Cache key con `TimeRange`**: `cache.GenerateCacheKey` ahora recibe
+  `(query, sources, timeRange)`. Conectores que pasan `req.TimeRange`:
+  academic, images, news, youtube, web. Reddit, GitHub, DockerHub,
+  npm, NuGet, PyPI, StackOverflow pasan timeRange vacío.
+- **`recordDegraded(source, kind, resp, err)`**: helper central que
+  incrementa la métrica, setea `Partial=true` y agrega el warning.
+  Cableado en dockerhub, github, npm, nuget, stackoverflow. Los
+  conectores searxng-based (academic, images, news, youtube, web)
+  conservan su patrón inline sobre `UnresponsiveEngines`.
+- **Slashes eliminados**: 10 conectores ya no duermen artificialmente
+  antes del HTTP request. Latencia del path del cuerpo baja de
+  ~500ms–1s a <50ms cuando la respuesta upstream es inmediata.
+- **Release gate ejecutable**: `scripts/release-gate.sh` corre en cada
+  PR vía `.github/workflows/release-gate.yml`. Verifica worktree
+  limpio (allow-list: docs/release/reviews/, .atl/, .codegraph/),
+  review placeholder, diff vs merge-base, y `go build/vet/test/test -race`.
+  Carve-out `RELEASE_GATE_SIZE_EXCEPTION=<exact-branch>` matchea SOLO
+  la rama nombrada; default OFF para cualquier otra.
+- **MCP server version 1.2.0**: bumpeada en `HandleInitialize` y
+  `handleMCPInitialize`. Changelog row agregada en
+  `internal/mcp/resources.go` sección 12.
+- **`--fetch-timeout-ms`** ahora llega al `FetcherService` en lugar
+  del literal `30000` (Phase 6.4).
+
 ### 1.4.0 — 2026-08-19
 - **Recurso MCP `agent-guide://ia-buscar/wire-contract`**: nuevo
   recurso estático accesible vía `resources/list` y `resources/read`
@@ -197,17 +271,16 @@ de la request actual.
   el camino de respuesta, y se removió `omitempty` del campo `Results`
   en `pkg/types/types.go`. Se agregó el campo `strategy` para que los
   agentes distingan qué backend realmente respondió.
-- **Reddit con seam de configuración y degradación explícita**: el
-  conector ya no usa un `User-Agent` hard-coded; admite
-  `--reddit-user-agent` / `REDDIT_USER_AGENT`,
-  `--reddit-client-id` / `REDDIT_CLIENT_ID` y
-  `--reddit-client-secret` / `REDDIT_CLIENT_SECRET`. Cuando Reddit
-  rechaza un pedido anónimo con 401/403 y no hay credenciales OAuth
-  configuradas, la respuesta devuelve `strategy: "reddit_unconfigured"`
-  con un warning accionable que menciona cada variable. Si OAuth sí está
-  configurado y Reddit igual rechaza, la respuesta se clasifica como
-  degradación del upstream (`partial: true`), no como configuración.
-  Se conservan los manejos seguros de 429 y transporte.
+- **Reddit anonymous-only**: el conector ya no usa un `User-Agent`
+  hard-coded; admite `--reddit-user-agent` / `REDDIT_USER_AGENT`. Esta
+  entrega es **anonymous-only**: no hay OAuth, ni client_id, ni
+  client_secret, ni bearer-token. Cuando Reddit rechaza un pedido
+  anónimo con 401/403, la respuesta devuelve
+  `strategy: "reddit_unconfigured"` con un warning accionable que
+  menciona `REDDIT_USER_AGENT`. Se conservan los manejos seguros de 429
+  y transporte. La métrica
+  `ia_buscar_search_degraded_total{source="reddit",kind="anonymous_blocked"}`
+  tickea para dashboards.
 - **Tools especializados honestos**:
   - `search_doc_oficial` no pretende tener un proveedor curado de
     documentación. Cuando lo invocan, devuelve `strategy:
@@ -237,16 +310,18 @@ de la request actual.
   degradación desde cada conector.
 
 ### 1.2.0 — 2026-08-19
-- **Arquitectura stateless**: se eliminaron los tools `get_cached`,
-  `invalidate_cache` y `get_search_history`. La caché de proceso con TTL
-  sigue funcionando internamente como optimización, pero no es accesible ni
-  invalida-ble vía MCP.
-- Se eliminó toda integración con memoria externa (IA_Recuerdo / CT 110).
-  El servicio ya no envía, recibe ni persiste observaciones fuera de su
-  propio proceso.
-- Se eliminaron los flags `--memory-url` y `--memory-apikey` y sus
-  equivalentes en el template de systemd y en Kubernetes.
-- 25 tools MCP registradas (antes 28).
+- **SUPERSEDED by `restore-runtime-contract`**: la entrega original que
+  removía los tools `get_cached` / `invalidate_cache` /
+  `get_search_history` y la integración con IA_Recuerdo (CT 110) ha sido
+  revertida. La línea base stateless fue aprobada por `#4007` y
+  preservada por la fase 12 de `close-fetch-resilience-and-release-gates`,
+  pero el contrato original (28 tools + memoria externa opcional) era el
+  requerido por `local-docker-qa` y la decisión `#4280` autorizó la
+  restauración con `size:exception`. El binario actualmente expone las
+  28 tools y los flags `-memory-url` / `-memory-apikey` están
+  re-introducidos en systemd y Kubernetes.
+- 28 tools MCP registradas (16 search + 3 fetch + 2 validate + 3
+  synthesis + 3 cache/history + 1 date).
 
 ### 1.1.0 — 2026-05-02
 - **SearxNG Migration**: Images, News, YouTube, Academic ahora usan SearxNG en LXC 201 (10.0.0.201:8080).
@@ -257,17 +332,39 @@ de la request actual.
 
 ### 1.0.0 — 2026-04-30
 - Servicio MCP de búsqueda inicial con 13 conectores.
-- 25 tools MCP registradas.
+- 25 tools MCP registradas (la entrega inicial pre-stateless contaba con
+  menos tools; el contrato creció a 28 con la restauración del runtime
+  contract — ver `restore-runtime-contract`).
 - conectores: search_web, search_github, search_github_pr, search_github_issue, search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_reddit, search_youtube, search_images.
 - Tools adicionales: fetch_url, fetch_and_extract, extract_structured, validate_url, check_link_status, summarize_results, deep_research, compare_sources, get_current_date.
 - Protección SSRF en operaciones de fetch.
 
 ---
 
+## Configuración por variables de entorno
+
+Variables de entorno que el binario honra en tiempo de ejecución. El
+deploy canónico (k8s en `deploy/kubernetes/deployment.yaml` y systemd
+en `deploy/systemd/ia-buscar.service`) las setea por valores seguros
+por defecto.
+
+| Variable | Default | Notas |
+|----------|---------|-------|
+| `FETCH_USER_AGENT` | `ia-buscar/1.2 (anonymous-only)` | UA del fetch engine. Necesario para SearxNG y Reddit. |
+| `FETCH_TIMEOUT_MS` | `30000` | Timeout del ciclo completo. El flag `--fetch-timeout-ms` gana cuando está presente. |
+| `FETCH_MAX_REDIRECTS` | `5` | Cap de hops del redirect loop manual. |
+| `FETCH_MAX_ATTEMPTS` | `3` | Intentos totales (incluye reintentos). |
+| `REDDIT_USER_AGENT` | `ia-buscar/1.2 (anonymous-only)` | UA dedicado a Reddit; requerido por su contrato anonymous. |
+| `REDDIT_BASE_URL` | `https://www.reddit.com` | Endpoint JSON público. |
+| `AUTH_KEY` | (vacío) | Si no se setea, el middleware rechaza toda request (no bypass). |
+
+---
+
 ## Seguridad
 
-- Protección SSRF en fetch/extract de URLs.
+- Protección SSRF en fetch/extract de URLs (validación DNS A/AAAA + dial pinneado al IP aprobado).
 - Validación de URLs antes de realizar solicitudes.
+- Middleware de autenticación con SHA256. Sin clave configurada, el servicio rechaza toda request con 401.
 - Sin telemetría ni envío de datos a terceros fuera de las APIs especificadas.
 - Sin persistencia local ni sincronización con servicios de memoria externa.
 
@@ -334,11 +431,11 @@ respuesta sin volver a inspeccionar el HTTP crudo:
   `search_web` por su cuenta sin pedirlo**; este tool no se conecta al
   web connector.
 - Si `strategy == "reddit_unconfigured"`: `search_reddit` fue llamado
-  pero la política de Reddit bloqueó el pedido anónimo con 401/403 y
-  no hay OAuth configurado. El warning nombra
-  `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT`
-  como remediación. El agente debe presentar la respuesta como "Reddit
-  no disponible por configuración" y NO como un resultado vacío real.
+  pero la política de Reddit bloqueó el pedido anónimo con 401/403.
+  Esta entrega es anonymous-only, así que el warning solo nombra
+  `REDDIT_USER_AGENT` como remediación (no hay OAuth que configurar).
+  El agente debe presentar la respuesta como "Reddit no disponible"
+  y NO como un resultado vacío real.
 - Si `strategy == "reddit"` con `partial == true`: Reddit se intentó
   pero rechazó (429, 5xx, decode error). Es degradación del upstream,
   no un problema de configuración.
@@ -368,7 +465,7 @@ solo para que operadores detecten cuándo el upstream está mal.
 
 ## Recursos MCP para discoverability
 
-Además de las 25 tools, el server anuncia un recurso MCP estático pensado
+Además de las 28 tools, el server anuncia un recurso MCP estático pensado
 para que agentes IA descubran el contrato por sí mismos sin tener que
 memorizarlo ni hacer scraping del README.
 
@@ -398,3 +495,73 @@ changelog explícito.
 ## Licencia
 
 MIT © ThisCloud Services
+
+---
+
+## Local QA environment
+
+Isolated Docker Compose stack for proving boot, MCP wiring, and SearxNG plumbing without ever reaching the production endpoints (`10.0.0.201:8080` SearxNG, `127.0.0.1:7438` IA_Recuerdo). Additive — no production deploy artefact touched.
+
+### Prerequisites
+
+Docker Engine + Compose v2; outbound only for the initial `searxng/searxng:latest` pull.
+
+### Lifecycle
+
+```bash
+make qa-build    # build the ia-buscar image
+make qa-up       # boot, wait healthy (≤60s), scoped cleanup on failure
+make qa-smoke    # probe /healthz, /mcp tools/list, search_web, canary
+make qa-down     # stop containers, keep volumes
+make qa-clean    # drop volumes and the qa-net bridge
+```
+
+### What the smoke verifies
+
+- `GET /healthz` returns `200 {"status":"ok"}` in <1s.
+- `POST /mcp` `tools/list` returns the full registry (28 tools), every
+  entry non-empty name + description.
+- `POST /mcp` `search_web` returns `200`, `results: []`, `cached: false`
+  — in-stack SearxNG has empty engines, no egress.
+- Every `/mcp` carries `Authorization: Bearer $QA_AUTH_KEY` matching
+  `-auth-key`. Wrong/missing header → validator 401 → smoke fails.
+- Zero packets leave `qa-net` to `10.0.0.201:8080` or
+  `127.0.0.1:7438` (`internal: true`; only `127.0.0.1:8080` published).
+
+### Layout
+
+```
+deploy/qa/docker-compose.yml       # project ia-buscar-qa, qa-net internal
+deploy/qa/searxng/settings.yml     # JSON output, empty engine list
+deploy/qa/searxng/limiter.toml     # rate limiter off
+scripts/qa-up.sh                   # boot + scoped cleanup
+scripts/qa-down.sh                 # stop, preserve volumes
+scripts/qa-smoke.sh                # behavior probes (28 tools, auth, canary)
+tests/qa/qa_scripts_test.sh        # red→green contract tests
+.dockerignore                      # exclude .git, bin, *.db, coverage.*, …
+```
+
+### Local auth (`.env.qa`, dev-only)
+
+QA stack enables the live `auth.Validator` (same middleware production
+uses) via `-auth-key`. `.env.qa` at the repo root is **DEV-ONLY** —
+gitignored, MUST NEVER carry a production credential:
+
+```
+QA_AUTH_KEY=<any-non-empty-dev-string>
+```
+
+Precedence: `$AUTH_KEY` → `.env.qa` → `""` (fail-closed). `qa-up.sh`
+exports the key into compose env; `qa-smoke.sh` sends
+`Authorization: Bearer $QA_AUTH_KEY` on every `/mcp` POST.
+
+### Rollback
+
+The whole scope is additive. To remove it:
+
+```bash
+git rm -r deploy/qa scripts/qa-*.sh tests/qa
+git checkout -- Makefile README.md .dockerignore
+```
+
+No production deploy artefact, binary, or flag references the QA scope.

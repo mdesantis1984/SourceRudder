@@ -77,6 +77,23 @@ func (s *Service) Delete(ctx context.Context, cacheKey string) error {
 	return nil
 }
 
+// DeleteIfPresent atomically removes cacheKey and reports whether an
+// entry was actually present. It is the check-and-delete primitive
+// the invalidate_cache MCP tool needs so the wire response can
+// distinguish "I removed your entry" from "there was nothing to
+// remove" without a follow-up Get. The whole operation holds the
+// write lock so concurrent DeleteIfPresent calls on the same key are
+// race-safe: exactly one observer sees true.
+func (s *Service) DeleteIfPresent(ctx context.Context, cacheKey string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.entries[cacheKey]; !ok {
+		return false
+	}
+	delete(s.entries, cacheKey)
+	return true
+}
+
 func (s *Service) Clear(ctx context.Context) error {
 	s.mu.Lock()
 	s.entries = make(map[string]*entry)
@@ -94,11 +111,13 @@ func (s *Service) Keys(ctx context.Context) ([]string, error) {
 	return keys, nil
 }
 
-func GenerateCacheKey(query string, sources []string) string {
+func GenerateCacheKey(query string, sources []string, timeRange string) string {
 	h := sha256.New()
 	h.Write([]byte(query))
 	for _, s := range sources {
 		h.Write([]byte(s))
 	}
-	return hex.EncodeToString(h.Sum(nil))[:16]
+	h.Write([]byte("|tr="))
+	h.Write([]byte(timeRange))
+	return "cache:" + hex.EncodeToString(h.Sum(nil))[:16]
 }

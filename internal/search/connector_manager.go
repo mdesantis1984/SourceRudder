@@ -95,3 +95,13 @@ func (m *ConnectorManager) GetConnector(name string) (types.SearchConnector, boo
 	conn, ok := m.connectors[name]
 	return conn, ok
 }
+
+// Cache returns the in-process cache the ConnectorManager shares
+// with the rest of the server. It exists so stateful handlers (e.g.
+// the MCP get_cached / invalidate_cache tools restored by the
+// restore-runtime-contract change) can reach the same cache instance
+// the connectors use without going through the public connector
+// surface. The returned pointer is non-nil by construction.
+func (m *ConnectorManager) Cache() *cache.Service {
+	return m.cache
+}

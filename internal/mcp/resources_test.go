@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thiscloud/ia-buscar/internal/auth"
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
@@ -20,12 +22,14 @@ import (
 
 // buildResourcesTestServer stands up a Server with the minimum wiring
 // required to exercise resources/list and resources/read end-to-end.
+// A non-nil auth validator is wired so the HTTP-boundary test can
+// reach /mcp with the matching X-Api-Key header.
 func buildResourcesTestServer(t *testing.T) *Server {
 	t.Helper()
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector("http://localhost:9999", cacheSvc))
-	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:9999", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New())
+	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:9999", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), auth.NewValidator("test-key-resources"), observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 }
 
 // TestResourcesListAdvertisesAgentGuide locks the discoverability
@@ -244,7 +248,7 @@ func TestResourcesListAndReadThroughHTTPBoundary(t *testing.T) {
 		"id":      1,
 		"method":  "resources/list",
 	})
-	resp, err := http.Post(srv.URL+"/mcp", "application/json", bytes.NewReader(listPayload))
+	resp, err := postWithKey(srv.URL+"/mcp", "application/json", listPayload, "test-key-resources")
 	if err != nil {
 		t.Fatalf("POST resources/list: %v", err)
 	}
@@ -277,7 +281,7 @@ func TestResourcesListAndReadThroughHTTPBoundary(t *testing.T) {
 		"method":  "resources/read",
 		"params":  map[string]interface{}{"uri": AgentGuideURI},
 	})
-	resp2, err := http.Post(srv.URL+"/mcp", "application/json", bytes.NewReader(readPayload))
+	resp2, err := postWithKey(srv.URL+"/mcp", "application/json", readPayload, "test-key-resources")
 	if err != nil {
 		t.Fatalf("POST resources/read: %v", err)
 	}
@@ -315,7 +319,7 @@ func TestResourcesListAndReadThroughHTTPBoundary(t *testing.T) {
 		"method":  "resources/read",
 		"params":  map[string]interface{}{"uri": "agent-guide://ia-buscar/does-not-exist"},
 	})
-	resp3, err := http.Post(srv.URL+"/mcp", "application/json", bytes.NewReader(badPayload))
+	resp3, err := postWithKey(srv.URL+"/mcp", "application/json", badPayload, "test-key-resources")
 	if err != nil {
 		t.Fatalf("POST resources/read unknown: %v", err)
 	}
@@ -339,4 +343,18 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// postWithKey wraps http.Post so the auth X-Api-Key header is carried
+// on every JSON-RPC boundary call. /mcp is wrapped by the auth
+// middleware after the Phase 12 hardening, so any test that drives
+// the wire directly MUST use this helper instead of http.Post.
+func postWithKey(url, contentType string, body []byte, key string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-Api-Key", key)
+	return http.DefaultClient.Do(req)
 }

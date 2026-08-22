@@ -1,0 +1,35 @@
+name: release-gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Capture PR metadata
+        run: |
+          {
+            echo "PR_BRANCH=${{ github.head_ref }}"
+            echo "BASE_REF=$BASE_REF"
+            echo "BASE_SHA=$BASE_SHA"
+            echo "MERGE_BASE=$(git merge-base $BASE_SHA HEAD)"
+          } >> "$GITHUB_ENV"
+      - name: Run release gate
+        env:
+          RELEASE_GATE_BRANCH: ${{ github.head_ref }}
+          # Carve-out only matches this exact branch name; empty by default.
+          RELEASE_GATE_SIZE_EXCEPTION: ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }}
+        run: bash scripts/release-gate.sh

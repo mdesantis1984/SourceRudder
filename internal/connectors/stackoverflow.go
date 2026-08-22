@@ -43,7 +43,7 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 
 	var err error
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"stackoverflow"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"stackoverflow"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[stackoverflow] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -73,7 +73,7 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("stackoverflow", "transport", resp, err)
 	}
 
 	c.cacheResults(ctx, cacheKey, resp)
@@ -83,8 +83,6 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 }
 
 func (c *StackOverflowConnector) doStackOverflowRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err

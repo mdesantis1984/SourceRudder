@@ -41,7 +41,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"youtube", "searxng"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"youtube", "searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[youtube] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -51,7 +51,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		}
 	}
 
-	results, err := c.searchSearxng(ctx, query, maxResults)
+	results, err := c.searchSearxng(ctx, query, maxResults, req)
 	if err != nil {
 		log.Printf("[youtube] search error: %v", err)
 	}
@@ -73,13 +73,14 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 	return resp, nil
 }
 
-func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxResults int) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
+func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
 	params.Set("engines", "youtube,brave")
+	if req.TimeRange != "" {
+		params.Set("time_range", req.TimeRange)
+	}
 
 	apiURL := c.searxngURL + "/search?" + params.Encode()
 

@@ -5,11 +5,28 @@ After=network.target
 [Service]
 Type=simple
 User=ia-buscar
+# Identity check: refuse to start if the on-disk VERSION/IMAGE do
+# not contain the exact values the operator committed in source.
+# `grep -qxF 'expected' /opt/ia-buscar/VERSION` compares the FILE
+# CONTENTS against the literal expected token — NOT a second file
+# path. The previous `cmp -s FILE @VERSION@` shape compared two
+# FILE PATHS, so after substitution the expected token became a
+# path operand and the check was meaningless. Mismatches abort the
+# start so a half-rolled host cannot pass `systemctl is-active`
+# while serving a stale binary.
+ExecStartPre=/bin/sh -c '/usr/bin/test -f /opt/ia-buscar/VERSION && /usr/bin/test -f /opt/ia-buscar/IMAGE && /usr/bin/grep -qxF @VERSION@ /opt/ia-buscar/VERSION || (echo "VERSION mismatch: /opt/ia-buscar/VERSION does not contain expected token"; exit 1)'
+ExecStartPre=/bin/sh -c '/usr/bin/grep -qxF @IMAGE@ /opt/ia-buscar/IMAGE || (echo "IMAGE mismatch: /opt/ia-buscar/IMAGE does not contain expected token"; exit 1)'
 ExecStart=/opt/ia-buscar/bin/ia-buscar -transport http -http-addr :8080 -searxng-url http://localhost:8888
 Restart=always
 RestartSec=5
 
 Environment=SEARXNG_URL=http://localhost:8888
+Environment=FETCH_TIMEOUT_MS=30000
+Environment=FETCH_USER_AGENT=ia-buscar/1.2.0 (compatible; +https://thiscloud.es)
+Environment=FETCH_MAX_REDIRECTS=5
+Environment=FETCH_MAX_ATTEMPTS=3
+Environment=MEMORY_URL=http://127.0.0.1:7438
+Environment=MEMORY_APIKEY=
 
 [Install]
 WantedBy=multi-user.target

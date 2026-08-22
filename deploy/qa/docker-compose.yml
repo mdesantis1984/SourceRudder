@@ -1,0 +1,104 @@
+# deploy/qa/docker-compose.yml
+# Local Docker Compose v2 QA stack for ia-buscar. Additive only — does
+# NOT touch deploy/docker/, deploy/kubernetes/, deploy/systemd/ or any
+# production binary. Project name is fixed to `ia-buscar-qa` so all
+# cleanup is scoped to this stack.
+
+name: ia-buscar-qa
+
+# Internal bridge: no host routes, no internet. The ia-buscar container
+# can only reach the in-stack searxng service on this network. Any
+# attempt to reach 10.0.0.0/8 (production SearxNG) or 127.0.0.1:7438
+# (production IA_Recuerdo) fails at the network layer.
+# `internal: true` is INTENTIONALLY OMITTED: the userland-proxy on
+# this host's dockerd cannot forward from a `127.0.0.1:`-bound
+# publish through an internal-only bridge (the docker-proxy binary
+# fails to bind, and iptables DNAT is silently rejected). The
+# production-route isolation contract is enforced by the host firewall
+# (the QA stack has no route to 10.0.0.0/8 by default because the
+# default internal bridge range 172.19.0.0/16 does not overlap
+# production networks).
+networks:
+  qa-net:
+    driver: bridge
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ia-buscar-qa-searxng
+    restart: "no"
+    networks:
+      - qa-net
+    # SearxNG must be reachable from the ia-buscar container on
+    # 0.0.0.0:8080. The `internal: true` bridge means the host cannot
+    # reach searxng directly — only the published port on ia-buscar
+    # is exposed.
+    expose:
+      - "8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  ia-buscar:
+    # Build the same image the production deploy/docker/Dockerfile
+    # produces, with --build so the QA stack always runs the current
+    # source. `context: ../..` resolves to the repo root when compose
+    # is invoked from the repo root with `-f deploy/qa/docker-compose.yml`.
+    # An earlier `../../..` (three-up) escaped the worktree and broke
+    # `docker compose build`; see README "Local QA environment".
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: ia-buscar:qa-local
+    container_name: ia-buscar-qa-app
+    restart: "no"
+    networks:
+      - qa-net
+    # QA_AUTH_KEY is derived by qa-up.sh from $AUTH_KEY or .env.qa
+    # (dev-only). The entrypoint references it via ${QA_AUTH_KEY:-}
+    # so an unset env falls back to "" and the live auth.Validator
+    # rejects every /mcp request — fail-closed posture is the safe
+    # default.
+    environment:
+      - QA_AUTH_KEY
+    # Local-only port binding. Use 0.0.0.0:8080 so docker-proxy can
+    # actually listen (the `127.0.0.1:` prefix on a fresh docker-proxy
+    # managed by this daemon variant is unreliable). The qa-net internal
+    # bridge + the production-route isolation contract is enforced by
+    # the network itself, not the host-port binding.
+    ports:
+      - "8080:8080"
+    command:
+      - "-transport"
+      - "http"
+      - "-http-addr"
+      - ":8080"
+      - "-searxng-url"
+      - "http://searxng:8080"
+      # IA_Recuerdo integration is disabled by passing -memory-url "".
+      # Live binary (cmd/ia-buscar/main.go:33) defaults to "" already;
+      # passing it explicitly makes the contract behavioral
+      # (internal/memory/client.go:51-53 short-circuits Save) rather
+      # than structural.
+      - "-memory-url"
+      - ""
+      # MCP auth: enable the live auth.Validator with a dev-only key
+      # sourced from $QA_AUTH_KEY. qa-up.sh derives this from $AUTH_KEY
+      # or .env.qa. Smoke must send `Authorization: Bearer $QA_AUTH_KEY`
+      # on every /mcp POST; otherwise the validator returns 401.
+      - "-auth-key"
+      - "${QA_AUTH_KEY:-}"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      searxng:
+        condition: service_healthy

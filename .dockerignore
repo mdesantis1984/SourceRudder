@@ -1,0 +1,27 @@
+# .dockerignore
+# Excludes local-only state and stale build artifacts from the ia-buscar
+# image build context. Keeps the QA image small and prevents accidental
+# copy-in of host services config.
+
+# VCS / tooling metadata
+.git
+.gitignore
+.gitattributes
+.atl
+.codegraph
+.codebase-memory
+
+# Local build outputs
+bin
+tmp
+
+# Runtime state
+*.db
+*.db-journal
+coverage.*
+*.log
+
+# Editors / OS
+.idea
+.vscode
+.DS_Store

@@ -74,11 +74,11 @@ func TestSearxNGConnectorsEmitDegradationMetric(t *testing.T) {
 	}
 }
 
-// TestRedditEmitDegradationMetric_OAuthMissing covers the
-// reddit_unconfigured metric path: when Reddit returns 403 and the
-// connector is not OAuth-configured, the metric must tick with
-// source="reddit" and kind="unconfigured".
-func TestRedditEmitDegradationMetric_OAuthMissing(t *testing.T) {
+// TestRedditEmitDegradationMetric_AnonymousBlocked covers the
+// anonymous-blocked metric path: when Reddit returns 403 to an
+// anonymous request, the metric must tick with source="reddit" and
+// kind="anonymous_blocked" (not the old "unconfigured" label).
+func TestRedditEmitDegradationMetric_AnonymousBlocked(t *testing.T) {
 	met := observability.New()
 	observability.SetDefault(met)
 
@@ -88,12 +88,12 @@ func TestRedditEmitDegradationMetric_OAuthMissing(t *testing.T) {
 	defer srv.Close()
 
 	c := NewRedditConnector(RedditConfig{BaseURL: srv.URL, UserAgent: "ia-buscar/test"}, cache.NewService(60))
-	_, err := c.Search(context.Background(), &types.SearchRequest{Query: "metric-reddit-unconfigured"})
+	_, err := c.Search(context.Background(), &types.SearchRequest{Query: "metric-reddit-anonymous-blocked"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := metricValue(t, met.Handler(), "reddit", "unconfigured"); got != 1 {
-		t.Errorf("expected reddit/unconfigured counter = 1, got %d", got)
+	if got := metricValue(t, met.Handler(), "reddit", "anonymous_blocked"); got != 1 {
+		t.Errorf("expected reddit/anonymous_blocked counter = 1, got %d", got)
 	}
 }
 
@@ -123,32 +123,22 @@ func TestRedditEmitDegradationMetric_RateLimited(t *testing.T) {
 }
 
 // TestRedditUserAgentConfigSeamIsExposed locks in the configuration
-// seam item 2: the Reddit connector exposes User-Agent, ClientID and
-// ClientSecret as part of its constructor seam rather than as hard-
-// coded literals. NewRedditConnector(cfg, cache) is the canonical
-// signature; a future regression that re-introduces hard-coded
-// credentials will fail this test.
+// seam: the anonymous-only Reddit connector exposes User-Agent via
+// its constructor rather than as a hard-coded literal.
+// NewRedditConnector(cfg, cache) is the canonical signature; a future
+// regression that hard-codes the User-Agent OR re-introduces OAuth
+// fields will fail this test.
 func TestRedditUserAgentConfigSeamIsExposed(t *testing.T) {
 	cfg := RedditConfig{
-		BaseURL:      "https://example.test",
-		UserAgent:    "ia-buscar/test-config-seam",
-		ClientID:     "id",
-		ClientSecret: "secret",
+		BaseURL:   "https://example.test",
+		UserAgent: "ia-buscar/test-config-seam",
 	}
 	c := NewRedditConnector(cfg, cache.NewService(60))
-	if !c.HasOAuthCredentials() {
-		t.Errorf("expected HasOAuthCredentials()=true when ClientID and ClientSecret are set")
-	}
 	if c.cfg.UserAgent != cfg.UserAgent {
 		t.Errorf("User-Agent was not retained on the connector: want %q got %q", cfg.UserAgent, c.cfg.UserAgent)
 	}
-	if c.cfg.ClientID != cfg.ClientID || c.cfg.ClientSecret != cfg.ClientSecret {
-		t.Errorf("OAuth credentials were not retained on the connector")
-	}
-
-	c2 := NewRedditConnector(RedditConfig{BaseURL: "https://example.test", UserAgent: "x"}, cache.NewService(60))
-	if c2.HasOAuthCredentials() {
-		t.Errorf("expected HasOAuthCredentials()=false when only ClientID is set")
+	if c.cfg.BaseURL != cfg.BaseURL {
+		t.Errorf("BaseURL was not retained on the connector: want %q got %q", cfg.BaseURL, c.cfg.BaseURL)
 	}
 }
 
