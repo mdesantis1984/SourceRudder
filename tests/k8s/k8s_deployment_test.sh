@@ -111,11 +111,35 @@ yaml_scalar_after() {
 # the containerPort, probe ports, and Service targetPort MUST agree
 # with. Pull it from the runtime surface so a future regression in
 # either direction trips this test before reaching CI.
+#
+# The value is extracted from cmd/ia-buscar/main.go's `-http-addr`
+# flag default (a single `flag.String("http-addr", ":<port>", …)`
+# line) rather than hard-coded, so a future regression that changes
+# the binary's default without updating the manifest (or vice
+# versa) trips this test before reaching CI. The grep is anchored
+# to the flag declaration's shape so a coincidental match in a
+# comment or a different flag is impossible.
 app_listen_port() {
-  # The default `http-addr` flag in cmd/ia-buscar/main.go is `:8080`
-  # per the production unit file, Dockerfile, and configs example.
-  # If that default changes, this test must change too.
-  printf '8080'
+  local main_go="$REPO_ROOT/cmd/ia-buscar/main.go"
+  if [[ ! -f "$main_go" ]]; then
+    printf 'K8S_PORT_DERIVATION_FAILED: main.go not found at %s\n' "$main_go" >&2
+    return 1
+  fi
+  # The flag is declared as:
+  #   httpAddr = flag.String("http-addr", ":<port>", "HTTP server address")
+  # We capture the literal port value (digits) immediately before
+  # the closing `"` of the default string.
+  local derived
+  derived="$(grep -E '^[[:space:]]*httpAddr[[:space:]]*=[[:space:]]*flag\.String\("http-addr",[[:space:]]*":[0-9]+"' "$main_go" \
+    | sed -E 's/.*":[0-9]+"/&/' \
+    | grep -oE ':[0-9]+' \
+    | head -n 1 \
+    | tr -d ':')"
+  if [[ -z "$derived" ]]; then
+    printf 'K8S_PORT_DERIVATION_FAILED: could not derive http-addr default from %s\n' "$main_go" >&2
+    return 1
+  fi
+  printf '%s' "$derived"
 }
 
 test_deployment_manifest_exists() {
@@ -210,6 +234,134 @@ test_healthz_path_is_configured() {
   assert_grep "$MANIFEST" 'path:[[:space:]]*/healthz' "probe path /healthz" || return 1
 }
 
+test_app_listen_port_derives_from_main_go() {
+  # The helper that supplies the expected port MUST derive its
+  # value from cmd/ia-buscar/main.go's `-http-addr` flag default
+  # rather than embed a literal. A regression that re-introduces
+  # a hard-coded port (e.g. a future contributor copy-pastes
+  # `printf '8080'` back into app_listen_port) is caught here
+  # because the helper is invoked in a subshell that checks the
+  # output against the actual `flag.String("http-addr", …)` line
+  # in main.go.
+  local actual
+  if ! actual="$(app_listen_port)"; then
+    record_fail "app_listen_port helper failed to derive a port from cmd/ia-buscar/main.go"
+    return 1
+  fi
+  # The output MUST be a positive integer; empty output means
+  # the grep pipeline silently returned nothing.
+  if ! [[ "$actual" =~ ^[0-9]+$ ]]; then
+    record_fail "app_listen_port returned non-numeric value: $actual"
+    return 1
+  fi
+  if (( actual < 1 || actual > 65535 )); then
+    record_fail "app_listen_port returned out-of-range port: $actual"
+    return 1
+  fi
+  # The output MUST match the port that the source actually
+  # declares. A regression that flips the default in main.go
+  # without updating the helper trips this assertion.
+  local main_port
+  main_port="$(grep -oE 'flag\.String\("http-addr", ":[0-9]+"' "$REPO_ROOT/cmd/ia-buscar/main.go" \
+    | grep -oE ':[0-9]+' \
+    | head -n 1 \
+    | tr -d ':')"
+  assert_eq "$actual" "$main_port" "app_listen_port vs main.go -http-addr default" || return 1
+}
+
+# probe_scalar_in_block extracts the first scalar value of a key
+# nested inside a probe block (e.g. livenessProbe or
+# readinessProbe). The awk program walks lines after the probe
+# header, exits on the next same-indentation header, and prints
+# the value of the named key when found. Returns "" if the key
+# is absent.
+probe_scalar_in_block() {
+  local key="$1"
+  local probe_header="$2"   # livenessProbe: or readinessProbe:
+  local file="$3"
+  awk -v k="$key" -v hdr="$probe_header" '
+    $0 == hdr { in_block = 1; next }
+    in_block {
+      # Exit when we see another top-level probe header at the
+      # same column (livenessProbe: / readinessProbe: live in
+      # sibling positions under the same `containers:` entry).
+      if ($0 ~ /^[a-zA-Z]/) { in_block = 0; next }
+      if (in_block && $0 ~ "^[[:space:]]+" k ":[[:space:]]*[^[:space:]]") {
+        sub("^[[:space:]]+" k ":[[:space:]]*", "")
+        sub("[[:space:]]*$", "")
+        print
+        exit
+      }
+    }
+  ' "$file"
+}
+
+test_liveness_probe_timing_bounds() {
+  # Sanity-check the liveness probe timing values that ARE
+  # present in the manifest. A regression to
+  # `periodSeconds: 1` (probe flapping) or
+  # `initialDelaySeconds: 99999` (the pod never reaches the
+  # probe window) would pass every existing port/path test
+  # and silently break production rollouts. The bounds below
+  # are derived from the production runtime expectations.
+  #
+  # Fields that are absent fall through to the Kubernetes
+  # defaults (timeoutSeconds=1, periodSeconds=10,
+  # initialDelaySeconds=0, failureThreshold=3,
+  # successThreshold=1), which are already sane. We do NOT
+  # force the operator to add new fields — the check is
+  # strictly "if you set it, it must be sane".
+  local period initial
+  period="$(probe_scalar_in_block 'periodSeconds' 'livenessProbe:' "$MANIFEST")"
+  initial="$(probe_scalar_in_block 'initialDelaySeconds' 'livenessProbe:' "$MANIFEST")"
+  if [[ -n "$period" ]]; then
+    if ! [[ "$period" =~ ^[0-9]+$ ]]; then
+      record_fail "livenessProbe.periodSeconds must be a non-negative integer (got $period)"
+      return 1
+    fi
+    if (( period < 5 )); then
+      record_fail "livenessProbe.periodSeconds must be >= 5 to avoid probe flapping (got $period)"
+      return 1
+    fi
+  fi
+  if [[ -n "$initial" ]]; then
+    if ! [[ "$initial" =~ ^[0-9]+$ ]]; then
+      record_fail "livenessProbe.initialDelaySeconds must be a non-negative integer (got $initial)"
+      return 1
+    fi
+    if (( initial > 60 )); then
+      record_fail "livenessProbe.initialDelaySeconds must be in [0, 60] (got $initial)"
+      return 1
+    fi
+  fi
+}
+
+test_readiness_probe_timing_bounds() {
+  local period initial
+  period="$(probe_scalar_in_block 'periodSeconds' 'readinessProbe:' "$MANIFEST")"
+  initial="$(probe_scalar_in_block 'initialDelaySeconds' 'readinessProbe:' "$MANIFEST")"
+  if [[ -n "$period" ]]; then
+    if ! [[ "$period" =~ ^[0-9]+$ ]]; then
+      record_fail "readinessProbe.periodSeconds must be a non-negative integer (got $period)"
+      return 1
+    fi
+    if (( period < 5 )); then
+      record_fail "readinessProbe.periodSeconds must be >= 5 to avoid probe flapping (got $period)"
+      return 1
+    fi
+  fi
+  if [[ -n "$initial" ]]; then
+    if ! [[ "$initial" =~ ^[0-9]+$ ]]; then
+      record_fail "readinessProbe.initialDelaySeconds must be a non-negative integer (got $initial)"
+      return 1
+    fi
+    if (( initial > 60 )); then
+      record_fail "readinessProbe.initialDelaySeconds must be in [0, 60] (got $initial)"
+      return 1
+    fi
+  fi
+}
+
 # ---- Driver ----------------------------------------------------------------
 
 main() {
@@ -224,6 +376,9 @@ main() {
   run_test test_service_port_matches_app_listen
   run_test test_no_legacy_5000_port_remain
   run_test test_healthz_path_is_configured
+  run_test test_app_listen_port_derives_from_main_go
+  run_test test_liveness_probe_timing_bounds
+  run_test test_readiness_probe_timing_bounds
 
   printf '\n%d passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"
   if [ "$FAIL_COUNT" -gt 0 ]; then

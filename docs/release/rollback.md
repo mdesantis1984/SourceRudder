@@ -26,11 +26,39 @@ Before any rollback, confirm:
    promoting is a mandatory sanity check. The gate's step 2 is
    satisfied by the local RDD receipt at
    `docs/release/reviews/review-be4525bc4797e972.md` (Status:
-   pass + reachable Candidate Commit + branch-mentioning Scope +
-   Verified Commands section with PASS entries + Unresolved
-   Blocker Policy declaration). The previous `Authority: official`
-   header has been removed — there is no external review provider
-   binding.
+   pass + Candidate Commit equal to HEAD or HEAD~1 + exact
+   Branch: field + free-form Scope + Verified Commands section
+   with PASS entries + Unresolved Blocker Policy declaration).
+   The previous `Authority: official` header has been removed —
+   there is no external review provider binding.
+
+4. A **rollback forces a fresh RDD receipt**. The receipt's
+   `Candidate Commit` field MUST equal HEAD or HEAD~1 of the
+   new HEAD. After `git revert <buggy-sha>`, the buggy SHA is
+   HEAD~2 or deeper of the rollback commit, so the existing
+   receipt's `Candidate Commit` no longer satisfies the
+   precise contract and the gate will fail. The operator MUST
+   re-author the receipt as a separate commit (a "recovery
+   receipt") with:
+   - `Status: pass` (kept; the receipt is the local
+     attestation)
+   - `Candidate Commit: <rollback-sha>` (the SHA of the
+     rollback commit, which becomes HEAD~1 after the
+     receipt is committed)
+   - `Branch: <branch>` (unchanged)
+   - `Verified Commands:` re-run against the rolled-back
+     code (the operator re-executes the `go build / vet /
+     test / -race` quartet)
+   - `Unresolved Blocker Policy: <status>` (updated to
+     describe the rollback)
+
+   The re-authoring commit is the new HEAD and the rollback
+   commit is HEAD~1, satisfying the precise contract. A
+   `Status: fail` flip is NOT the right answer — the gate
+   would still fail because the receipt would lack
+   `Verified Commands:` entries, and the contract would
+   remain ambiguous about whether the receipt attests the
+   rollback or the original buggy SHA.
 
 ## Atomic Git Revert (canonical path)
 
@@ -49,19 +77,44 @@ git checkout main
 git pull --ff-only
 git revert --no-edit -m 1 <merge-sha>
 
-# 4. Localise the rollback commit to a SHA-pinned release-image.
+# 4. Re-author the RDD receipt as a SEPARATE commit on top of
+#    the revert. The precise Candidate Commit contract
+#    (HEAD or HEAD~1) requires a fresh receipt — the
+#    original receipt's Candidate Commit is now HEAD~2
+#    of the new HEAD and the gate will fail until the
+#    receipt is re-anchored.
+#
+#    Author the receipt via the two-commit flow (placeholder
+#    + finalize) so the placeholder SHA stays reachable
+#    from HEAD; the final receipt's Candidate Commit MUST
+#    be the SHA of the revert commit you just made.
+ROLLBACK_SHA="$(git rev-parse HEAD)"
+# (edit docs/release/reviews/review-be4525bc4797e972.md:
+#   Candidate Commit: $ROLLBACK_SHA
+#   Branch: <unchanged>
+#   Verified Commands: re-run go build/vet/test/-race
+#   Unresolved Blocker Policy: rollback for <original-sha>)
+git add docs/release/reviews/review-be4525bc4797e972.md
+git commit -m "chore: re-author RDD receipt for rollback $ROLLBACK_SHA"
+
+# 5. Localise the rollback commit to a SHA-pinned release-image.
 make release-image GHCR=ghcr.io/thiscloud REGISTRY=ia-buscar
 # Output: release-image: SHA=<new-sha> IMAGE=ghcr.io/thiscloud/ia-buscar:<new-sha>
 
-# 5. Run the release gate locally so the CI gate cannot disagree.
+# 6. Run the release gate locally so the CI gate cannot disagree.
 git diff
 bash scripts/release-gate.sh
 # Expected: release-gate: PASS
+#   (the receipt's Candidate Commit equals HEAD~1 of HEAD,
+#   the receipt's Branch field exactly matches the resolved
+#   branch, the Verified Commands section re-attests the
+#   rolled-back code, and step 4 re-runs Go against the
+#   rolled-back code)
 
-# 6. Push directly to main (the size-exception carve-out is tracked
+# 7. Push directly to main (the size-exception carve-out is tracked
 #    on the feature branch only; the rollback is on main, so the
 #    gate's strict 400-line budget applies and the revert must
-#    be a clean one-commit change).
+#    be a clean one-commit change plus the receipt commit).
 git push origin main
 ```
 
@@ -161,8 +214,15 @@ on a clean checkout of the rollback SHA:
   the gate continues to enforce its field contract on every merge.
   The previous `Authority: official` external-binding header has
   been removed entirely; rollback does not re-introduce it.
+  Rollback DOES require a fresh receipt (a separate commit with
+  `Candidate Commit: <rollback-sha>`); see precondition 4 above
+  and the canonical path step 4.
 - It does not modify the prior apply-progress in Engram. The
   previous progress records remain available for audit.
 - It does not silence the `release-gate: FAIL` block if the
   RDD receipt does not validate. The gate is the final safeguard;
-  the rollback must not bypass it.
+  the rollback must not bypass it. A rollback that ships without
+  a fresh receipt will fail the gate with "RDD receipt Candidate
+  Commit <old-sha> must equal HEAD or HEAD~1" — this is the
+  correct, fail-closed behaviour and the operator MUST author a
+  fresh receipt before the rollback can be promoted.

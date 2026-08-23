@@ -172,14 +172,36 @@ func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
 }
 
 // rddReceiptValidateStaged mirrors the gate's RDD validator for the
-// receipt as it is staged on disk. The substring `branch=…` in the
-// Scope line is how this worktree's receipt records the branch
-// without committing to a hardcoded branch name; the gate parser
-// instead requires the literal branch name (passed via
-// RELEASE_GATE_BRANCH at runtime), so the staged receipt here uses
-// a token the substring check accepts.
+// receipt as it is staged on disk. The receipt MUST carry a
+// dedicated `Branch:` line whose value exactly matches the
+// current worktree's branch name (queried via `git rev-parse
+// --abbrev-ref HEAD`); the previous substring-based Scope check
+// has been retired in favour of the precise exact-match contract.
+// `Scope:` remains a free-form operator-context field and is no
+// longer used for branch verification.
+//
+// The function is wired to the worktree's actual branch so the
+// Go process guard stays in sync with the bash gate's runtime
+// behaviour. The function also pins the new precise Candidate
+// Commit contract: the SHA must equal HEAD or HEAD~1. The
+// two-commit code-then-receipt workflow still satisfies this
+// because the receipt commit is HEAD and the code commit it
+// attests sits at HEAD~1.
 func rddReceiptValidateStaged(body string) []string {
 	var problems []string
+
+	// 0. Hard guard: reject any line beginning with the legacy
+	//    `Authority:` header. The bash gate enforces the same
+	//    rule; both validators must stay symmetric so a future
+	//    regression cannot smuggle the external-binding
+	//    header back through only one of them.
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Authority:") {
+			problems = append(problems, fmt.Sprintf("RDD receipt contains legacy 'Authority:' line (%q); the local RDD contract replaced the external-binding header and it MUST NOT return", trimmed))
+			break
+		}
+	}
 
 	// 1. Status: pass (exact line).
 	statusLine := ""
@@ -194,13 +216,35 @@ func rddReceiptValidateStaged(body string) []string {
 		problems = append(problems, fmt.Sprintf("Status line must be exactly 'Status: pass' (got %q)", statusLine))
 	}
 
-	// 2. Candidate Commit: <full 40-char SHA>.
+	// 2. Candidate Commit: <full 40-char SHA> with the precise
+	//    HEAD-or-HEAD~1 contract. We resolve HEAD and HEAD~1
+	//    from the actual worktree (the receipt's `Status: pass`
+	//    commits are always made against the worktree's current
+	//    branch) so the process guard is anchored to the
+	//    same git state the bash gate would see.
 	commitLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "Candidate Commit:") {
 			commitLine = trimmed
 			break
+		}
+	}
+	repoRoot := stagedReceiptRepoRoot()
+	headSHACmd := exec.Command("git", "rev-parse", "HEAD")
+	headSHACmd.Dir = repoRoot
+	headOut, headErr := headSHACmd.Output()
+	var headSHA string
+	if headErr == nil {
+		headSHA = strings.TrimSpace(string(headOut))
+	}
+	var headParentSHA string
+	if headSHA != "" {
+		parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
+		parentCmd.Dir = repoRoot
+		parentOut, parentErr := parentCmd.Output()
+		if parentErr == nil {
+			headParentSHA = strings.TrimSpace(string(parentOut))
 		}
 	}
 	if commitLine == "" {
@@ -211,17 +255,51 @@ func rddReceiptValidateStaged(body string) []string {
 			problems = append(problems, "Candidate Commit value missing")
 		} else if !looksLikeFullSHA40(fields[0]) {
 			problems = append(problems, fmt.Sprintf("Candidate Commit %q is not a full 40-char SHA", fields[0]))
+		} else if headSHA != "" && fields[0] != headSHA && fields[0] != headParentSHA {
+			problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal HEAD (%s) or HEAD~1 (%s); arbitrary ancestors are rejected so rollback or code changes require a new receipt", fields[0], headSHA, headParentSHA))
 		}
 	}
 
-	// 3. Scope: <text mentioning the current branch>. This worktree's
-	// receipt encodes the branch with the substring `feature/close-
-	// fetch-resilience-release-gates-exception`. The substring check
-	// below matches either that exact token or any literal `branch=…`
-	// token the operator may substitute; the gate's runtime check
-	// additionally verifies the substring equals the literal branch
-	// name passed via RELEASE_GATE_BRANCH.
-	const expectedBranchToken = "feature/close-fetch-resilience-release-gates-exception"
+	// 3. Branch: <exact branch name>. The receipt MUST carry a
+	//    dedicated Branch: line whose value exactly matches
+	//    the current worktree's branch (resolved via git). This
+	//    replaces the previous substring-based Scope check.
+	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchCmd.Dir = repoRoot
+	branchOut, branchErr := branchCmd.Output()
+	var currentBranch string
+	if branchErr == nil {
+		currentBranch = strings.TrimSpace(string(branchOut))
+	}
+	if currentBranch == "HEAD" || currentBranch == "" {
+		// Detached HEAD or unresolvable branch. The receipt
+		// still must declare a Branch: line for the guard
+		// to be meaningful; we surface the fact that the
+		// gate will (correctly) fail closed in this state
+		// but do not fail the process guard solely on the
+		// branch-resolution detail — the bash gate handles
+		// that seam.
+		currentBranch = ""
+	}
+	branchLine := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Branch:") {
+			branchLine = trimmed
+			break
+		}
+	}
+	if branchLine == "" {
+		problems = append(problems, "Branch line missing (the receipt must declare its target branch via a dedicated Branch: field for exact-match verification)")
+	} else if currentBranch != "" {
+		value := strings.TrimSpace(strings.TrimPrefix(branchLine, "Branch:"))
+		if value != currentBranch {
+			problems = append(problems, fmt.Sprintf("Branch value %q does not exactly match the current worktree branch %q", value, currentBranch))
+		}
+	}
+
+	// 3b. Scope: <free-form operator context>. Presence only;
+	//     not used for branch verification.
 	scopeLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -232,22 +310,26 @@ func rddReceiptValidateStaged(body string) []string {
 	}
 	if scopeLine == "" {
 		problems = append(problems, "Scope line missing")
-	} else if !strings.Contains(scopeLine, expectedBranchToken) &&
-		!strings.Contains(scopeLine, "branch=") {
-		problems = append(problems, fmt.Sprintf("Scope line must mention branch token %q (got %q)", expectedBranchToken, scopeLine))
 	}
 
 	// 4. Verified Commands: section with all-PASS entries.
+	//    Section-scoped: iteration begins after the header and
+	//    ends at the next top-level `^[A-Z][A-Za-z][A-Za-z0-9 ]*:`
+	//    line, mirroring the bash gate.
 	hasSection := false
 	passRe := regexp.MustCompile(`^  - .*:\s*PASS\s*$`)
 	failRe := regexp.MustCompile(`^  - .*:\s*FAIL`)
+	headerRe := regexp.MustCompile(`^[A-Z][A-Za-z][A-Za-z0-9 ]*:`)
 	for _, line := range strings.Split(body, "\n") {
-		if strings.TrimSpace(line) == "Verified Commands:" {
-			hasSection = true
+		if !hasSection {
+			if strings.TrimSpace(line) == "Verified Commands:" {
+				hasSection = true
+			}
 			continue
 		}
-		if !hasSection {
-			continue
+		// Inside the section: exit on the next top-level header.
+		if headerRe.MatchString(line) {
+			break
 		}
 		if strings.HasPrefix(line, "  - ") {
 			if failRe.MatchString(line) {
@@ -272,6 +354,27 @@ func rddReceiptValidateStaged(body string) []string {
 	}
 
 	return problems
+}
+
+// stagedReceiptRepoRoot returns the absolute path to the
+// repository root for the running test, so the receipt
+// validator can resolve HEAD / HEAD~1 / current branch against
+// the actual worktree. The result is cached across calls.
+var stagedReceiptRepoRootCache string
+
+func stagedReceiptRepoRoot() string {
+	if stagedReceiptRepoRootCache != "" {
+		return stagedReceiptRepoRootCache
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		// Best-effort fallback to the current working
+		// directory; the validator will surface a more
+		// specific error if `git rev-parse` then fails.
+		return "."
+	}
+	stagedReceiptRepoRootCache = repoRoot
+	return stagedReceiptRepoRootCache
 }
 
 // looksLikeFullSHA40 returns true iff s is exactly 40 lowercase hex

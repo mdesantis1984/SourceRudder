@@ -5,6 +5,17 @@
 # Required env (auto-detected if unset):
 #   BASE_REF                     base ref for diff comparison (default: origin/main)
 #   RELEASE_GATE_BRANCH          current branch name (default: git HEAD)
+#                                Overridden automatically by the first
+#                                non-empty value among GITHUB_HEAD_REF,
+#                                GITHUB_REF_NAME, and CI_COMMIT_REF_NAME
+#                                so a detached-HEAD CI checkout (typical
+#                                for GitHub Actions merge checkouts and
+#                                GitLab CI merge request pipelines)
+#                                resolves a real branch name. If none
+#                                of those are set AND the local git
+#                                ref is literal `HEAD`, the gate fails
+#                                closed rather than accepting the
+#                                literal HEAD as a branch.
 #
 # Optional env:
 #   RELEASE_GATE_SIZE_EXCEPTION  exact branch name permitted to exceed the
@@ -34,11 +45,15 @@
 #      .codebase-memory/ allowed as untracked; seam ignored under CI).
 #   2. RDD receipt exists at docs/release/reviews/review-be4525bc4797e972.md
 #      with all required fields: Status: pass, Candidate Commit: <sha>
-#      (reachable from HEAD), Scope: <text mentioning current branch>,
-#      Verified Commands: section whose entries all end in ': PASS',
-#      Unresolved Blocker Policy: header. The receipt is the local
-#      deterministic attestation — there is NO external review provider
-#      binding.
+#      (must equal HEAD or HEAD~1 — precise contract for rollback
+#      safety), Branch: <exact branch name> (exact match; no substring),
+#      Scope: <free-form operator context>, Verified Commands: section
+#      whose entries all end in ': PASS' (parsed only within the
+#      section), Unresolved Blocker Policy: header. The receipt is
+#      the local deterministic attestation — there is NO external
+#      review provider binding. A legacy `Authority:` line anywhere
+#      in the receipt body is rejected, matching the Go process
+#      guard in internal/mcp/release_gate_test.go.
 #   3. Diff vs merge-base of BASE_REF is below 400 lines, OR the carve-out
 #      env var exactly matches the current branch AND the tracked
 #      size-exception receipt validates.
@@ -52,7 +67,22 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CURRENT_BRANCH="${RELEASE_GATE_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+# Resolve the target branch from a trusted source in priority
+# order: CI env var (set by GitHub Actions / GitLab CI), operator
+# override, then the local git symbolic ref. The local ref is the
+# last resort because a detached-HEAD checkout (`git checkout
+# <sha>`, the typical CI merge-checkout shape) returns the literal
+# string `HEAD`, which would either pass or fail spuriously against
+# a substring-based Scope check. The CI env vars are set by the
+# runner BEFORE checkout so they always reflect the source branch
+# the operator intends.
+CURRENT_BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-${CI_COMMIT_REF_NAME:-${RELEASE_GATE_BRANCH:-}}}}"
+if [[ -z "$CURRENT_BRANCH" ]]; then
+  CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+fi
+if [[ -z "$CURRENT_BRANCH" || "$CURRENT_BRANCH" == "HEAD" ]]; then
+  fail "could not resolve target branch from CI env (GITHUB_HEAD_REF / GITHUB_REF_NAME / CI_COMMIT_REF_NAME), RELEASE_GATE_BRANCH, or git symbolic ref (detached HEAD with no trusted branch env)"
+fi
 BASE_REF="${BASE_REF:-origin/main}"
 
 ALLOW_LIST_REGEX='^(docs/release/reviews/|\.atl/|\.codegraph/|\.codebase-memory/)'
@@ -115,13 +145,28 @@ fi
 # The new contract is a deterministic, locally verifiable RDD
 # receipt/evidence contract:
 #
-#   1. Status: pass                        (exact line; anything else blocks)
-#   2. Candidate Commit: <sha>             (sha must be reachable from HEAD)
-#   3. Scope: <text mentioning the branch> (current branch name must appear)
-#   4. Verified Commands:                  (section header; every `- cmd:`
-#      entry must end in `: PASS` — any non-PASS or absent PASS blocks)
-#   5. Unresolved Blocker Policy:          (header; value is free-form so
-#      the operator can declare or waive)
+#   1. Status: pass                  (exact line; anything else blocks)
+#   2. Candidate Commit: <sha>       (precise contract: must equal HEAD
+#                                    or HEAD~1 — forces a new receipt
+#                                    after any rollback or code change)
+#   3. Branch: <exact branch name>   (exact match, no substring; the
+#                                    authoritative source for the
+#                                    target branch the receipt attests)
+#   4. Scope: <free-form text>       (operator context; presence only)
+#   5. Verified Commands:            (section header; every `- cmd:`
+#                                    entry must end in `: PASS` AND
+#                                    must fall within the section —
+#                                    bullets outside the section are
+#                                    ignored so a forged entry cannot
+#                                    inflate the count)
+#   6. Unresolved Blocker Policy:    (header; value is free-form so
+#                                    the operator can declare or waive)
+#
+# A legacy `Authority:` line anywhere in the receipt body is
+# rejected to keep the bash validator symmetric with the Go
+# process guard at internal/mcp/release_gate_test.go; a future
+# regression that re-introduces the external-binding header MUST
+# fail here first.
 #
 # The receipt is fail-closed: any missing or malformed field blocks
 # the merge, and the gate independently re-runs `go build` / `go vet`
@@ -134,6 +179,17 @@ fi
 
 rdd_fail=0
 
+# 0. Hard guard: reject any line beginning with the legacy
+#    `Authority:` header anywhere in the receipt body. The Go
+#    process guard in internal/mcp/release_gate_test.go performs
+#    the same check; both validators must stay symmetric so a
+#    future regression cannot smuggle the external-binding
+#    header back through only one of them.
+if grep -qE '^[[:space:]]*Authority:[[:space:]]' "$REVIEW_FILE"; then
+  log_failure "RDD receipt at $REVIEW_FILE contains a legacy 'Authority:' line; the local RDD contract replaced the external-binding header and it MUST NOT return"
+  rdd_fail=1
+fi
+
 # 1. Status: pass (exact line).
 rdd_status="$(grep -E '^Status:' "$REVIEW_FILE" | head -n 1 || true)"
 if [[ "$rdd_status" != "Status: pass" ]]; then
@@ -141,7 +197,13 @@ if [[ "$rdd_status" != "Status: pass" ]]; then
   rdd_fail=1
 fi
 
-# 2. Candidate Commit: <sha> reachable from HEAD.
+# 2. Candidate Commit: <sha>. The precise contract requires the
+#    SHA to equal HEAD or HEAD~1. This forces a new receipt after
+#    a rollback (the buggy SHA is no longer HEAD~1) and after any
+#    code change (the receipt's candidate SHA is now HEAD~2 or
+#    deeper). The two-commit code-then-receipt workflow still
+#    works because the receipt commit lands at HEAD and the code
+#    commit it attests sits at HEAD~1.
 rdd_commit_line="$(grep -E '^Candidate Commit:' "$REVIEW_FILE" | head -n 1 || true)"
 if [[ -z "$rdd_commit_line" ]]; then
   log_failure "RDD receipt Candidate Commit line missing at $REVIEW_FILE"
@@ -151,43 +213,88 @@ else
   if [[ -z "$rdd_commit_sha" ]]; then
     log_failure "RDD receipt Candidate Commit value empty at $REVIEW_FILE"
     rdd_fail=1
-  elif ! git merge-base --is-ancestor "$rdd_commit_sha" HEAD 2>/dev/null; then
-    log_failure "RDD receipt Candidate Commit $rdd_commit_sha is not reachable from HEAD at $REVIEW_FILE"
+  elif ! [[ "$rdd_commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    log_failure "RDD receipt Candidate Commit $rdd_commit_sha is not a full 40-char SHA at $REVIEW_FILE"
     rdd_fail=1
   else
-    log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha reachable_from=HEAD"
+    rdd_head_sha="$(git rev-parse HEAD)"
+    rdd_head_parent_sha="$(git rev-parse HEAD~1 2>/dev/null || true)"
+    if [[ "$rdd_commit_sha" != "$rdd_head_sha" && "$rdd_commit_sha" != "$rdd_head_parent_sha" ]]; then
+      log_failure "RDD receipt Candidate Commit $rdd_commit_sha must equal HEAD ($rdd_head_sha) or HEAD~1 (${rdd_head_parent_sha:-<none>}) — arbitrary ancestors are not accepted; rollback or code change requires a new receipt at $REVIEW_FILE"
+      rdd_fail=1
+    else
+      log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha matches HEAD_or_HEAD~1"
+    fi
   fi
 fi
 
-# 3. Scope: <text mentioning the current branch>.
-rdd_scope="$(grep -E '^Scope:' "$REVIEW_FILE" | head -n 1 || true)"
-if [[ -z "$rdd_scope" ]]; then
-  log_failure "RDD receipt Scope line missing at $REVIEW_FILE"
+# 3. Branch: <exact branch name> — exact match (no substring).
+#    The previous substring check was ambiguous (`feature/foo`
+#    matched a Scope of `feature/foo-bar`). The dedicated
+#    `Branch:` field is the authoritative source for the
+#    target branch the receipt attests; `Scope:` is now
+#    free-form operator context whose value is not used for
+#    branch verification.
+rdd_branch_line="$(grep -E '^Branch:' "$REVIEW_FILE" | head -n 1 || true)"
+if [[ -z "$rdd_branch_line" ]]; then
+  log_failure "RDD receipt Branch line missing at $REVIEW_FILE (the receipt must declare its target branch via a dedicated Branch: field for exact-match verification)"
   rdd_fail=1
-elif [[ "$rdd_scope" != *"$CURRENT_BRANCH"* ]]; then
-  log_failure "RDD receipt Scope line does not mention current branch '$CURRENT_BRANCH' (found: $rdd_scope) at $REVIEW_FILE"
+else
+  rdd_branch_value="$(printf '%s' "$rdd_branch_line" | sed -E 's/^Branch:[[:space:]]*//')"
+  if [[ -z "$rdd_branch_value" ]]; then
+    log_failure "RDD receipt Branch value empty at $REVIEW_FILE"
+    rdd_fail=1
+  elif [[ "$rdd_branch_value" != "$CURRENT_BRANCH" ]]; then
+    log_failure "RDD receipt Branch value '$rdd_branch_value' must exactly match the resolved branch '$CURRENT_BRANCH' at $REVIEW_FILE"
+    rdd_fail=1
+  fi
+fi
+
+# 3b. Scope: <free-form text>. Required for operator context
+#     but no longer used for branch verification.
+rdd_scope_line="$(grep -E '^Scope:' "$REVIEW_FILE" | head -n 1 || true)"
+if [[ -z "$rdd_scope_line" ]]; then
+  log_failure "RDD receipt Scope line missing at $REVIEW_FILE"
   rdd_fail=1
 fi
 
-# 4. Verified Commands section with all-PASS entries.
+# 4. Verified Commands section with all-PASS entries. The
+#    parser is section-scoped: iteration begins on the line
+#    immediately after `Verified Commands:` and ends on the
+#    next top-level `^[A-Z][A-Za-z]+:` header (or end of
+#    file). A bullet outside the section is ignored, so a
+#    forged entry in a Notes: section cannot inflate the
+#    count.
 if ! grep -qxE '^Verified Commands:' "$REVIEW_FILE"; then
   log_failure "RDD receipt Verified Commands: section missing at $REVIEW_FILE"
   rdd_fail=1
 else
   rdd_entry_count=0
   rdd_bad_entry=""
-  # The PASS-line regex is stored in a variable to avoid bash
-  # `[[ =~ ]]` parser quirks when the pattern is inlined; inlining
-  # `[[:space:]]+-` causes bash to mis-tokenise the conditional.
   rdd_pass_re='^[[:space:]]+- .*:[[:space:]]*PASS[[:space:]]*$'
-  while IFS= read -r rdd_entry; do
-    [[ -z "$rdd_entry" ]] && continue
-    rdd_entry_count=$((rdd_entry_count + 1))
-    if ! [[ "$rdd_entry" =~ $rdd_pass_re ]]; then
-      rdd_bad_entry="$rdd_entry"
+  # Top-level header pattern: an unindented capitalized word
+  # followed by a colon. Used to exit the section.
+  rdd_header_re='^[A-Z][A-Za-z][A-Za-z0-9 ]*:[[:space:]]*[^[:space:]]|^[A-Z][A-Za-z][A-Za-z0-9 ]*:[[:space:]]*$'
+  rdd_in_section=0
+  while IFS= read -r rdd_line; do
+    if (( rdd_in_section == 0 )); then
+      if [[ "$rdd_line" == "Verified Commands:" ]]; then
+        rdd_in_section=1
+      fi
+      continue
+    fi
+    # Inside the section: exit on the next top-level header.
+    if [[ "$rdd_line" =~ $rdd_header_re ]]; then
       break
     fi
-  done < <(grep -E '^[[:space:]]+- .*:[[:space:]]' "$REVIEW_FILE" || true)
+    # Skip blank lines.
+    [[ -z "$rdd_line" ]] && continue
+    rdd_entry_count=$((rdd_entry_count + 1))
+    if ! [[ "$rdd_line" =~ $rdd_pass_re ]]; then
+      rdd_bad_entry="$rdd_line"
+      break
+    fi
+  done < "$REVIEW_FILE"
   if (( rdd_entry_count == 0 )); then
     log_failure "RDD receipt Verified Commands section has no entries at $REVIEW_FILE"
     rdd_fail=1
@@ -212,7 +319,7 @@ fi
 if (( rdd_fail == 1 )); then
   fail "RDD receipt at $REVIEW_FILE did not validate (see FAIL lines above)"
 fi
-log "RDD_RECEIPT=$REVIEW_FILE validated status=pass candidate=reachable branch=$CURRENT_BRANCH"
+log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=HEAD_or_HEAD~1"
 
 # ---- 3. line-budget (with exact-branch carve-out + tracked receipt) ----
 

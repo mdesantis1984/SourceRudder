@@ -4,7 +4,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-FF6B6B?logo=robot)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA locales. Usa CT-BUSCAR:5000 como motor de conectores.
+Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA locales. Escucha en `:8080` por defecto (configurable vía `-http-addr`).
 
 ---
 
@@ -57,14 +57,14 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
 
 | Endpoint | URL | Descripción |
 |---|---|---|
-| MCP HTTP | `http://<HOST>:5000/mcp` | Protocolo MCP para agentes IA |
-| Health | `http://<HOST>:5000/healthz` | Verificación de estado del servicio |
+| MCP HTTP | `http://<HOST>:8080/mcp` | Protocolo MCP para agentes IA |
+| Health | `http://<HOST>:8080/healthz` | Verificación de estado del servicio |
 
 ---
 
 ## Requisitos
 
-1. CT-BUSCAR:5000 ejecutándose como servicio Go.
+1. Servicio `ia-buscar` ejecutándose y escuchando en `:8080` (o el puerto configurado vía `-http-addr`).
 2. SearxNG disponible en `<HOST>:8080` para búsqueda web.
 3. Acceso a APIs externas: GitHub, StackOverflow, npm, NuGet, PyPI, DockerHub, Semantic Scholar, Reddit, YouTube.
 
@@ -93,7 +93,7 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
 {
   "mcp_server": {
     "host": "<HOST>",
-    "port": 5000,
+    "port": 8080,
     "transport": "http"
   },
   "searxng": {
@@ -125,10 +125,10 @@ despliegue).
 ## Arquitectura
 
 ```
-CT-BUSCAR (Go Service :5000)
+CT-BUSCAR (Go Service :8080)
   │
   ├─ MCP Handler
-  │   └─ 25 Tools registradas
+  │   └─ 28 Tools registradas
   │
   ├─ Conectores
   │   ├─ search_web ──> SearxNG :8080
