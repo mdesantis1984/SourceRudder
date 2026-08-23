@@ -53,6 +53,33 @@
 #                                accepted so rollback safety is
 #                                preserved. R4-013.
 #
+#                                The bash validator distinguishes
+#                                three fail-closed classes when the
+#                                PR_HEAD env is incomplete or
+#                                malformed (R4-014 + R5-NEW-003,
+#                                aligned with the Go process guard):
+#                                  - missing   — neither var set
+#                                    AND a GitHub PR merge-checkout
+#                                    shape is detected (CI=true AND
+#                                    GITHUB_EVENT_NAME=pull_request
+#                                    AND HEAD has 2+ parents). The
+#                                    workflow's `Capture PR metadata`
+#                                    step is missing the env export.
+#                                  - partial   — exactly one var set
+#                                    (export survived but only one
+#                                    half). The workflow export
+#                                    dropped or skipped one var.
+#                                  - invalid   — both set but at
+#                                    least one is not a valid 40-char
+#                                    hex SHA (value interpolation
+#                                    bug). The wrapper guards the
+#                                    receipt against the malformed
+#                                    context rather than accepting it.
+#                                Each class surfaces a distinct
+#                                `release-gate: FAIL CI PR context
+#                                <class>: ...` line so a CI operator
+#                                can act on the specific failure mode.
+#
 #   RELEASE_GATE_SIZE_EXCEPTION  exact branch name permitted to exceed the
 #                                400-line authored budget. Matches that
 #                                branch ONLY; every other branch falls
@@ -305,9 +332,33 @@ else
   else
     rdd_pr_head_sha="${RELEASE_GATE_PR_HEAD_SHA:-}"
     rdd_pr_head_parent_sha="${RELEASE_GATE_PR_HEAD_PARENT_SHA:-}"
+    # Detect the GitHub PR synthetic merge-checkout shape (CI=true
+    # AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents).
+    # When detected, the local HEAD/HEAD~1 contract cannot
+    # represent the receipt's PR-tip context, so the workflow
+    # MUST export the explicit PR_HEAD env pair. The previous
+    # bash logic did NOT detect this shape and silently fell
+    # back to the local contract — masking the same workflow
+    # contract violation the Go guard catches (R4-014).
+    # R5-NEW-003.
+    rdd_pr_merge_detected=0
+    if [[ "${CI:-}" == "true" ]] \
+        && [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]] \
+        && [[ "$(git cat-file -p HEAD 2>/dev/null | grep -c '^parent ' || true)" -ge 2 ]]; then
+      rdd_pr_merge_detected=1
+    fi
     if [[ -n "$rdd_pr_head_sha" || -n "$rdd_pr_head_parent_sha" ]]; then
-      if ! [[ "$rdd_pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$rdd_pr_head_parent_sha" =~ ^[0-9a-f]{40}$ ]]; then
-        log_failure "RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA must both be valid 40-char hex SHAs (got '$rdd_pr_head_sha', '$rdd_pr_head_parent_sha') at $REVIEW_FILE (R4-013)"
+      # CI contract path: at least one PR_HEAD env set.
+      # Distinguish the three fail-closed classes (R4-014 +
+      # R5-NEW-003) so a CI operator reading the log can act
+      # on a specific class. The Go process guard at
+      # `internal/mcp/release_gate_test.go` emits the same
+      # class labels so the two validators stay symmetric.
+      if [[ -z "$rdd_pr_head_sha" || -z "$rdd_pr_head_parent_sha" ]]; then
+        log_failure "CI PR context partially set: RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA MUST both be set together; a partial export is a workflow contract violation and the gate MUST fail closed (R4-014)"
+        rdd_fail=1
+      elif ! [[ "$rdd_pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$rdd_pr_head_parent_sha" =~ ^[0-9a-f]{40}$ ]]; then
+        log_failure "CI PR context invalid: RELEASE_GATE_PR_HEAD_SHA='$rdd_pr_head_sha' and RELEASE_GATE_PR_HEAD_PARENT_SHA='$rdd_pr_head_parent_sha' MUST both be valid 40-char hex SHAs; the gate MUST fail closed rather than silently fall back to the local contract (R4-014)"
         rdd_fail=1
       elif [[ "$rdd_commit_sha" != "$rdd_pr_head_sha" && "$rdd_commit_sha" != "$rdd_pr_head_parent_sha" ]]; then
         log_failure "RDD receipt Candidate Commit $rdd_commit_sha must equal PR_HEAD_SHA ($rdd_pr_head_sha) or PR_HEAD_PARENT_SHA ($rdd_pr_head_parent_sha) under the CI context — arbitrary ancestors are not accepted; rollback or code change requires a new receipt at $REVIEW_FILE (R4-013)"
@@ -315,6 +366,14 @@ else
       else
         log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha matches PR_HEAD_or_PR_HEAD~1"
       fi
+    elif [[ "$rdd_pr_merge_detected" == "1" ]]; then
+      # Local contract path is unreachable under the
+      # merge-checkout shape: a CI run with a synthetic 2-parent
+      # HEAD MUST supply the PR_HEAD env. The previous
+      # behavior silently fell through to the local HEAD/HEAD~1
+      # contract, masking the missing workflow export. R5-NEW-003.
+      log_failure "CI PR context missing: GitHub pull_request merge-checkout detected (CI=true AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents) but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; the workflow's 'Capture PR metadata' step MUST export both before the gate can validate the receipt (R4-014)"
+      rdd_fail=1
     else
       rdd_head_sha="$(git rev-parse HEAD)"
       rdd_head_parent_sha="$(git rev-parse HEAD~1 2>/dev/null || true)"

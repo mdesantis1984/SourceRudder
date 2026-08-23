@@ -536,11 +536,23 @@ func TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext(t *testing.T) {
 // so the guard cannot be tricked into accepting an arbitrary
 // `Branch:` value.
 func rddReceiptValidateStaged(body string) []string {
-	repoRoot := stagedReceiptRepoRoot()
+	return rddReceiptValidateStagedIn(body, stagedReceiptRepoRoot())
+}
 
+// rddReceiptValidateStagedIn is the parameterized form of
+// `rddReceiptValidateStaged`: it accepts the repo dir explicitly
+// so tests can drive the wrapper against a synthetic 2-parent PR
+// merge checkout built in an isolated temp repo
+// (`buildSyntheticTwoParentCommit`). The wrapper reads HEAD,
+// HEAD~1, and the merge-checkout shape (CI=true AND event_name
+// is pull_request AND HEAD has 2+ parents) from the supplied
+// `repoDir`; the test owns the env vars and the repo state, and
+// the wrapper's fail-closed seam surfaces the matching class
+// label without leaking the real worktree's state. R5-NEW-001.
+func rddReceiptValidateStagedIn(body, repoDir string) []string {
 	// Resolve HEAD.
 	headSHACmd := exec.Command("git", "rev-parse", "HEAD")
-	headSHACmd.Dir = repoRoot
+	headSHACmd.Dir = repoDir
 	headOut, headErr := headSHACmd.Output()
 	var headSHA string
 	if headErr == nil {
@@ -551,7 +563,7 @@ func rddReceiptValidateStaged(body string) []string {
 	var headParentSHA string
 	if headSHA != "" {
 		parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
-		parentCmd.Dir = repoRoot
+		parentCmd.Dir = repoDir
 		parentOut, parentErr := parentCmd.Output()
 		if parentErr == nil {
 			headParentSHA = strings.TrimSpace(string(parentOut))
@@ -566,7 +578,7 @@ func rddReceiptValidateStaged(body string) []string {
 	currentBranch := resolveCurrentBranchFromCIEnv()
 	if currentBranch == "" {
 		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-		branchCmd.Dir = repoRoot
+		branchCmd.Dir = repoDir
 		branchOut, branchErr := branchCmd.Output()
 		if branchErr == nil {
 			currentBranch = strings.TrimSpace(string(branchOut))
@@ -605,7 +617,7 @@ func rddReceiptValidateStaged(body string) []string {
 	// Candidate Commit check (the previous SKIP path masked
 	// this exact failure with a `t.Skipf`; the new behaviour
 	// surfaces it).
-	if isGitHubPRMergeCheckout() {
+	if isGitHubPRMergeCheckoutIn(repoDir) {
 		switch {
 		case prHeadSHA == "" && prHeadParentSHA == "":
 			problems = append(problems, "CI PR context missing: GitHub pull_request merge-checkout detected but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; the workflow's `Capture PR metadata` step MUST export both before the receipt guard can validate (R4-014)")
@@ -1174,10 +1186,26 @@ func TestReleaseGateWorkflowExportsPRHeadContext(t *testing.T) {
 // checkout; the new behaviour is to validate via the CI contract
 // (R4-014), which is only representable when the workflow
 // supplies the env pair. The assertion checks that ci.yml
-// contains the four KEY= exports AND guards them with an
-// `if: github.event_name == 'pull_request'` (or equivalent
-// conditional) so a push event does NOT spuriously export empty
-// PR_HEAD values that would trip the local context path.
+// contains the two KEY= exports (RELEASE_GATE_PR_HEAD_SHA and
+// RELEASE_GATE_PR_HEAD_PARENT_SHA) AND that they are exported in
+// a single YAML step whose body is gated by an `if:
+// github.event_name == 'pull_request'` line — so a push event
+// does NOT spuriously export empty PR_HEAD values that would
+// trip the local context path.
+//
+// Step-scoped assertion: the previous lookback-500-chars check
+// was satisfied by any `pull_request` mention within 500 chars
+// of the first PR_HEAD export — including a `pull_request:`
+// reference inside the workflow's `on:` block at the top of the
+// file, a docstring, or an unrelated `description:` field. The
+// strengthened check locates the EXACT YAML step (delimited by
+// `      - ` at column 6, inside `steps:`) that contains BOTH
+// PR_HEAD exports, then asserts that step's body matches a
+// precisely-shaped `if:` regex: anchored at column-aligned step
+// indentation, requiring `==` (not `!=` or `contains(...)`),
+// and comparing against the quoted literal `pull_request` —
+// comments inside the step (which begin with `#`) cannot
+// satisfy because the regex starts with `^\s+if:`. R5-NEW-002.
 func TestCIWorkflowExportsPRHeadContext(t *testing.T) {
 	workflowPath := filepath.Join("..", "..", ".github", "workflows", "ci.yml")
 	data, err := os.ReadFile(workflowPath)
@@ -1194,31 +1222,82 @@ func TestCIWorkflowExportsPRHeadContext(t *testing.T) {
 			t.Errorf("ci.yml missing %q; the CI test pipeline MUST export the PR-head context on pull_request events so the Go receipt guard can validate the staged receipt against the CI contract (R4-014)", want)
 		}
 	}
-	// The PR_HEAD export MUST be gated on the pull_request event
-	// — otherwise a push run would spuriously export empty
-	// PR_HEAD values that the guard would treat as a partial CI
-	// contract and fail closed on. The most idiomatic GitHub
-	// Actions gate is `if: github.event_name == 'pull_request'`
-	// (or equivalent). We do NOT enforce a specific YAML
-	// expression; we only check that the file references the
-	// PR event name in the same logical block as the export.
-	prBlockIdx := strings.Index(body, "RELEASE_GATE_PR_HEAD_SHA=")
-	if prBlockIdx == -1 {
-		t.Fatalf("ci.yml must contain RELEASE_GATE_PR_HEAD_SHA export (R4-014)")
+
+	// Step-scoped guard: locate the SINGLE YAML step that
+	// contains BOTH PR_HEAD exports and verify that step is
+	// gated by `if: github.event_name == 'pull_request'`. A
+	// `pull_request` mention in the `on:` block at the top of
+	// the file, in a comment, or in an unrelated step does NOT
+	// satisfy — only the step-scoped `if:` line at proper
+	// indent counts.
+	prHeadStep := findCIWorkflowStepContaining(body,
+		"RELEASE_GATE_PR_HEAD_SHA=",
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA=")
+	if prHeadStep == "" {
+		t.Fatalf("ci.yml must have a single step containing BOTH PR_HEAD exports; either both are in the same step (correct) or one is missing or they are split across multiple steps (incorrect). Workflow body:\n%s", body)
 	}
-	// Look back ~500 chars from the export for a
-	// pull_request event gate. If neither pattern appears
-	// nearby, the export is unconditional and a push run
-	// would trip the partial-set guard.
-	blockStart := prBlockIdx - 500
-	if blockStart < 0 {
-		blockStart = 0
-	}
-	block := body[blockStart:prBlockIdx]
-	if !strings.Contains(block, "pull_request") {
-		t.Errorf("ci.yml PR_HEAD export appears unconditional; the export MUST be gated on github.event_name == 'pull_request' so push runs do not spuriously trip the partial-CI-context guard (R4-014). Block before export: %q", block)
+	if !ciWorkflowStepPRHeadIfRegex.MatchString(prHeadStep) {
+		t.Errorf("ci.yml PR-head export step is not gated by `if: github.event_name == 'pull_request'`; a comment or any other `pull_request` mention elsewhere in the file does NOT satisfy the contract. Found step:\n%s", prHeadStep)
 	}
 }
+
+// findCIWorkflowStepContaining returns the YAML step block
+// (delimited by `      - ...` at column 6 — the YAML sequence
+// key inside `steps:` — and terminated by the next such step or
+// end of file) whose body contains both literal substrings, or
+// "" if no single step contains both (or if multiple steps
+// do — the contract is exactly one step). The helper pins the
+// step boundary contract so future regressions that split the
+// PR_HEAD exports across two steps (or drop the export from the
+// step entirely) surface here rather than at runtime. R5-NEW-002.
+func findCIWorkflowStepContaining(body, needle1, needle2 string) string {
+	var matched []string
+	var current []string
+	flush := func() {
+		if current == nil {
+			return
+		}
+		step := strings.Join(current, "\n")
+		if strings.Contains(step, needle1) && strings.Contains(step, needle2) {
+			matched = append(matched, step)
+		}
+		current = nil
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "      - ") {
+			flush()
+			current = []string{line}
+			continue
+		}
+		if current != nil {
+			current = append(current, line)
+		}
+	}
+	flush()
+	if len(matched) != 1 {
+		return ""
+	}
+	return matched[0]
+}
+
+// ciWorkflowStepPRHeadIfRegex matches a properly-formatted `if:`
+// guard on a workflow step. The pattern is anchored at line
+// start in multiline mode and requires:
+//   - `^\s+if:` — the `if:` key at any step-child indent
+//     (column-aligned with `name:`, `uses:`, `with:`, `run:`).
+//     A comment line beginning with `#` does NOT match because
+//     `\s+if:` requires whitespace immediately before `if:`.
+//   - `github.event_name` — the canonical event-name context
+//     expression.
+//   - `==` — equality operator (NOT `!=`, `contains(...)`, or
+//     any other GitHub Actions expression form).
+//   - `'pull_request'` or `"pull_request"` — the quoted literal
+//     GitHub Actions uses for the event name.
+//
+// A regex rather than a substring search ensures a regression
+// that flips the operator to `!=`, omits the quotes, or moves
+// the `pull_request` mention to a comment is caught here. R5-NEW-002.
+var ciWorkflowStepPRHeadIfRegex = regexp.MustCompile(`(?m)^\s+if:\s+github\.event_name\s*==\s*(?:'|")pull_request(?:'|")\s*$`)
 
 // TestCIWorkflowFetchesFullHistory pins the fetch-depth contract
 // for the CI test workflow. The default actions/checkout@v4
@@ -1236,4 +1315,327 @@ func TestCIWorkflowFetchesFullHistory(t *testing.T) {
 	if !strings.Contains(string(data), "fetch-depth: 0") {
 		t.Errorf("ci.yml must use fetch-depth: 0 so the receipt validator can resolve HEAD~1; the default fetch-depth:1 produces a single-commit detached HEAD that breaks the precise HEAD-or-HEAD~1 contract (R4-013)")
 	}
+}
+
+// TestRDDReceiptValidateStagedFailClosedOnPRHeadContext is the
+// R5-NEW-001 RED gate for the Go wrapper-level integration
+// contract. The pure helper unit test (`TestRDDReceiptValidateTwoContextContract`)
+// exercises `rddReceiptValidatePure` against synthetic SHAs but
+// bypasses the wrapper; a future regression that broke the
+// WRAPPER's env / merge-checkout / fail-closed plumbing would
+// not surface there. This test drives the FULL wrapper path on
+// a real synthetic two-parent PR merge checkout — the exact
+// shape `actions/checkout@v4` produces on a pull_request event —
+// and verifies the three fail-closed classes (missing /
+// partial / invalid) the wrapper MUST surface when the env pair
+// is incomplete or malformed. The wrapper is invoked via
+// `rddReceiptValidateStagedIn(body, repoDir)`, the parameterized
+// form of `rddReceiptValidateStaged`, so the test owns the
+// isolation contract: the synthetic repo is the wrapper's
+// "worktree" and the env vars are the only path by which the
+// wrapper reaches the PR_HEAD branch. R5-NEW-001.
+func TestRDDReceiptValidateStagedFailClosedOnPRHeadContext(t *testing.T) {
+	const branch = "main"
+
+	// A receipt body the wrapper can evaluate end-to-end once
+	// the PR_HEAD fail-closed seam is satisfied; under the CI
+	// path the wrapper requires Candidate == PR_HEAD_SHA or
+	// PR_HEAD_PARENT_SHA, but this receipt is only used to
+	// confirm the wrapper's fail-closed plumbing — the test
+	// asserts ONLY on the specific fail-closed class, not on
+	// the success/failure of the downstream Candidate check.
+	makeBody := func(syntheticHead string) string {
+		return "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + syntheticHead + "\n" +
+			"Branch: " + branch + "\n" +
+			"Scope: " + branch + "\n" +
+			"Verified Commands:\n" +
+			"  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+	}
+
+	// Each sub-case builds a synthetic 2-parent merge commit in
+	// an isolated temp repo, sets the CI/PR_HEAD env vars to
+	// exercise one specific fail-closed class, and asserts the
+	// wrapper surfaces the matching class label — NOT a generic
+	// "PR_HEAD" substring. The exact class label is what a CI
+	// operator reads to act on the failure: each class maps to a
+	// distinct workflow fix.
+	t.Run("missing-pr-head-context-fails-closed", func(t *testing.T) {
+		t.Setenv("CI", "true")
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		// Both PR_HEAD vars empty: this is the merge-checkout
+		// shape WITHOUT the workflow export — the previous
+		// behavior was to silently waive the Candidate Commit
+		// check; the R4-014 contract requires fail-closed with
+		// "CI PR context missing".
+		t.Setenv("RELEASE_GATE_PR_HEAD_SHA", "")
+		t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", "")
+
+		repo := buildIsolatedGitRepo(t)
+		syntheticHead := buildSyntheticTwoParentCommit(t, repo)
+		if got := parentCountOfHEAD(repo); got != 2 {
+			t.Fatalf("synthetic commit should have 2 parents, got %d", got)
+		}
+
+		problems := rddReceiptValidateStagedIn(makeBody(syntheticHead), repo)
+		assertProblemsContain(t, problems, "CI PR context missing")
+	})
+
+	t.Run("partial-pr-head-context-fails-closed", func(t *testing.T) {
+		t.Setenv("CI", "true")
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		// PR_HEAD_SHA set, PR_HEAD_PARENT_SHA empty: a
+		// partial export is a workflow contract violation
+		// distinct from a malformed value. The previous bash
+		// behavior collapsed both into one generic error;
+		// the wrapper already distinguishes them, but we
+		// pin the wrapper end-to-end here.
+		t.Setenv("RELEASE_GATE_PR_HEAD_SHA", strings.Repeat("a", 40))
+		t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", "")
+
+		repo := buildIsolatedGitRepo(t)
+		syntheticHead := buildSyntheticTwoParentCommit(t, repo)
+		if got := parentCountOfHEAD(repo); got != 2 {
+			t.Fatalf("synthetic commit should have 2 parents, got %d", got)
+		}
+
+		problems := rddReceiptValidateStagedIn(makeBody(syntheticHead), repo)
+		assertProblemsContain(t, problems, "CI PR context partially set")
+	})
+
+	t.Run("malformed-pr-head-context-fails-closed", func(t *testing.T) {
+		t.Setenv("CI", "true")
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		// Both set but PR_HEAD_SHA is non-hex: malformed
+		// (non-40-char-hex) is a third distinct class —
+		// the workflow export survived but the value is
+		// wrong, e.g. an interpolation bug. The wrapper
+		// surfaces "CI PR context invalid" rather than
+		// "partially set" because both vars are non-empty.
+		t.Setenv("RELEASE_GATE_PR_HEAD_SHA", "not-a-sha")
+		t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", strings.Repeat("a", 40))
+
+		repo := buildIsolatedGitRepo(t)
+		syntheticHead := buildSyntheticTwoParentCommit(t, repo)
+		if got := parentCountOfHEAD(repo); got != 2 {
+			t.Fatalf("synthetic commit should have 2 parents, got %d", got)
+		}
+
+		problems := rddReceiptValidateStagedIn(makeBody(syntheticHead), repo)
+		assertProblemsContain(t, problems, "CI PR context invalid")
+	})
+
+	// Triangulation: outside CI+event AND without a 2-parent
+	// synthetic shape, the wrapper MUST NOT fire the
+	// "CI PR context missing" class — the local contract
+	// path applies instead, even when the PR_HEAD vars are
+	// unset. A regression that universally fires
+	// "missing" on every receipt validation (instead of
+	// only on the merge-checkout shape) trips here.
+	t.Run("missing-outside-merge-checkout-falls-through-to-local", func(t *testing.T) {
+		t.Setenv("CI", "")
+		t.Setenv("GITHUB_EVENT_NAME", "")
+		t.Setenv("RELEASE_GATE_PR_HEAD_SHA", "")
+		t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", "")
+
+		repo := buildIsolatedGitRepo(t)
+		// Use the regular single-commit shape (NOT a
+		// synthetic 2-parent merge): the wrapper must NOT
+		// detect a merge-checkout, so the PR_HEAD
+		// fail-closed seam MUST NOT fire.
+		body := makeBody(mustRunGit(t, repo, "rev-parse", "HEAD"))
+
+		problems := rddReceiptValidateStagedIn(body, repo)
+		for _, p := range problems {
+			if strings.Contains(p, "CI PR context") {
+				t.Fatalf("wrapper fired 'CI PR context ...' fail-closed seam outside the merge-checkout shape (CI unset, no 2-parent merge); the seam MUST only fire when isGitHubPRMergeCheckoutIn is true: problems=%v", problems)
+			}
+		}
+	})
+}
+
+// assertProblemsContain fails the test if problems does not
+// contain a message mentioning want (the fail-closed class
+// label). The wrapper may report additional problems
+// simultaneously (e.g. branch-context unresolvable); only the
+// specific class label is asserted so the test pins the
+// wrapper's class surface, not the full problem set.
+func assertProblemsContain(t *testing.T, problems []string, want string) {
+	t.Helper()
+	for _, p := range problems {
+		if strings.Contains(p, want) {
+			return
+		}
+	}
+	t.Fatalf("expected wrapper problems to mention %q, got: %v", want, problems)
+}
+
+// TestCIWorkflowStepHelperContract pins the parsing helper
+// (`findCIWorkflowStepContaining`) and the regex
+// (`ciWorkflowStepPRHeadIfRegex`) used by
+// `TestCIWorkflowExportsPRHeadContext` so the strengthened
+// step-scoped assertion cannot regress to the previous
+// 500-char-lookback fragility. Each sub-case exercises a
+// regression shape the strengthened assertion MUST reject
+// and a positive shape it MUST accept. The body strings
+// below are intentionally narrow so the helper is tested
+// without depending on the real ci.yml — a future
+// regression in ci.yml can be triangulated against these
+// unit cases. R5-NEW-002.
+func TestCIWorkflowStepHelperContract(t *testing.T) {
+	const pr1 = "RELEASE_GATE_PR_HEAD_SHA="
+	const pr2 = "RELEASE_GATE_PR_HEAD_PARENT_SHA="
+
+	t.Run("find-step-locates-the-only-step-with-both-needles", func(t *testing.T) {
+		body := "name: CI\n" +
+			"jobs:\n" +
+			"  build:\n" +
+			"    steps:\n" +
+			"      - uses: actions/checkout@v4\n" +
+			"      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.event_name == 'pull_request'\n" +
+			"        run: |\n" +
+			"          echo \"" + pr1 + "${{ github.event.pull_request.head.sha }}\"\n" +
+			"          echo \"" + pr2 + "abc\"\n" +
+			"      - name: Build\n" +
+			"        run: go build\n"
+		step := findCIWorkflowStepContaining(body, pr1, pr2)
+		if step == "" {
+			t.Fatalf("expected helper to find the Capture PR metadata step")
+		}
+		if !strings.Contains(step, "Capture PR metadata") {
+			t.Fatalf("expected found step to be the Capture PR metadata step; got:\n%s", step)
+		}
+		if !ciWorkflowStepPRHeadIfRegex.MatchString(step) {
+			t.Fatalf("expected found step to match the if: regex; got:\n%s", step)
+		}
+	})
+
+	// Regression coverage: a `pull_request` reference in a
+	// comment OUTSIDE the step MUST NOT cause the helper to
+	// identify the comment as part of the step. This is the
+	// specific regression that broke the previous 500-char
+	// lookback: any `pull_request` substring near the export
+	// satisfied the check, even from outside the step. R5-NEW-002.
+	t.Run("find-step-ignores-pull-request-mention-outside-step", func(t *testing.T) {
+		body := "# Top-level docstring: this workflow handles pull_request events.\n" +
+			"jobs:\n" +
+			"  build:\n" +
+			"    steps:\n" +
+			"      - uses: actions/checkout@v4\n" +
+			"      - name: Capture PR metadata (PR context only)\n" +
+			"        # this step MUST guard on pull_request\n" +
+			"        run: |\n" +
+			"          echo \"" + pr1 + "abc\"\n" +
+			"          echo \"" + pr2 + "def\"\n"
+		step := findCIWorkflowStepContaining(body, pr1, pr2)
+		if step == "" {
+			t.Fatalf("expected helper to find the step")
+		}
+		if ciWorkflowStepPRHeadIfRegex.MatchString(step) {
+			t.Fatalf("expected regex to reject a comment-only pull_request reference; the step has no `if:` line and the strengthened check must reject it. Step:\n%s", step)
+		}
+	})
+
+	t.Run("find-step-returns-empty-when-needles-split-across-steps", func(t *testing.T) {
+		// Splitting the two exports across two steps is a
+		// regression: the contract is "BOTH exports in ONE
+		// step, gated by `if:`". Two-step splits silently
+		// break the partial-set guard because the wrapper
+		// would see one var set without the other.
+		body := "jobs:\n" +
+			"  build:\n" +
+			"    steps:\n" +
+			"      - name: Step A\n" +
+			"        if: github.event_name == 'pull_request'\n" +
+			"        run: |\n" +
+			"          echo \"" + pr1 + "abc\"\n" +
+			"      - name: Step B\n" +
+			"        if: github.event_name == 'pull_request'\n" +
+			"        run: |\n" +
+			"          echo \"" + pr2 + "def\"\n"
+		step := findCIWorkflowStepContaining(body, pr1, pr2)
+		if step != "" {
+			t.Fatalf("expected helper to return empty when needles are split across two steps; got:\n%s", step)
+		}
+	})
+
+	t.Run("find-step-returns-empty-when-no-step-has-both-needles", func(t *testing.T) {
+		body := "jobs:\n" +
+			"  build:\n" +
+			"    steps:\n" +
+			"      - name: Build\n" +
+			"        run: go build\n"
+		step := findCIWorkflowStepContaining(body, pr1, pr2)
+		if step != "" {
+			t.Fatalf("expected empty step when no step contains both needles; got:\n%s", step)
+		}
+	})
+
+	// Regex coverage: each malformed `if:` shape is a
+	// regression the strengthened test MUST reject. The
+	// positive case (canonical form) MUST match. R5-NEW-002.
+	t.Run("if-regex-accepts-canonical-form", func(t *testing.T) {
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.event_name == 'pull_request'\n" +
+			"        run: echo ok\n"
+		if !ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to match the canonical single-quoted form; body:\n%s", body)
+		}
+	})
+
+	t.Run("if-regex-accepts-double-quoted-form", func(t *testing.T) {
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.event_name == \"pull_request\"\n" +
+			"        run: echo ok\n"
+		if !ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to match the canonical double-quoted form; body:\n%s", body)
+		}
+	})
+
+	t.Run("if-regex-rejects-comment-line", func(t *testing.T) {
+		// A comment line that LOOKS like the `if:` line but
+		// starts with `#`. The previous 500-char lookback
+		// accepted this shape (it only looked for the
+		// substring `pull_request`).
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        # if: github.event_name == 'pull_request'\n" +
+			"        run: echo ok\n"
+		if ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to reject comment lines beginning with #; body:\n%s", body)
+		}
+	})
+
+	t.Run("if-regex-rejects-inequality-operator", func(t *testing.T) {
+		// Inverting the operator would be a subtle bug:
+		// the workflow would NOT run on PR events.
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.event_name != 'pull_request'\n" +
+			"        run: echo ok\n"
+		if ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to reject `!=` operator (would invert the contract); body:\n%s", body)
+		}
+	})
+
+	t.Run("if-regex-rejects-wrong-event-var", func(t *testing.T) {
+		// A token from `pull_request.head.ref` etc. would
+		// not gate on event_name.
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.head_ref == 'pull_request'\n" +
+			"        run: echo ok\n"
+		if ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to reject a non-event_name expression; body:\n%s", body)
+		}
+	})
+
+	t.Run("if-regex-rejects-missing-quotes", func(t *testing.T) {
+		body := "      - name: Capture PR metadata (PR context only)\n" +
+			"        if: github.event_name == pull_request\n" +
+			"        run: echo ok\n"
+		if ciWorkflowStepPRHeadIfRegex.MatchString(body) {
+			t.Fatalf("expected regex to reject an unquoted literal; body:\n%s", body)
+		}
+	})
 }

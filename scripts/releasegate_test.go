@@ -126,6 +126,60 @@ func (h *harness) headSHA() string {
 	return strings.TrimSpace(string(out))
 }
 
+// buildSyntheticTwoParentMerge builds a synthetic 2-parent
+// merge commit on top of the harness's current HEAD using
+// `git commit-tree` (the same low-level object-creation
+// command the Go fixture in
+// `internal/mcp/release_gate_test.go:buildSyntheticTwoParentCommit`
+// uses). The merge commit ends up with exactly two parents
+// — the same parent-count signal `actions/checkout@v4`
+// produces on a pull_request event (R4-014). After this
+// call, the harness's `git rev-parse HEAD` resolves to the
+// new merge commit and its two parent SHAs are reachable
+// from HEAD. Used by the bash-side merge-checkout
+// integration test (R5-NEW-003) so the gate's
+// `is_github_pr_merge_checkout` helper detects the shape
+// without depending on a real GitHub Actions runner.
+func (h *harness) buildSyntheticTwoParentMerge() {
+	h.t.Helper()
+	headSHA := h.headSHA()
+	headTree := h.runGitOut("rev-parse", "HEAD^{tree}")
+	// Parent 1: a regular commit on top of HEAD with the same
+	// tree (distinct commit object).
+	parent1 := h.runGitOut("commit-tree", headTree,
+		"-p", headSHA, "-m", "synthetic-parent-1")
+	// Parent 2: a sibling commit on top of HEAD with the same
+	// tree (distinct commit object).
+	parent2 := h.runGitOut("commit-tree", headTree,
+		"-p", headSHA, "-m", "synthetic-parent-2")
+	// Merge commit with two parents.
+	mergeSHA := h.runGitOut("commit-tree", headTree,
+		"-p", parent1, "-p", parent2, "-m", "synthetic-merge")
+	// Point HEAD at the merge commit so subsequent
+	// parentCount checks see 2.
+	runGit(h.t, h.repo, "reset", "--hard", mergeSHA)
+}
+
+// runGitOut runs `git <args...>` in the harness repo and
+// returns trimmed stdout. Used by the synthetic 2-parent
+// merge helper to keep the test bodies free of
+// error-handling noise (matches the pattern in
+// `internal/mcp/release_gate_test.go:mustRunGit`).
+func (h *harness) runGitOut(args ...string) string {
+	h.t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = h.repo
+	out, err := cmd.Output()
+	if err != nil {
+		stderr := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		h.t.Fatalf("git %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // addValidRDDPassReceipt commits a complete RDD receipt with Status: pass
 // referencing the SHA of the FIRST commit that introduced the receipt.
 // The receipt commit stays reachable from any later HEAD on the same
@@ -2185,23 +2239,40 @@ func TestGateRejectsCandidateNotInPRHeadContext(t *testing.T) {
 	}
 }
 
-// TestGateRejectsInvalidPRHeadEnv is the R4-013 fail-closed
-// surface. When the PR_HEAD env is partially set or contains
-// non-hex values, the gate MUST fail closed rather than
-// silently fall back to the local HEAD/HEAD~1 path. The
+// TestGateRejectsInvalidPRHeadEnv is the R4-013 / R5-NEW-003
+// fail-closed surface. When the PR_HEAD env is partially set
+// or contains non-hex values, the gate MUST fail closed rather
+// than silently fall back to the local HEAD/HEAD~1 path. The
 // local fallback would mask the CI context and let a receipt
 // authored against the PR tip pass a CI merge-checkout whose
 // HEAD is the synthetic merge commit.
+//
+// The R5-NEW-003 strengthening pins the SPECIFIC fail-closed
+// class label the gate must surface. The previous test only
+// asserted the generic `RELEASE_GATE_PR_HEAD` substring, so a
+// partial-set export and a non-hex value both produced the
+// same error message — operators reading the log could not
+// distinguish a workflow export bug (missing var) from a value
+// interpolation bug (non-hex). The Go process guard at
+// `internal/mcp/release_gate_test.go` already distinguishes
+// three classes ("CI PR context missing" / "CI PR context
+// partially set" / "CI PR context invalid"); the bash gate
+// MUST report the same classes so a CI log can drive a
+// targeted fix. The bash `wantClass` strings below match the
+// Go labels exactly.
 func TestGateRejectsInvalidPRHeadEnv(t *testing.T) {
 	cases := []struct {
 		name         string
 		prHead       string
 		prHeadParent string
+		wantClass    string
 	}{
-		{name: "non-hex-prhead", prHead: "not-a-sha", prHeadParent: strings.Repeat("2", 40)},
-		{name: "non-hex-prparent", prHead: strings.Repeat("1", 40), prHeadParent: "not-a-sha"},
-		{name: "prhead-set-parent-empty", prHead: strings.Repeat("1", 40), prHeadParent: ""},
-		{name: "prhead-empty-parent-set", prHead: "", prHeadParent: strings.Repeat("2", 40)},
+		// Malformed: both set but non-hex values → "CI PR context invalid".
+		{name: "non-hex-prhead", prHead: "not-a-sha", prHeadParent: strings.Repeat("2", 40), wantClass: "CI PR context invalid"},
+		{name: "non-hex-prparent", prHead: strings.Repeat("1", 40), prHeadParent: "not-a-sha", wantClass: "CI PR context invalid"},
+		// Partial: one var set, the other empty → "CI PR context partially set".
+		{name: "prhead-set-parent-empty", prHead: strings.Repeat("1", 40), prHeadParent: "", wantClass: "CI PR context partially set"},
+		{name: "prhead-empty-parent-set", prHead: "", prHeadParent: strings.Repeat("2", 40), wantClass: "CI PR context partially set"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2214,12 +2285,84 @@ func TestGateRejectsInvalidPRHeadEnv(t *testing.T) {
 				"RELEASE_GATE_PR_HEAD_PARENT_SHA="+tt.prHeadParent,
 			)
 			if exit == 0 {
-				t.Fatal("expected non-zero exit for invalid PR_HEAD env")
+				t.Fatalf("expected non-zero exit for invalid PR_HEAD env (class=%q)", tt.wantClass)
 			}
-			if !strings.Contains(stderr, "RELEASE_GATE_PR_HEAD") {
-				t.Fatalf("expected stderr to mention 'RELEASE_GATE_PR_HEAD', got %q", stderr)
+			// Class-specific assertion: the bash validator MUST
+			// surface the matching class label so a CI operator
+			// can act on the specific failure mode. The Go
+			// process guard emits the same label, so the two
+			// validators stay symmetric.
+			if !strings.Contains(stderr, tt.wantClass) {
+				t.Fatalf("expected stderr to mention class %q (specific failure mode); got %q", tt.wantClass, stderr)
 			}
 		})
+	}
+}
+
+// TestGateFailClosedOnMissingPRHeadContextInMergeCheckout is
+// the R5-NEW-003 RED gate for the third fail-closed class:
+// "CI PR context missing". The wrapper-level integration test
+// in `internal/mcp/release_gate_test.go` already pins this
+// class against a synthetic 2-parent commit on the Go side;
+// this test pins the SAME class against the bash validator
+// end-to-end through the gate subprocess. The harness builds
+// a real synthetic 2-parent merge commit
+// (`git commit-tree -p <a> -p <b>`) in the synthetic repo
+// and runs the gate with CI=true AND
+// GITHUB_EVENT_NAME=pull_request BUT no PR_HEAD env. The
+// gate's `is_github_pr_merge_checkout` helper detects the
+// 2-parent shape and MUST fail closed with the "CI PR
+// context missing" label. The previous bash behavior was to
+// silently fall through to the local HEAD/HEAD~1 contract —
+// which would either spuriously accept (if HEAD happened to
+// match) or spuriously reject (if it didn't) a CI merge
+// checkout whose HEAD is the synthetic merge commit. R5-NEW-003.
+func TestGateFailClosedOnMissingPRHeadContextInMergeCheckout(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// Build a synthetic 2-parent merge commit on top of the
+	// initial commit so the gate's merge-checkout detection
+	// fires. The harness starts with a single initial commit;
+	// we use `git commit-tree` to build the two parents and
+	// the merge with the initial commit's tree.
+	h.buildSyntheticTwoParentMerge()
+
+	exit, _, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+		"CI=true",
+		"GITHUB_EVENT_NAME=pull_request",
+	)
+	if exit == 0 {
+		t.Fatalf("expected non-zero exit under merge-checkout shape without PR_HEAD env; got 0. stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "CI PR context missing") {
+		t.Fatalf("expected stderr to mention 'CI PR context missing' (the missing-PR_HEAD fail-closed class); got %q", stderr)
+	}
+}
+
+// TestGateMissingPRHeadFallsThroughOutsideMergeCheckout is
+// the R5-NEW-003 triangulation: when the PR_HEAD env is unset
+// AND the merge-checkout shape is NOT detected, the local
+// contract MUST apply (no "missing" fail-closed). The
+// regression that fires "missing" universally — even on a
+// normal local run with no PR context — would trip here. The
+// test runs the gate without CI/event/merge-checkout shape;
+// the receipt's Candidate Commit equals HEAD (the local
+// contract), so the gate passes. R5-NEW-003.
+func TestGateMissingPRHeadFallsThroughOutsideMergeCheckout(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// No synthetic 2-parent commit, no CI/event, no PR_HEAD env.
+	exit, _, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 (local contract path); got %d; stderr=%q", exit, stderr)
+	}
+	if strings.Contains(stderr, "CI PR context") {
+		t.Fatalf("expected no 'CI PR context ...' fail-closed surface outside the merge-checkout shape; got stderr=%q", stderr)
 	}
 }
 
