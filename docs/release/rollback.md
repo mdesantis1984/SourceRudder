@@ -26,25 +26,51 @@ Before any rollback, confirm:
    promoting is a mandatory sanity check. The gate's step 2 is
    satisfied by the local RDD receipt at
    `docs/release/reviews/review-be4525bc4797e972.md` (Status:
-   pass + Candidate Commit equal to HEAD or HEAD~1 + exact
-   Branch: field + free-form Scope + Verified Commands section
-   with PASS entries + Unresolved Blocker Policy declaration).
-   The previous `Authority: official` header has been removed —
-   there is no external review provider binding.
+   pass + Candidate Commit equal to HEAD or HEAD~1 of the LOCAL
+   checkout, or PR_HEAD_SHA / PR_HEAD_PARENT_SHA of the CI
+   merge-checkout + exact Branch: field + free-form Scope +
+   Verified Commands section with PASS entries + Unresolved
+   Blocker Policy declaration). The previous `Authority: official`
+   header has been removed — there is no external review provider
+   binding.
+
+   The Candidate Commit check is CI-merge-aware (R4-013): a
+   local run uses HEAD/HEAD~1; a CI run on a GitHub pull_request
+   event uses the two SHAs the workflow exports
+   (`RELEASE_GATE_PR_HEAD_SHA` = PR tip and
+   `RELEASE_GATE_PR_HEAD_PARENT_SHA` = PR tip~1). The CI
+   merge-checkout's HEAD is the synthetic merge commit and
+   cannot represent the receipt's PR-tip context directly,
+   so the workflow exports the explicit context. The contract
+   is exact-match on the two SHAs in either context — arbitrary
+   ancestors are NOT accepted, so the R4-006 rollback safety
+   is preserved.
+
+   The gate's MERGE_BASE pre-condition (R4-012) accepts a
+   pre-computed value from the workflow
+   (`MERGE_BASE=$(git merge-base $BASE_SHA HEAD)`) before
+   falling back to the local `git merge-base "$BASE_REF" HEAD`
+   re-resolution. The CI PR checkout does NOT fetch a local
+   `main` ref, so the in-script re-resolution fails; the
+   pre-computed value is the authoritative path under CI.
 
 4. A **rollback forces a fresh RDD receipt**. The receipt's
    `Candidate Commit` field MUST equal HEAD or HEAD~1 of the
-   new HEAD. After `git revert <buggy-sha>`, the buggy SHA is
-   HEAD~2 or deeper of the rollback commit, so the existing
-   receipt's `Candidate Commit` no longer satisfies the
-   precise contract and the gate will fail. The operator MUST
-   re-author the receipt as a separate commit (a "recovery
-   receipt") with:
+   new HEAD (local context) OR the PR_HEAD_SHA / PR_HEAD_PARENT_SHA
+   the workflow exports (CI context). After `git revert
+   <buggy-sha>`, the buggy SHA is HEAD~2 or deeper of the
+   rollback commit, so the existing receipt's `Candidate
+   Commit` no longer satisfies the precise contract and the
+   gate will fail. The operator MUST re-author the receipt as
+   a separate commit (a "recovery receipt") with:
    - `Status: pass` (kept; the receipt is the local
      attestation)
    - `Candidate Commit: <rollback-sha>` (the SHA of the
      rollback commit, which becomes HEAD~1 after the
-     receipt is committed)
+     receipt is committed — the canonical two-commit flow
+     that satisfies the local context; in CI the same value
+     satisfies the PR_HEAD_PARENT_SHA half of the CI
+     contract)
    - `Branch: <branch>` (unchanged)
    - `Verified Commands:` re-run against the rolled-back
      code (the operator re-executes the `go build / vet /
@@ -53,12 +79,16 @@ Before any rollback, confirm:
      describe the rollback)
 
    The re-authoring commit is the new HEAD and the rollback
-   commit is HEAD~1, satisfying the precise contract. A
-   `Status: fail` flip is NOT the right answer — the gate
-   would still fail because the receipt would lack
-   `Verified Commands:` entries, and the contract would
-   remain ambiguous about whether the receipt attests the
-   rollback or the original buggy SHA.
+   commit is HEAD~1, satisfying the precise contract under
+   the local context. In CI, the workflow exports
+   PR_HEAD_SHA = the new HEAD (the receipt re-authoring
+   commit) and PR_HEAD_PARENT_SHA = the rollback commit; the
+   receipt's Candidate Commit = PR_HEAD_PARENT_SHA satisfies
+   the CI contract. A `Status: fail` flip is NOT the right
+   answer — the gate would still fail because the receipt
+   would lack `Verified Commands:` entries, and the contract
+   would remain ambiguous about whether the receipt attests
+   the rollback or the original buggy SHA.
 
 ## Atomic Git Revert (canonical path)
 
@@ -203,6 +233,52 @@ on a clean checkout of the rollback SHA:
 - [ ] The cancellation tests in `internal/fetch/fetcher_test.go`
       pass on the rollback SHA (they cover the Phase 12.5
       cancellable retry behaviour).
+
+## Two-Context Candidate Commit Contract (R4-006 + R4-013)
+
+The release gate's `Candidate Commit` check operates in two
+contexts:
+
+| Context | Trigger | Allowed SHAs |
+|---------|---------|--------------|
+| Local (operator run, push event, local checkout) | Neither `RELEASE_GATE_PR_HEAD_SHA` nor `RELEASE_GATE_PR_HEAD_PARENT_SHA` is set | HEAD or HEAD~1 |
+| CI (GitHub Actions pull_request job) | Both `RELEASE_GATE_PR_HEAD_SHA` and `RELEASE_GATE_PR_HEAD_PARENT_SHA` are set by the workflow's `Capture PR metadata` step | PR_HEAD_SHA (PR tip) or PR_HEAD_PARENT_SHA (PR tip~1) |
+
+The two contexts are mutually exclusive: a CI run ALWAYS sets
+both PR_HEAD env vars; a local run NEVER sets them. The gate
+selects the context from env presence alone — no additional
+heuristic. A partially-set PR_HEAD env (one var set, the other
+empty) fails closed.
+
+The CI context is required because `actions/checkout@v4` on a
+pull_request event produces a synthetic merge commit whose
+HEAD~1 is the PR tip and HEAD~2 is the receipt's actual code
+commit. None of those three SHAs match the receipt's `Candidate
+Commit` field by the local contract (HEAD or HEAD~1), so without
+the PR_HEAD env the gate would refuse a receipt authored against
+the PR tip. The explicit env export makes the CI path
+representable.
+
+The CI contract is NOT a broadening of the rollback safety. The
+allowed set in CI is exactly two SHAs (PR tip and PR tip~1);
+arbitrary ancestors are still rejected. A receipt attesting a
+SHAs deeper than the PR tip~1 will fail the gate with "RDD
+receipt Candidate Commit <sha> must equal PR_HEAD_SHA or
+PR_HEAD_PARENT_SHA" — the same fail-closed behavior the local
+contract enforces.
+
+The corresponding Go test guard at
+`internal/mcp/release_gate_test.go`
+(`TestReleaseGateRDDReceiptSatisfiesLocalContract`) skips on a
+GitHub PR synthetic merge commit via the
+`isGitHubPRMergeCheckout` helper (CI=true AND
+GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents). The
+helper exists so the receipt-shape guard is not masked by the
+fail-closed "branch context unresolvable" error on a
+merge-checkout whose HEAD is the synthetic merge commit. The
+release-gate workflow is the authoritative enforcer of the
+receipt contract on CI; the Go guard exists to pin the receipt
+shape for the PR-tip checkout shape only.
 
 ## What Rollback Does NOT Do
 

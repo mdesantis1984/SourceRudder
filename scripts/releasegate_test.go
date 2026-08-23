@@ -63,9 +63,27 @@ func (h *harness) run(env ...string) (int, string, string) {
 	// Strip gate-relevant env vars inherited from the calling shell
 	// so each test runs against a clean slate; the explicit env vars
 	// passed to run() override.
+	//
+	// The CI/GitHub strip list is the hermetic-fixture contract for
+	// the harness. Without it, a test process running under a CI
+	// shell that exports `CI=true`, `GITHUB_HEAD_REF=...`, etc.
+	// would leak those values into the synthetic gate run, and the
+	// gate would resolve its branch and bypass-state from the leaked
+	// values instead of from the test's explicit env. The exact
+	// leak surface is the same as the gate's own trusted-source
+	// resolution chain (CI=true, GITHUB_HEAD_REF, GITHUB_REF_NAME,
+	// CI_COMMIT_REF_NAME) plus the gate's own knobs (RELEASE_GATE_*,
+	// BASE_REF). R3-001 documents the original six-symptom cascade
+	// caused by the missing filter; R4-013 / R4-014 pin the fix.
 	filtered := make([]string, 0, len(os.Environ()))
 	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "RELEASE_GATE_") || strings.HasPrefix(e, "BASE_REF=") {
+		if strings.HasPrefix(e, "RELEASE_GATE_") ||
+			strings.HasPrefix(e, "BASE_REF=") ||
+			strings.HasPrefix(e, "CI=") ||
+			strings.HasPrefix(e, "GITHUB_") ||
+			strings.HasPrefix(e, "CI_COMMIT_REF_NAME=") ||
+			strings.HasPrefix(e, "MERGE_BASE=") ||
+			strings.HasPrefix(e, "RELEASE_GATE_PR_HEAD_") {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -1825,4 +1843,395 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 			t.Fatalf("expected stderr to mention 'Candidate Commit', got %q", stderr)
 		}
 	})
+}
+
+// ---- R3-001 / R4-013 / R4-012 corrective batch (PR #2 CI) ---------------
+//
+// The tests below pin the three fixes that close the PR #2 CI red
+// lights: the harness env-filter (R3-001), the release-gate MERGE_BASE
+// env contract (R4-012), and the receipt CI-merge-aware Candidate Commit
+// contract (R4-013). Each test exercises one behavior the gate must
+// guarantee, in isolation from the rest of the contract.
+
+// TestHarnessStripsCIEnvFromSubprocess is the R3-001 RED gate. The
+// harness.run() env filter MUST strip `CI`, `GITHUB_*`, and
+// `CI_COMMIT_REF_NAME` so a CI shell that exports these cannot
+// corrupt the synthetic fixtures. The proof is the dirty-bypass
+// path: outside CI (in the gate's view) the seam must still work,
+// but if the filter is missing the gate would see CI=true and
+// refuse the bypass. The test runs with `t.Setenv("CI", "true")`
+// in the calling test process; the harness MUST drop the leak.
+func TestHarnessStripsCIEnvFromSubprocess(t *testing.T) {
+	t.Setenv("CI", "true")
+	t.Setenv("GITHUB_HEAD_REF", "feature/leaked")
+	t.Setenv("GITHUB_REF_NAME", "leaked-ref")
+	t.Setenv("CI_COMMIT_REF_NAME", "leaked-branch")
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	h.commitFile("marker.txt", "clean state\n", "add marker")
+	h.recommitRDDPassReceipt("main")
+	h.touchFile("marker.txt", "dirty state\n")
+
+	// With dirty worktree AND dirty-bypass set, the gate must pass
+	// IF the filter stripped CI. If the filter is missing, the gate
+	// sees CI=true and refuses the bypass — the test fails.
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+		"RELEASE_GATE_ALLOW_DIRTY=1",
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 (filter must strip CI/GITHUB_*), got %d; stderr=%q", exit, stderr)
+	}
+	if !strings.Contains(stdout, "release-gate: PASS") {
+		t.Fatalf("expected PASS line, got stdout=%q", stdout)
+	}
+}
+
+// TestHarnessStripsGitHubBranchEnv is the R3-001 RED gate for the
+// branch-resolution path. The gate's CURRENT_BRANCH is
+// `${GITHUB_HEAD_REF:-...}` first, so a leaked GITHUB_HEAD_REF
+// would override the test's explicit RELEASE_GATE_BRANCH=main and
+// the receipt's Branch=main would mismatch. The test sets a
+// deliberately-different leaked branch; if the filter is missing
+// the gate resolves to the leaked value and the receipt blocks.
+func TestHarnessStripsGitHubBranchEnv(t *testing.T) {
+	t.Setenv("GITHUB_HEAD_REF", "feature/leaked")
+	t.Setenv("GITHUB_REF_NAME", "leaked-ref")
+	t.Setenv("CI_COMMIT_REF_NAME", "leaked-branch")
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	h.commitFile("marker.txt", "clean state\n", "add marker")
+	h.recommitRDDPassReceipt("main")
+
+	// RELEASE_GATE_BRANCH=main must win because the filter strips
+	// the leaked GITHUB_HEAD_REF before the gate sees it. The receipt
+	// declares Branch=main; if the gate sees the leaked value, the
+	// receipt blocks the merge.
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 (filter must strip GITHUB_*), got %d; stderr=%q", exit, stderr)
+	}
+	if !strings.Contains(stdout, "BRANCH=main") {
+		t.Fatalf("expected stdout to show BRANCH=main, got %q", stdout)
+	}
+}
+
+// TestHarnessStripsMergeBaseAndPRHeadEnv is the R4-012 / R4-013
+// filter-coverage guard. The harness env-filter MUST also strip
+// MERGE_BASE and RELEASE_GATE_PR_HEAD_* env vars, otherwise a
+// parent process that exports them (e.g. the release-gate script
+// calling `go test ./...` with the same env it received from the
+// workflow) would leak them into the synthetic gate runs. A
+// leaked MERGE_BASE would short-circuit the local
+// `git merge-base "$BASE_REF" HEAD` re-resolution; a leaked
+// PR_HEAD env would widen the receipt Candidate Commit check to
+// the CI context. Both would make existing tests that depend on
+// the local contract pass or fail for the wrong reason.
+//
+// The test exercises the carve-out path because it is the most
+// sensitive: the size-exception path requires the line-budget
+// check to use the synthetic repo's local merge-base, not a
+// leaked value from the parent shell. If the filter is missing
+// MERGE_BASE, the gate would see the leaked value and could
+// either inflate or shrink the diff range, masking or inventing
+// a line-budget failure.
+func TestHarnessStripsMergeBaseAndPRHeadEnv(t *testing.T) {
+	// Set the new env vars via t.Setenv so they appear in the
+	// test process's os.Environ() (which is what h.run() reads).
+	t.Setenv("MERGE_BASE", strings.Repeat("a", 40))
+	t.Setenv("RELEASE_GATE_PR_HEAD_SHA", strings.Repeat("b", 40))
+	t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", strings.Repeat("c", 40))
+
+	const carveBranch = "feature/close-fetch-resilience-release-gates-exception"
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// Create a feature branch so the merge-base resolution finds
+	// a real diff range (the same pattern the existing
+	// TestGateCarveOutExactBranchOnly test uses). Without this
+	// branch, `git merge-base main HEAD` returns HEAD (HEAD is
+	// on main), and the line budget is 0.
+	runGit(t, h.repo, "checkout", "-b", carveBranch)
+	h.commitFile("bulk.go", "package gatemod\n\n"+strings.Repeat("// padding\n", 500), "bulk to exceed 400 lines")
+	h.recommitRDDPassReceipt(carveBranch)
+
+	// The size-exception path is the canary. The carve-out matches
+	// the branch, but there is no size-exception receipt in the
+	// synthetic repo so the gate must fail-closed with
+	// "size-exception receipt missing". If the filter is missing
+	// MERGE_BASE, the gate would see the leaked value and could
+	// either inflate or shrink the diff range, masking or
+	// inventing a line-budget failure.
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH="+carveBranch,
+		"RELEASE_GATE_SIZE_EXCEPTION="+carveBranch,
+		"BASE_REF=main",
+	)
+	if exit == 0 {
+		t.Fatalf("expected non-zero exit (size-exception receipt missing in synthetic repo). stdout=%q stderr=%q", stdout, stderr)
+	}
+	if !strings.Contains(stderr, "size-exception") {
+		t.Fatalf("expected stderr to mention 'size-exception' (the carve-out path), got %q\nstdout=%q", stderr, stdout)
+	}
+}
+
+// TestGateHonorsValidMergeBaseEnv is the R4-012 RED gate. The
+// release-gate workflow pre-computes MERGE_BASE via
+// `git merge-base $BASE_SHA HEAD` because the PR checkout does NOT
+// fetch a local `main` ref. The gate MUST honor that pre-computed
+// value (validated as a 40-char hex SHA) instead of re-resolving
+// `git merge-base main HEAD`, which fails in a shallow CI
+// merge-checkout. The test exercises the env path end-to-end:
+// synthetic repo, two commits, MERGE_BASE env pointing at the
+// initial commit, gate must pass and log the env source.
+// BASE_REF is set to a non-existent branch so the local fallback
+// would also fail — proving the env path is what succeeded.
+func TestGateHonorsValidMergeBaseEnv(t *testing.T) {
+	h := newHarness(t)
+	// Snapshot the initial commit SHA so we can pass it as MERGE_BASE.
+	initialSHA := h.headSHA()
+	h.addValidRDDPassReceipt("main")
+	h.commitFile("marker.txt", "hello\n", "add marker")
+	h.recommitRDDPassReceipt("main")
+
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=__no_such_branch__",
+		"MERGE_BASE="+initialSHA,
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 with valid MERGE_BASE env, got %d; stderr=%q", exit, stderr)
+	}
+	if !strings.Contains(stdout, "release-gate: PASS") {
+		t.Fatalf("expected PASS line, got stdout=%q", stdout)
+	}
+	// Hard assertion: the gate MUST log that MERGE_BASE came from env
+	// (proves the env path is taken, not the local re-resolution).
+	if !strings.Contains(stdout, "(from env)") {
+		t.Fatalf("expected stdout to mention '(from env)' source, got %q", stdout)
+	}
+}
+
+// TestGateRejectsInvalidMergeBaseEnv is the R4-012 fail-closed
+// surface. The env path MUST validate the supplied MERGE_BASE as
+// a 40-char hex SHA. An invalid value (non-hex, wrong length, or
+// empty when explicitly set) MUST fail closed rather than be
+// silently re-resolved.
+func TestGateRejectsInvalidMergeBaseEnv(t *testing.T) {
+	cases := []struct {
+		name string
+		val  string
+	}{
+		{name: "non-hex", val: "not-a-sha"},
+		{name: "too-short", val: "abc123"},
+		{name: "too-long", val: strings.Repeat("a", 41)},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.addValidRDDPassReceipt("main")
+			// Use BASE_REF=__no_such_branch__ so the fallback
+			// `git merge-base` also fails — proving the env path
+			// is what would block (the failure mode must mention
+			// MERGE_BASE, not the BASE_REF fallback).
+			exit, _, stderr := h.run(
+				"RELEASE_GATE_BRANCH=main",
+				"BASE_REF=__no_such_branch__",
+				"MERGE_BASE="+tt.val,
+			)
+			if exit == 0 {
+				t.Fatalf("expected non-zero exit for invalid MERGE_BASE=%q, got 0", tt.val)
+			}
+			if !strings.Contains(stderr, "MERGE_BASE") {
+				t.Fatalf("expected stderr to mention MERGE_BASE, got %q", stderr)
+			}
+		})
+	}
+}
+
+// TestGateFallsBackToMergeBaseWhenEnvMissing is the R4-012
+// triangulation: when MERGE_BASE is unset, the gate MUST fall
+// back to `git merge-base "$BASE_REF" HEAD`. The synthetic
+// harness creates a clean repo where the local merge-base
+// resolution works, so the gate passes without any env.
+// This proves the env path is purely additive, not a silent
+// breaking change for the local-only flow.
+func TestGateFallsBackToMergeBaseWhenEnvMissing(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+
+	// No MERGE_BASE env: gate must use the local `git merge-base
+	// "$BASE_REF" HEAD` path and pass.
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 with fallback to git merge-base, got %d; stderr=%q", exit, stderr)
+	}
+	if !strings.Contains(stdout, "release-gate: PASS") {
+		t.Fatalf("expected PASS line, got stdout=%q", stdout)
+	}
+}
+
+// TestGateAcceptsPRHeadContext is the R4-013 RED gate. When the
+// release-gate workflow sets RELEASE_GATE_PR_HEAD_SHA and
+// RELEASE_GATE_PR_HEAD_PARENT_SHA (the explicit PR-head context),
+// the receipt's Candidate Commit MUST be allowed to match one of
+// those two SHAs (PR tip or its direct parent). This is the
+// CI-merge-aware half of the two-context contract: locally the
+// contract is still HEAD/HEAD~1, but in CI the contract widens to
+// PR tip / PR tip~1 to accommodate the synthetic merge commit
+// that `actions/checkout@v4` produces on a pull_request event.
+// The test exercises the full env path: PR_HEAD env set, receipt
+// committed with Candidate matching the env, gate must pass.
+func TestGateAcceptsPRHeadContext(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// Re-anchor the receipt at HEAD so its Candidate equals HEAD
+	// of the new HEAD (= the previous HEAD's SHA, which is the
+	// placeholder). Under the CI contract, the new HEAD is
+	// PR_HEAD_SHA and the previous HEAD (= placeholder) is
+	// PR_HEAD_PARENT_SHA; Candidate == PR_HEAD_PARENT_SHA
+	// satisfies the CI contract.
+	h.recommitRDDPassReceipt("main")
+	newHead := h.headSHA()
+	parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
+	parentCmd.Dir = h.repo
+	parentOut, err := parentCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD~1: %v", err)
+	}
+	newParent := strings.TrimSpace(string(parentOut))
+
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+		"RELEASE_GATE_PR_HEAD_SHA="+newHead,
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA="+newParent,
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 with PR_HEAD context, got %d; stderr=%q", exit, stderr)
+	}
+	if !strings.Contains(stdout, "release-gate: PASS") {
+		t.Fatalf("expected PASS line, got stdout=%q", stdout)
+	}
+	// Hard assertion: the gate MUST log the CI context label,
+	// not the local one.
+	if !strings.Contains(stdout, "PR_HEAD_or_PR_HEAD~1") {
+		t.Fatalf("expected stdout to mention 'PR_HEAD_or_PR_HEAD~1' label, got %q", stdout)
+	}
+}
+
+// TestGateRejectsCandidateNotInPRHeadContext is the R4-013
+// not-broader-than-allowed surface. When PR_HEAD env is set, the
+// contract is EXACTLY PR_HEAD_SHA or PR_HEAD_PARENT_SHA — not
+// arbitrary ancestors. A receipt whose Candidate matches neither
+// (e.g. matches HEAD or HEAD~1 of the local checkout, which is a
+// different SHA in the synthetic harness) MUST be rejected. This
+// is the seam that prevents accidentally broadening the contract
+// to "any ancestor" and undoing the R4-006 rollback safety.
+func TestGateRejectsCandidateNotInPRHeadContext(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// Receipt's Candidate == HEAD. Now set PR_HEAD env to two
+	// SHAs that are deliberately NOT HEAD. The receipt's
+	// Candidate does not match either, so the gate must fail.
+	fakePRHead := strings.Repeat("1", 40)
+	fakePRHeadParent := strings.Repeat("2", 40)
+
+	exit, _, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+		"RELEASE_GATE_PR_HEAD_SHA="+fakePRHead,
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA="+fakePRHeadParent,
+	)
+	if exit == 0 {
+		t.Fatal("expected non-zero exit: Candidate must match PR_HEAD or PR_HEAD~1")
+	}
+	if !strings.Contains(stderr, "Candidate Commit") {
+		t.Fatalf("expected stderr to mention 'Candidate Commit', got %q", stderr)
+	}
+}
+
+// TestGateRejectsInvalidPRHeadEnv is the R4-013 fail-closed
+// surface. When the PR_HEAD env is partially set or contains
+// non-hex values, the gate MUST fail closed rather than
+// silently fall back to the local HEAD/HEAD~1 path. The
+// local fallback would mask the CI context and let a receipt
+// authored against the PR tip pass a CI merge-checkout whose
+// HEAD is the synthetic merge commit.
+func TestGateRejectsInvalidPRHeadEnv(t *testing.T) {
+	cases := []struct {
+		name         string
+		prHead       string
+		prHeadParent string
+	}{
+		{name: "non-hex-prhead", prHead: "not-a-sha", prHeadParent: strings.Repeat("2", 40)},
+		{name: "non-hex-prparent", prHead: strings.Repeat("1", 40), prHeadParent: "not-a-sha"},
+		{name: "prhead-set-parent-empty", prHead: strings.Repeat("1", 40), prHeadParent: ""},
+		{name: "prhead-empty-parent-set", prHead: "", prHeadParent: strings.Repeat("2", 40)},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.addValidRDDPassReceipt("main")
+			exit, _, stderr := h.run(
+				"RELEASE_GATE_BRANCH=main",
+				"BASE_REF=main",
+				"RELEASE_GATE_PR_HEAD_SHA="+tt.prHead,
+				"RELEASE_GATE_PR_HEAD_PARENT_SHA="+tt.prHeadParent,
+			)
+			if exit == 0 {
+				t.Fatal("expected non-zero exit for invalid PR_HEAD env")
+			}
+			if !strings.Contains(stderr, "RELEASE_GATE_PR_HEAD") {
+				t.Fatalf("expected stderr to mention 'RELEASE_GATE_PR_HEAD', got %q", stderr)
+			}
+		})
+	}
+}
+
+// TestGatePRHeadContextNotLocalFallback is the R4-013
+// triangulation: when PR_HEAD env is set AND valid AND
+// matches the receipt's Candidate, the gate must use the
+// CI context (log PR_HEAD_or_PR_HEAD~1) — not the local
+// HEAD/HEAD~1 path. This proves the env path is taken
+// (not silently ignored) so a future regression that
+// drops the env branch fails here.
+func TestGatePRHeadContextNotLocalFallback(t *testing.T) {
+	h := newHarness(t)
+	h.addValidRDDPassReceipt("main")
+	// Re-anchor so the receipt's Candidate == HEAD~1 of the new
+	// HEAD (the placeholder). Then set PR_HEAD env to match.
+	h.recommitRDDPassReceipt("main")
+	newHead := h.headSHA()
+	parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
+	parentCmd.Dir = h.repo
+	parentOut, err := parentCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD~1: %v", err)
+	}
+	newParent := strings.TrimSpace(string(parentOut))
+
+	exit, stdout, stderr := h.run(
+		"RELEASE_GATE_BRANCH=main",
+		"BASE_REF=main",
+		"RELEASE_GATE_PR_HEAD_SHA="+newHead,
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA="+newParent,
+	)
+	if exit != 0 {
+		t.Fatalf("expected exit 0 with PR_HEAD context, got %d; stderr=%q", exit, stderr)
+	}
+	// The success-path log must include the CI context label.
+	if !strings.Contains(stdout, "PR_HEAD_or_PR_HEAD~1") {
+		t.Fatalf("expected stdout to mention CI context label, got %q", stdout)
+	}
 }

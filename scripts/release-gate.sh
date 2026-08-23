@@ -18,6 +18,41 @@
 #                                literal HEAD as a branch.
 #
 # Optional env:
+#   MERGE_BASE                   pre-computed merge-base SHA (40-char
+#                                hex). The release-gate workflow at
+#                                .github/workflows/release-gate.yml
+#                                exports this from
+#                                `git merge-base $BASE_SHA HEAD`
+#                                because the PR checkout does NOT
+#                                fetch a local `main` ref and the
+#                                in-script `git merge-base main HEAD`
+#                                re-resolution fails under a CI
+#                                merge-checkout. When supplied, the
+#                                gate honors the env value (validated
+#                                as a 40-char hex SHA) instead of
+#                                re-resolving; when unset or invalid,
+#                                the gate falls back to the local
+#                                re-resolution and fails closed if
+#                                both paths are empty. R4-012.
+#
+#   RELEASE_GATE_PR_HEAD_SHA     full PR-tip SHA (40-char hex).
+#   RELEASE_GATE_PR_HEAD_PARENT_SHA
+#                                full PR-tip parent SHA (40-char hex).
+#                                When BOTH are set, the receipt
+#                                Candidate Commit check widens from
+#                                HEAD/HEAD~1 (local) to
+#                                PR_HEAD_SHA/PR_HEAD_PARENT_SHA (CI).
+#                                This is the two-context contract: a
+#                                CI merge-checkout cannot represent
+#                                the PR-tip receipt context directly
+#                                (its HEAD is the synthetic merge
+#                                commit), so the workflow exports
+#                                the explicit PR-head context. The
+#                                contract is exact-match on the two
+#                                SHAs — arbitrary ancestors are NOT
+#                                accepted so rollback safety is
+#                                preserved. R4-013.
+#
 #   RELEASE_GATE_SIZE_EXCEPTION  exact branch name permitted to exceed the
 #                                400-line authored budget. Matches that
 #                                branch ONLY; every other branch falls
@@ -122,11 +157,29 @@ SIZE_EXCEPTIONS_RECEIPT="${SIZE_EXCEPTIONS_RECEIPT:-${SIZE_EXCEPTIONS_DIR}/close
 
 # ---- preconditions -------------------------------------------------------
 
-MERGE_BASE="$(git merge-base "$BASE_REF" HEAD 2>/dev/null || true)"
-if [[ -z "$MERGE_BASE" ]]; then
-  fail "could not resolve merge-base of BASE_REF=$BASE_REF"
+# MERGE_BASE: honor the workflow-supplied value (validated as a 40-char
+# hex SHA) before falling back to the local `git merge-base
+# "$BASE_REF" HEAD` re-resolution. The release-gate workflow
+# pre-computes MERGE_BASE via `git merge-base $BASE_SHA HEAD`
+# because the PR checkout does NOT fetch a local `main` ref; the
+# in-script re-resolution fails under a CI merge-checkout. The
+# contract is fail-closed: if the env value is set and invalid
+# (non-hex, wrong length), the gate exits non-zero immediately
+# rather than silently re-resolving; if the env is unset OR the
+# re-resolution returns empty, the gate exits non-zero. The two
+# sources are mutually exclusive — exactly one is used. R4-012.
+if [[ -n "${MERGE_BASE:-}" ]]; then
+  if ! [[ "$MERGE_BASE" =~ ^[0-9a-f]{40}$ ]]; then
+    fail "MERGE_BASE env '$MERGE_BASE' is not a valid 40-char hex SHA (R4-012)"
+  fi
+  log "BASE_REF=$BASE_REF BRANCH=$CURRENT_BRANCH MERGE_BASE=$MERGE_BASE (from env)"
+else
+  MERGE_BASE="$(git merge-base "$BASE_REF" HEAD 2>/dev/null || true)"
+  if [[ -z "$MERGE_BASE" ]]; then
+    fail "could not resolve merge-base of BASE_REF=$BASE_REF and no MERGE_BASE env supplied (R4-012)"
+  fi
+  log "BASE_REF=$BASE_REF BRANCH=$CURRENT_BRANCH MERGE_BASE=$MERGE_BASE (resolved from BASE_REF=$BASE_REF)"
 fi
-log "BASE_REF=$BASE_REF BRANCH=$CURRENT_BRANCH MERGE_BASE=$MERGE_BASE"
 
 # ---- 1. worktree cleanliness ---------------------------------------------
 
@@ -218,13 +271,21 @@ if [[ "$rdd_status" != "Status: pass" ]]; then
   rdd_fail=1
 fi
 
-# 2. Candidate Commit: <sha>. The precise contract requires the
-#    SHA to equal HEAD or HEAD~1. This forces a new receipt after
-#    a rollback (the buggy SHA is no longer HEAD~1) and after any
-#    code change (the receipt's candidate SHA is now HEAD~2 or
-#    deeper). The two-commit code-then-receipt workflow still
-#    works because the receipt commit lands at HEAD and the code
-#    commit it attests sits at HEAD~1.
+# 2. Candidate Commit: <sha>. The precise contract is
+#    CI-merge-aware: when the release-gate workflow exports
+#    RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA
+#    (the explicit PR-head context), the SHA must equal one of
+#    those two SHAs (PR tip or its direct parent). Otherwise the
+#    SHA must equal HEAD or HEAD~1 (the local contract, unchanged
+#    from R4-006). The two-context contract is exact-match on
+#    those two SHAs in either context — arbitrary ancestors are
+#    NOT accepted so rollback safety is preserved. A CI
+#    merge-checkout cannot represent the receipt's PR-tip
+#    context directly (its HEAD is the synthetic merge commit),
+#    so the workflow exports the explicit context; without it,
+#    the gate would refuse a receipt authored against the PR
+#    tip. Either source must be a non-empty 40-char hex SHA or
+#    the gate fails closed. R4-006 (local) + R4-013 (CI).
 rdd_commit_line="$(grep -E '^Candidate Commit:' "$REVIEW_FILE" | head -n 1 || true)"
 if [[ -z "$rdd_commit_line" ]]; then
   log_failure "RDD receipt Candidate Commit line missing at $REVIEW_FILE"
@@ -238,13 +299,27 @@ else
     log_failure "RDD receipt Candidate Commit $rdd_commit_sha is not a full 40-char SHA at $REVIEW_FILE"
     rdd_fail=1
   else
-    rdd_head_sha="$(git rev-parse HEAD)"
-    rdd_head_parent_sha="$(git rev-parse HEAD~1 2>/dev/null || true)"
-    if [[ "$rdd_commit_sha" != "$rdd_head_sha" && "$rdd_commit_sha" != "$rdd_head_parent_sha" ]]; then
-      log_failure "RDD receipt Candidate Commit $rdd_commit_sha must equal HEAD ($rdd_head_sha) or HEAD~1 (${rdd_head_parent_sha:-<none>}) — arbitrary ancestors are not accepted; rollback or code change requires a new receipt at $REVIEW_FILE"
-      rdd_fail=1
+    rdd_pr_head_sha="${RELEASE_GATE_PR_HEAD_SHA:-}"
+    rdd_pr_head_parent_sha="${RELEASE_GATE_PR_HEAD_PARENT_SHA:-}"
+    if [[ -n "$rdd_pr_head_sha" || -n "$rdd_pr_head_parent_sha" ]]; then
+      if ! [[ "$rdd_pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$rdd_pr_head_parent_sha" =~ ^[0-9a-f]{40}$ ]]; then
+        log_failure "RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA must both be valid 40-char hex SHAs (got '$rdd_pr_head_sha', '$rdd_pr_head_parent_sha') at $REVIEW_FILE (R4-013)"
+        rdd_fail=1
+      elif [[ "$rdd_commit_sha" != "$rdd_pr_head_sha" && "$rdd_commit_sha" != "$rdd_pr_head_parent_sha" ]]; then
+        log_failure "RDD receipt Candidate Commit $rdd_commit_sha must equal PR_HEAD_SHA ($rdd_pr_head_sha) or PR_HEAD_PARENT_SHA ($rdd_pr_head_parent_sha) under the CI context — arbitrary ancestors are not accepted; rollback or code change requires a new receipt at $REVIEW_FILE (R4-013)"
+        rdd_fail=1
+      else
+        log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha matches PR_HEAD_or_PR_HEAD~1"
+      fi
     else
-      log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha matches HEAD_or_HEAD~1"
+      rdd_head_sha="$(git rev-parse HEAD)"
+      rdd_head_parent_sha="$(git rev-parse HEAD~1 2>/dev/null || true)"
+      if [[ "$rdd_commit_sha" != "$rdd_head_sha" && "$rdd_commit_sha" != "$rdd_head_parent_sha" ]]; then
+        log_failure "RDD receipt Candidate Commit $rdd_commit_sha must equal HEAD ($rdd_head_sha) or HEAD~1 (${rdd_head_parent_sha:-<none>}) — arbitrary ancestors are not accepted; rollback or code change requires a new receipt at $REVIEW_FILE"
+        rdd_fail=1
+      else
+        log "RDD_CANDIDATE_COMMIT=$rdd_commit_sha matches HEAD_or_HEAD~1"
+      fi
     fi
   fi
 fi
@@ -340,7 +415,11 @@ fi
 if (( rdd_fail == 1 )); then
   fail "RDD receipt at $REVIEW_FILE did not validate (see FAIL lines above)"
 fi
-log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=HEAD_or_HEAD~1"
+if [[ -n "${RELEASE_GATE_PR_HEAD_SHA:-}" || -n "${RELEASE_GATE_PR_HEAD_PARENT_SHA:-}" ]]; then
+  log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=PR_HEAD_or_PR_HEAD~1"
+else
+  log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=HEAD_or_HEAD~1"
+fi
 
 # ---- 3. line-budget (with exact-branch carve-out + tracked receipt) ----
 

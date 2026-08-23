@@ -11,6 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 fetches the full history so the
+          # receipt validator at
+          # internal/mcp/release_gate_test.go can resolve
+          # HEAD~1. The default fetch-depth:1 yields a
+          # single-commit detached HEAD that breaks the
+          # precise HEAD-or-HEAD~1 contract (R4-013 / R4-014).
+          # The receipt-shape guard skips on a GitHub
+          # pull_request synthetic merge commit (see
+          # isGitHubPRMergeCheckout); on a push event the
+          # worktree is a normal checkout and HEAD~1
+          # resolves normally.
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
