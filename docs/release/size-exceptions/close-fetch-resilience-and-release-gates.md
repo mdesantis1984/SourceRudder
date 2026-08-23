@@ -27,9 +27,9 @@ independently re-runs `go build` / `go vet` / `go test` / `go test
 | Field | Value |
 |-------|-------|
 | Branch | `feature/close-fetch-resilience-release-gates-exception` |
-| Commit | `2b91adbb652f0944384fd7b41bdd0947b96688aa` (Phase 17 R4-014 fix commit; the receipt re-authoring that follows sits at HEAD) |
+| Commit | `ff12a5b496b99399b291ccfd34996619f7c6e306` (Phase 18 R5-NEW-001/002/003 fix commit; the receipt re-authoring that follows sits at HEAD) |
 | Approval Reference | [#4125](memory://4139) — user-approved baseline size exception |
-| Scope | bounded (single-PR exception for Phase 12-17: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch, Phase 17 R4-014 Go-guard no-skip + synthetic-merge deterministic fixture + duplicate PR-head test differentiation) |
+| Scope | bounded (single-PR exception for Phase 12-18: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch, Phase 17 R4-014 Go-guard no-skip + synthetic-merge deterministic fixture + duplicate PR-head test differentiation, Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash) |
 | Expiration | 2026-12-31 |
 | Forward Reference | `docs/release/reviews/review-be4525bc4797e972.md` (the RDD receipt is the local authority attestation; this size-exception receipt NEVER substitutes for it) |
 
@@ -45,9 +45,9 @@ declares `Status: pass`. The values are identical to the table; the
 duplicate shape exists ONLY so the gate parser can find them.
 
 Branch: feature/close-fetch-resilience-release-gates-exception
-Commit: 2b91adbb652f0944384fd7b41bdd0947b96688aa
+Commit: ff12a5b496b99399b291ccfd34996619f7c6e306
 Approval Reference: #4125 (memory://4139) — user-approved baseline size exception
-Scope: bounded (single-PR exception for Phase 12-17: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013, and Phase 17 R4-014 Go-guard no-skip / synthetic-merge deterministic fixture / duplicate PR-head test differentiation)
+Scope: bounded (single-PR exception for Phase 12-18: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013, Phase 17 R4-014 Go-guard no-skip / synthetic-merge deterministic fixture / duplicate PR-head test differentiation, and Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash)
 Expiration: 2026-12-31
 Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)
 
@@ -78,14 +78,28 @@ The exception does NOT waive safeguards:
   CI context (not skip), so the receipt contract is exercised
   on every CI run; a missing or malformed `RELEASE_GATE_PR_HEAD_*`
   pair fails closed rather than silently waiving the check.
-- All Phase 12-17 fixes are committed to the PR diff, not to
+  Phase 18 (R5-NEW-001/002/003) further tightens the contract:
+  the wrapper-level integration test now exercises the three
+  fail-closed classes (missing / partial / invalid) end-to-end
+  on a real synthetic two-parent PR merge checkout (not just
+  the pure helper); the workflow contract assertion is
+  step-scoped so a comment elsewhere cannot satisfy the
+  `if: github.event_name == 'pull_request'` check; and the
+  bash gate now emits the same three fail-closed class labels
+  the Go guard emits, so a CI operator reading the log can
+  act on a specific class.
+- All Phase 12-18 fixes are committed to the PR diff, not to
   follow-up branches. Phase 16 is the PR #2 CI corrective batch
-  (R3-001 / R4-012 / R4-013) and Phase 17 is the R4-014
+  (R3-001 / R4-012 / R4-013), Phase 17 is the R4-014
   Go-guard no-skip batch (synthetic-merge deterministic fixture,
   duplicate PR-head test differentiation, corrected stale
-  HEAD-or-HEAD~1 comment). Both phases are part of the same
-  change so the release-gate, the receipt contract, and the
-  workflows stay consistent at the PR tip.
+  HEAD-or-HEAD~1 comment), and Phase 18 is the R5-NEW-001/002/003
+  PR_HEAD fail-closed contract tightening batch (wrapper
+  refactor + integration test, step-scoped workflow assertion,
+  bash three-class fail-closed alignment with Go). All three
+  phases are part of the same change so the release-gate, the
+  receipt contract, and the workflows stay consistent at the
+  PR tip.
 - The exception is bounded: it expires 2026-12-31. Any future
   over-budget PR MUST either fit the 400-line budget or split
   into chained PRs.
@@ -93,8 +107,9 @@ The exception does NOT waive safeguards:
 ## Composition of the Over-Budget Diff
 
 This PR contains the work for Phases 1-15 of the SDD change
-plus the Phase 16 PR #2 CI corrective batch and the Phase 17
-R4-014 Go-guard no-skip batch:
+plus the Phase 16 PR #2 CI corrective batch, the Phase 17
+R4-014 Go-guard no-skip batch, and the Phase 18 R5-NEW-001/002/003
+PR_HEAD fail-closed contract tightening batch:
 
 - **Phases 1-8** (preserved from the prior apply batch):
   release gate, fetch resilience, connector reliability, anonymous
@@ -149,6 +164,35 @@ R4-014 Go-guard no-skip batch:
   pipeline. The stale `must equal HEAD or HEAD~1` comment in
   the wrapper docstring and the bash gate's step-2 block
   header is corrected to describe the two-context contract.
+- **Phase 18** (R5-NEW-001/002/003 PR_HEAD fail-closed
+  contract tightening): the wrapper at
+  `internal/mcp/release_gate_test.go` is refactored from
+  `rddReceiptValidateStaged(body)` to the parameterized
+  `rddReceiptValidateStagedIn(body, repoDir)` so tests can
+  drive the wrapper end-to-end on a real synthetic two-parent
+  PR merge checkout (`TestRDDReceiptValidateStagedFailClosedOnPRHeadContext`)
+  — exercising the three fail-closed classes (missing /
+  partial / invalid) the wrapper MUST surface, not just the
+  pure helper. The workflow contract test
+  `TestCIWorkflowExportsPRHeadContext` is strengthened with
+  a step-scoped assertion
+  (`findCIWorkflowStepContaining` + `ciWorkflowStepPRHeadIfRegex`)
+  that locates the exact YAML step containing BOTH PR_HEAD
+  exports and verifies it carries a properly-formatted
+  `if: github.event_name == 'pull_request'` line — replacing
+  the previous 500-char lookback that was satisfied by any
+  `pull_request` mention anywhere near the export. The bash
+  gate at `scripts/release-gate.sh` detects the GitHub PR
+  merge-checkout shape (CI=true AND event=pull_request AND
+  HEAD has 2+ parents via `git cat-file -p HEAD`) and emits
+  three distinct fail-closed class labels (`CI PR context
+  missing` / `partially set` / `invalid`) that match the Go
+  process guard's labels exactly — so a CI operator reading
+  the log can act on a specific class instead of the previous
+  single generic message. The docstring claiming "four
+  KEY= exports" when the test verifies exactly two is
+  corrected to match the test's actual required list
+  (RELEASE_GATE_PR_HEAD_SHA= and RELEASE_GATE_PR_HEAD_PARENT_SHA=).
 
 ## Cross-references
 
