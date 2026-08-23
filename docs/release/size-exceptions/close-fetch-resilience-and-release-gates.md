@@ -27,9 +27,9 @@ independently re-runs `go build` / `go vet` / `go test` / `go test
 | Field | Value |
 |-------|-------|
 | Branch | `feature/close-fetch-resilience-release-gates-exception` |
-| Commit | `<pr-head-sha>` (filled at PR head by the orchestrator) |
+| Commit | `2b91adbb652f0944384fd7b41bdd0947b96688aa` (Phase 17 R4-014 fix commit; the receipt re-authoring that follows sits at HEAD) |
 | Approval Reference | [#4125](memory://4139) — user-approved baseline size exception |
-| Scope | bounded (single-PR exception for Phase 12-14 pre-production security and Phase 13 release-gate hardening) |
+| Scope | bounded (single-PR exception for Phase 12-17: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch, Phase 17 R4-014 Go-guard no-skip + synthetic-merge deterministic fixture + duplicate PR-head test differentiation) |
 | Expiration | 2026-12-31 |
 | Forward Reference | `docs/release/reviews/review-be4525bc4797e972.md` (the RDD receipt is the local authority attestation; this size-exception receipt NEVER substitutes for it) |
 
@@ -45,9 +45,9 @@ declares `Status: pass`. The values are identical to the table; the
 duplicate shape exists ONLY so the gate parser can find them.
 
 Branch: feature/close-fetch-resilience-release-gates-exception
-Commit: 2d10b061641199a53c3768ab1c4ed948bfa24d23
+Commit: 2b91adbb652f0944384fd7b41bdd0947b96688aa
 Approval Reference: #4125 (memory://4139) — user-approved baseline size exception
-Scope: bounded (single-PR exception for Phase 12-16: Phase 12-14 pre-production security, Phase 13 release-gate hardening, and Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013)
+Scope: bounded (single-PR exception for Phase 12-17: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013, and Phase 17 R4-014 Go-guard no-skip / synthetic-merge deterministic fixture / duplicate PR-head test differentiation)
 Expiration: 2026-12-31
 Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)
 
@@ -72,12 +72,20 @@ The exception does NOT waive safeguards:
   Candidate Commit contract (R4-013) means CI runs validate
   against PR tip / PR tip~1, not the synthetic merge commit,
   while local runs keep the R4-006 HEAD/HEAD~1 contract —
-  rollback safety is preserved on both paths.
-- All Phase 12-16 fixes are committed to the PR diff, not to
+  rollback safety is preserved on both paths. Phase 17 (R4-014)
+  extends the Go receipt guard at
+  `internal/mcp/release_gate_test.go` to validate under the
+  CI context (not skip), so the receipt contract is exercised
+  on every CI run; a missing or malformed `RELEASE_GATE_PR_HEAD_*`
+  pair fails closed rather than silently waiving the check.
+- All Phase 12-17 fixes are committed to the PR diff, not to
   follow-up branches. Phase 16 is the PR #2 CI corrective batch
-  (R3-001 / R4-012 / R4-013) and is part of the same change so
-  the release-gate, the receipt contract, and the workflows
-  stay consistent at the PR tip.
+  (R3-001 / R4-012 / R4-013) and Phase 17 is the R4-014
+  Go-guard no-skip batch (synthetic-merge deterministic fixture,
+  duplicate PR-head test differentiation, corrected stale
+  HEAD-or-HEAD~1 comment). Both phases are part of the same
+  change so the release-gate, the receipt contract, and the
+  workflows stay consistent at the PR tip.
 - The exception is bounded: it expires 2026-12-31. Any future
   over-budget PR MUST either fit the 400-line budget or split
   into chained PRs.
@@ -85,7 +93,8 @@ The exception does NOT waive safeguards:
 ## Composition of the Over-Budget Diff
 
 This PR contains the work for Phases 1-15 of the SDD change
-plus the Phase 16 PR #2 CI corrective batch:
+plus the Phase 16 PR #2 CI corrective batch and the Phase 17
+R4-014 Go-guard no-skip batch:
 
 - **Phases 1-8** (preserved from the prior apply batch):
   release gate, fetch resilience, connector reliability, anonymous
@@ -113,10 +122,33 @@ plus the Phase 16 PR #2 CI corrective batch:
   RELEASE_GATE_PR_HEAD_PARENT_SHA; the ci.yml workflow uses
   `fetch-depth: 0` so the receipt validator can resolve
   HEAD~1. The Go receipt-shape guard at
-  `internal/mcp/release_gate_test.go` skips on a GitHub PR
-  synthetic merge commit (the merge-checkout cannot represent
-  the receipt's PR-tip context; the release-gate workflow is
-  the authoritative enforcer on CI).
+  `internal/mcp/release_gate_test.go` originally skipped on a
+  GitHub PR synthetic merge commit (the merge-checkout cannot
+  represent the receipt's PR-tip context; the release-gate
+  workflow is the authoritative enforcer on CI) — see
+  Phase 17 for R4-014 which closed that defense-in-depth
+  reduction.
+- **Phase 17** (R4-014 Go-guard no-skip batch): the Go
+  receipt-shape guard at `internal/mcp/release_gate_test.go`
+  no longer `t.Skipf`s on a GitHub PR synthetic merge commit;
+  it now reads `RELEASE_GATE_PR_HEAD_SHA` /
+  `RELEASE_GATE_PR_HEAD_PARENT_SHA` and validates the receipt
+  against the CI contract (R4-014). The synthetic 2-parent
+  commit detection helper is now testable via an isolated
+  temp-repo fixture (`buildSyntheticTwoParentCommit`,
+  `git commit-tree -p <a> -p <b>`) so the true branch of the
+  detection helper executes deterministically on every test
+  run. The duplicate PR-head tests in
+  `scripts/releasegate_test.go` are differentiated so the
+  triangulation proves the CI path is taken when the local
+  fallback would have failed. The `ci.yml` workflow gains a
+  conditional `Capture PR metadata` step (gated on
+  `github.event_name == 'pull_request'`) that exports the
+  same PR_HEAD env pair as `release-gate.yml`, so the Go
+  guard's CI contract is representable in the CI test
+  pipeline. The stale `must equal HEAD or HEAD~1` comment in
+  the wrapper docstring and the bash gate's step-2 block
+  header is corrected to describe the two-context contract.
 
 ## Cross-references
 
