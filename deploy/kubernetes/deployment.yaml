@@ -26,7 +26,7 @@ spec:
           image: <IMAGE>
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 5000
+            - containerPort: 8080
           env:
             - name: SEARXNG_URL
               value: "http://searxng:8080"
@@ -50,13 +50,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 5000
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 5000
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
 ---
@@ -67,7 +67,7 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 5000
-      targetPort: 5000
+    - port: 8080
+      targetPort: 8080
   selector:
     app: ia-buscar

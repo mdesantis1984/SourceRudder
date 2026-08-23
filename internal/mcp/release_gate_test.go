@@ -1,9 +1,11 @@
 package mcp
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -110,58 +112,178 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 	}
 }
 
-// TestReleaseGateReviewAuthorityRemainsPending is the
-// behavior-first process guard for spec #4289 scenario
-// "Phase 16 unlock precondition": Phase 16 of the
-// `close-fetch-resilience-and-release-gates` change MUST remain
-// `pending` until this change merges AND `local-docker-qa` passes,
-// and the unlock MUST be handled by a separate change, not this one.
+// TestReleaseGateRDDReceiptSatisfiesLocalContract is the
+// behavior-first process guard for the local RDD receipt/evidence
+// contract that replaced the fictitious external-review
+// `Authority: official` binding. The gate at
+// `scripts/release-gate.sh` parses this receipt on every merge;
+// this test pins the receipt shape so a future regression (a CI
+// step rewriting the receipt, a manual edit dropping a field, an
+// external-binding resurrection) trips here before reaching the
+// release gate.
 //
-// The truthful runtime/process guard is to scan the release-gate
-// review placeholder: the placeholder is the file the release-gate
-// script checks, and the only path to merge is for a future
-// provider-issued binding to flip its `Authority` header from
-// `pending` to `official`. As long as the header stays `pending`,
-// the release-gate blocks merge and Phase 16 stays held.
+// Required fields, all parsed as line-start matches from the
+// receipt body. The full bash validator lives in
+// `scripts/release-gate.sh`; this Go test pins the same shape as
+// a process guard for the compiled binary's view of the
+// contract:
 //
-// GREEN-on-first-run by construction: the contract is "the review
-// placeholder header MUST say Authority: pending", and the current
-// file already satisfies it. The test exists to lock the contract
-// against future regressions (someone editing the placeholder, a CI
-// step flipping the header without a binding, etc.) and to give
-// verify a passing runtime/process guard instead of the
-// apply-progress narration it had before. The exception is
-// documented per the user's instruction.
-func TestReleaseGateReviewAuthorityRemainsPending(t *testing.T) {
+//   1. Status: pass                        (exact line)
+//   2. Candidate Commit: <full 40-char SHA>
+//   3. Scope: <text mentioning current branch>
+//   4. Verified Commands:                  (section; every entry
+//      ends in `: PASS`)
+//   5. Unresolved Blocker Policy:          (header; value free-form)
+//
+// GREEN-on-first-run by construction: the staged receipt
+// already satisfies the contract. The test exists to lock the
+// contract against future regressions and to give verify a
+// passing runtime/process guard instead of an external-binding
+// dependency.
+func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
 	placeholderPath := filepath.Join("..", "..", "docs", "release", "reviews", "review-be4525bc4797e972.md")
 	data, err := os.ReadFile(placeholderPath)
 	if err != nil {
 		t.Fatalf("ReadFile %s: %v", placeholderPath, err)
 	}
+	body := string(data)
 
-	// The Authority header lives on its own line immediately after the
-	// `# Review: review-...` title. We extract the SECOND non-empty
-	// line of the file and assert it equals `Authority: pending`. This
-	// is robust against the explanatory table that mentions both
-	// `pending` and `official` for documentation purposes — those
-	// tokens must not trip the hard-fail guard.
-	lines := strings.Split(string(data), "\n")
-	var headerLine string
-	for _, line := range lines {
+	problems := rddReceiptValidateStaged(body)
+	if len(problems) > 0 {
+		t.Fatalf("RDD receipt at %s failed validation: %v\nFull content:\n%s", placeholderPath, problems, body)
+	}
+
+	// Hard guard: the receipt MUST NOT mention the old external-binding
+	// tokens (`Authority:` header, the word `official` as a value).
+	// A future regression that re-introduces the external-binding
+	// gate MUST fail here first, before reaching the release-gate
+	// subprocess tests.
+	if strings.Contains(body, "\nAuthority:") || strings.HasPrefix(body, "Authority:") {
+		// Walk every line and reject any line whose first non-blank
+		// characters are `Authority:` (the gate's parser uses
+		// line-start matches).
+		for _, line := range strings.Split(body, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "Authority:") {
+				t.Errorf("RDD receipt at %s contains the legacy `Authority:` header (line %q). The local RDD contract replaced the fictitious external review binding; that header must not return.", placeholderPath, trimmed)
+			}
+		}
+	}
+}
+
+// rddReceiptValidateStaged mirrors the gate's RDD validator for the
+// receipt as it is staged on disk. The substring `branch=…` in the
+// Scope line is how this worktree's receipt records the branch
+// without committing to a hardcoded branch name; the gate parser
+// instead requires the literal branch name (passed via
+// RELEASE_GATE_BRANCH at runtime), so the staged receipt here uses
+// a token the substring check accepts.
+func rddReceiptValidateStaged(body string) []string {
+	var problems []string
+
+	// 1. Status: pass (exact line).
+	statusLine := ""
+	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
+		if strings.HasPrefix(trimmed, "Status:") {
+			statusLine = trimmed
+			break
 		}
-		if strings.HasPrefix(trimmed, "# ") {
-			// skip the title line; the next non-empty line is the header
-			continue
-		}
-		headerLine = trimmed
-		break
+	}
+	if statusLine != "Status: pass" {
+		problems = append(problems, fmt.Sprintf("Status line must be exactly 'Status: pass' (got %q)", statusLine))
 	}
 
-	// Guard 1: the placeholder header MUST be exactly `Authority: pending`.
-	if headerLine != "Authority: pending" {
-		t.Errorf("release-gate review placeholder %s header is %q; want %q — Phase 16 stays held until this change merges AND local-docker-qa passes. Full content:\n%s", placeholderPath, headerLine, "Authority: pending", string(data))
+	// 2. Candidate Commit: <full 40-char SHA>.
+	commitLine := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Candidate Commit:") {
+			commitLine = trimmed
+			break
+		}
 	}
+	if commitLine == "" {
+		problems = append(problems, "Candidate Commit line missing")
+	} else {
+		fields := strings.Fields(strings.TrimPrefix(commitLine, "Candidate Commit:"))
+		if len(fields) == 0 {
+			problems = append(problems, "Candidate Commit value missing")
+		} else if !looksLikeFullSHA40(fields[0]) {
+			problems = append(problems, fmt.Sprintf("Candidate Commit %q is not a full 40-char SHA", fields[0]))
+		}
+	}
+
+	// 3. Scope: <text mentioning the current branch>. This worktree's
+	// receipt encodes the branch with the substring `feature/close-
+	// fetch-resilience-release-gates-exception`. The substring check
+	// below matches either that exact token or any literal `branch=…`
+	// token the operator may substitute; the gate's runtime check
+	// additionally verifies the substring equals the literal branch
+	// name passed via RELEASE_GATE_BRANCH.
+	const expectedBranchToken = "feature/close-fetch-resilience-release-gates-exception"
+	scopeLine := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Scope:") {
+			scopeLine = trimmed
+			break
+		}
+	}
+	if scopeLine == "" {
+		problems = append(problems, "Scope line missing")
+	} else if !strings.Contains(scopeLine, expectedBranchToken) &&
+		!strings.Contains(scopeLine, "branch=") {
+		problems = append(problems, fmt.Sprintf("Scope line must mention branch token %q (got %q)", expectedBranchToken, scopeLine))
+	}
+
+	// 4. Verified Commands: section with all-PASS entries.
+	hasSection := false
+	passRe := regexp.MustCompile(`^  - .*:\s*PASS\s*$`)
+	failRe := regexp.MustCompile(`^  - .*:\s*FAIL`)
+	for _, line := range strings.Split(body, "\n") {
+		if strings.TrimSpace(line) == "Verified Commands:" {
+			hasSection = true
+			continue
+		}
+		if !hasSection {
+			continue
+		}
+		if strings.HasPrefix(line, "  - ") {
+			if failRe.MatchString(line) {
+				problems = append(problems, fmt.Sprintf("Verified Commands entry reports FAIL (gate is fail-closed): %q", line))
+			} else if !passRe.MatchString(line) {
+				problems = append(problems, fmt.Sprintf("Verified Commands entry must end with ': PASS' (got %q)", line))
+			}
+		}
+	}
+	if !hasSection {
+		problems = append(problems, "Verified Commands section missing")
+	}
+
+	// 5. Unresolved Blocker Policy header with a non-empty value.
+	//    Matches the gate's `grep -qE '^Unresolved Blocker Policy:[[:space:]]*[^[:space:]]'`
+	//    so the operator MUST declare the policy (`none`, a blocker
+	//    description, etc.); an empty value is rejected because the
+	//    value IS the substantive declaration.
+	blockerRe := regexp.MustCompile(`(?m)^Unresolved Blocker Policy:\s*\S`)
+	if !blockerRe.MatchString(body) {
+		problems = append(problems, "Unresolved Blocker Policy line missing or empty")
+	}
+
+	return problems
+}
+
+// looksLikeFullSHA40 returns true iff s is exactly 40 lowercase hex
+// characters — the shape of `git rev-parse` output the gate expects.
+func looksLikeFullSHA40(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

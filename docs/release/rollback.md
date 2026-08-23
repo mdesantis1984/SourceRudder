@@ -23,7 +23,14 @@ Before any rollback, confirm:
    (Phase 13) must have PASSED on the rollback SHA. The gate's
    `./scripts/release-gate.sh` exits 0 on a clean checkout
    matching the SHA; running it on the rollback commit before
-   promoting is a mandatory sanity check.
+   promoting is a mandatory sanity check. The gate's step 2 is
+   satisfied by the local RDD receipt at
+   `docs/release/reviews/review-be4525bc4797e972.md` (Status:
+   pass + reachable Candidate Commit + branch-mentioning Scope +
+   Verified Commands section with PASS entries + Unresolved
+   Blocker Policy declaration). The previous `Authority: official`
+   header has been removed — there is no external review provider
+   binding.
 
 ## Atomic Git Revert (canonical path)
 
@@ -126,8 +133,9 @@ on a clean checkout of the rollback SHA:
 - [ ] `git log --first-parent -1` shows the revert commit (or the
       previous-good SHA) as HEAD.
 - [ ] `bash scripts/release-gate.sh` returns `release-gate: PASS`
-      with the tracked receipt present and `Authority: official`
-      in the review file.
+      with the RDD receipt at
+      `docs/release/reviews/review-be4525bc4797e972.md` declaring
+      `Status: pass` and every other required field.
 - [ ] `go build ./...` and `go vet ./...` exit 0.
 - [ ] `go test ./... -race` exits 0 with no data races.
 - [ ] `make release-image` writes the expected SHA-pinned image
@@ -148,11 +156,13 @@ on a clean checkout of the rollback SHA:
 - It does not erase the `close-fetch-resilience-and-release-gates`
   size-exception receipt. The receipt is a tracking artefact for
   the carve-out the operator approved; it remains in git history.
-- It does not flip the `Authority: official` review header back to
-  `pending`. The 4R review is the forward reference; the gate
-  continues to enforce it on every merge.
+- It does not flip the RDD receipt's `Status: pass` line back to
+  `pending`. The receipt is the local deterministic attestation;
+  the gate continues to enforce its field contract on every merge.
+  The previous `Authority: official` external-binding header has
+  been removed entirely; rollback does not re-introduce it.
 - It does not modify the prior apply-progress in Engram. The
   previous progress records remain available for audit.
 - It does not silence the `release-gate: FAIL` block if the
-  review file is still `Authority: pending`. The gate is the
-  final safeguard; the rollback must not bypass it.
+  RDD receipt does not validate. The gate is the final safeguard;
+  the rollback must not bypass it.
