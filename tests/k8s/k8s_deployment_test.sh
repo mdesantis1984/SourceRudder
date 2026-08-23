@@ -272,20 +272,59 @@ test_app_listen_port_derives_from_main_go() {
 # probe_scalar_in_block extracts the first scalar value of a key
 # nested inside a probe block (e.g. livenessProbe or
 # readinessProbe). The awk program walks lines after the probe
-# header, exits on the next same-indentation header, and prints
-# the value of the named key when found. Returns "" if the key
-# is absent.
+# header, exits on the next same-indentation header (any
+# non-whitespace-leading line), and prints the value of the
+# named key when found. Returns "" if the key is absent.
+#
+# The previous implementation matched the probe header with
+# `$0 == hdr` (exact line equality). That worked only when the
+# probe header sat at column zero, which never happens in a
+# real Kubernetes manifest — probe headers are nested under
+# `containers:` and therefore indented. The function silently
+# returned "" for every input, the timing-bounds tests then
+# short-circuited their `if [[ -n "$period" ]]` check on the
+# empty string, and a regression like `periodSeconds: 1` went
+# undetected. The new implementation:
+#
+#   - matches the probe header via trailing-substring so any
+#     indentation is accepted,
+#   - exits the block on the next non-whitespace-leading line
+#     (a sibling `livenessProbe:` / `readinessProbe:` /
+#     `volumeMounts:` / etc.),
+#   - requires the key to be followed by whitespace and a
+#     non-whitespace value so a comment line like
+#     `# periodSeconds: 1` is not extracted.
 probe_scalar_in_block() {
   local key="$1"
   local probe_header="$2"   # livenessProbe: or readinessProbe:
   local file="$3"
   awk -v k="$key" -v hdr="$probe_header" '
-    $0 == hdr { in_block = 1; next }
+    # Enter the probe block on the first line that ends with the
+    # probe header (allowing any leading indentation). Strip
+    # everything up to and including the header so we can
+    # compare the leading-whitespace width (probe column) for
+    # the sibling-boundary check below.
+    {
+      hdr_pos = index($0, hdr)
+      if (!in_block && hdr_pos > 0) {
+        in_block = 1
+        probe_col = hdr_pos - 1
+        next
+      }
+    }
     in_block {
-      # Exit when we see another top-level probe header at the
-      # same column (livenessProbe: / readinessProbe: live in
-      # sibling positions under the same `containers:` entry).
-      if ($0 ~ /^[a-zA-Z]/) { in_block = 0; next }
+      # Exit on the next line whose first non-whitespace
+      # character is NOT whitespace at the probe column. A
+      # sibling `livenessProbe:` / `readinessProbe:` /
+      # `volumeMounts:` sits at the same column as the probe
+      # header (10 spaces under `containers:` in this manifest),
+      # so its first non-whitespace character lives at the
+      # probe column too — the check below catches it.
+      leading = match($0, /[^[:space:]]/)
+      if (leading > 0 && (leading - 1) <= probe_col) {
+        in_block = 0
+        next
+      }
       if (in_block && $0 ~ "^[[:space:]]+" k ":[[:space:]]*[^[:space:]]") {
         sub("^[[:space:]]+" k ":[[:space:]]*", "")
         sub("[[:space:]]*$", "")
@@ -305,60 +344,153 @@ test_liveness_probe_timing_bounds() {
   # and silently break production rollouts. The bounds below
   # are derived from the production runtime expectations.
   #
-  # Fields that are absent fall through to the Kubernetes
-  # defaults (timeoutSeconds=1, periodSeconds=10,
-  # initialDelaySeconds=0, failureThreshold=3,
-  # successThreshold=1), which are already sane. We do NOT
-  # force the operator to add new fields — the check is
-  # strictly "if you set it, it must be sane".
-  local period initial
-  period="$(probe_scalar_in_block 'periodSeconds' 'livenessProbe:' "$MANIFEST")"
-  initial="$(probe_scalar_in_block 'initialDelaySeconds' 'livenessProbe:' "$MANIFEST")"
-  if [[ -n "$period" ]]; then
-    if ! [[ "$period" =~ ^[0-9]+$ ]]; then
-      record_fail "livenessProbe.periodSeconds must be a non-negative integer (got $period)"
-      return 1
-    fi
-    if (( period < 5 )); then
-      record_fail "livenessProbe.periodSeconds must be >= 5 to avoid probe flapping (got $period)"
-      return 1
-    fi
-  fi
-  if [[ -n "$initial" ]]; then
-    if ! [[ "$initial" =~ ^[0-9]+$ ]]; then
-      record_fail "livenessProbe.initialDelaySeconds must be a non-negative integer (got $initial)"
-      return 1
-    fi
-    if (( initial > 60 )); then
-      record_fail "livenessProbe.initialDelaySeconds must be in [0, 60] (got $initial)"
-      return 1
-    fi
-  fi
+  # The check is non-vacuous: when the helper `probe_scalar_in_block`
+  # returns an empty string for a field that IS declared in the
+  # manifest, the test fails (the function is broken — see
+  # R4-004). A field that is genuinely absent from the manifest
+  # falls through to the Kubernetes defaults (timeoutSeconds=1,
+  # periodSeconds=10, initialDelaySeconds=0, failureThreshold=3,
+  # successThreshold=1), which are already sane, so the absence
+  # path stays narrow: it requires the focused fields already in
+  # scope AND nothing else.
+  check_probe_timing_bounds "$MANIFEST" 'livenessProbe:' 5 60 'livenessProbe' || return 1
 }
 
 test_readiness_probe_timing_bounds() {
+  check_probe_timing_bounds "$MANIFEST" 'readinessProbe:' 5 60 'readinessProbe' || return 1
+}
+
+# check_probe_timing_bounds asserts the focused timing fields
+# (periodSeconds, initialDelaySeconds) for a single probe
+# block. It is the shared work-horse for the liveness and
+# readiness checks AND the regression sub-tests below. The
+# function is non-vacuous: it asserts the helper actually
+# returned a non-empty value for the focused fields declared in
+# the manifest (otherwise the helper is broken and the bounds
+# check would silently pass — see R4-004). When the field is
+# genuinely absent, the helper returns "" and this function
+# reports a single FAIL with an unambiguous cause. Arguments:
+#
+#   $1 — manifest path
+#   $2 — probe header (e.g. 'livenessProbe:')
+#   $3 — minimum acceptable periodSeconds (inclusive)
+#   $4 — maximum acceptable initialDelaySeconds (inclusive)
+#   $5 — probe label for error messages (e.g. 'livenessProbe')
+#
+# Returns 0 if every focused field validates; 1 on any failure.
+# The function records a single failure per problem (via
+# `record_fail`) and short-circuits the rest of the bounds
+# check for that field, so the operator sees one error per
+# problem instead of a cascade.
+check_probe_timing_bounds() {
+  local manifest_path="$1"
+  local probe_header="$2"
+  local period_min="$3"
+  local initial_max="$4"
+  local label="$5"
   local period initial
-  period="$(probe_scalar_in_block 'periodSeconds' 'readinessProbe:' "$MANIFEST")"
-  initial="$(probe_scalar_in_block 'initialDelaySeconds' 'readinessProbe:' "$MANIFEST")"
-  if [[ -n "$period" ]]; then
-    if ! [[ "$period" =~ ^[0-9]+$ ]]; then
-      record_fail "readinessProbe.periodSeconds must be a non-negative integer (got $period)"
-      return 1
-    fi
-    if (( period < 5 )); then
-      record_fail "readinessProbe.periodSeconds must be >= 5 to avoid probe flapping (got $period)"
-      return 1
-    fi
+
+  period="$(probe_scalar_in_block 'periodSeconds' "$probe_header" "$manifest_path")"
+  initial="$(probe_scalar_in_block 'initialDelaySeconds' "$probe_header" "$manifest_path")"
+
+  # Non-vacuous guard: a missing focused field is a regression
+  # in the manifest's contract (the focused fields are the ones
+  # the operator MUST declare). The helper MUST return a
+  # non-empty value for these fields when the manifest declares
+  # them; an empty return value here is a sign the helper is
+  # broken (R4-004) and must surface as a failure rather than a
+  # silent pass.
+  if [[ -z "$period" ]]; then
+    record_fail "$label.periodSeconds is empty (helper returned no value — either the field is missing from the manifest or probe_scalar_in_block is broken; the timing-bounds check must not silently pass on a missing scalar)"
+    return 1
   fi
-  if [[ -n "$initial" ]]; then
-    if ! [[ "$initial" =~ ^[0-9]+$ ]]; then
-      record_fail "readinessProbe.initialDelaySeconds must be a non-negative integer (got $initial)"
-      return 1
-    fi
-    if (( initial > 60 )); then
-      record_fail "readinessProbe.initialDelaySeconds must be in [0, 60] (got $initial)"
-      return 1
-    fi
+  if ! [[ "$period" =~ ^[0-9]+$ ]]; then
+    record_fail "$label.periodSeconds must be a non-negative integer (got $period)"
+    return 1
+  fi
+  if (( period < period_min )); then
+    record_fail "$label.periodSeconds must be >= $period_min to avoid probe flapping (got $period)"
+    return 1
+  fi
+
+  if [[ -z "$initial" ]]; then
+    record_fail "$label.initialDelaySeconds is empty (helper returned no value — either the field is missing from the manifest or probe_scalar_in_block is broken; the timing-bounds check must not silently pass on a missing scalar)"
+    return 1
+  fi
+  if ! [[ "$initial" =~ ^[0-9]+$ ]]; then
+    record_fail "$label.initialDelaySeconds must be a non-negative integer (got $initial)"
+    return 1
+  fi
+  if (( initial > initial_max )); then
+    record_fail "$label.initialDelaySeconds must be in [0, $initial_max] (got $initial)"
+    return 1
+  fi
+}
+
+# test_probe_timing_bounds_detects_period_regression is the
+# R4-004 RED gate. The previous implementation of
+# `probe_scalar_in_block` matched the probe header with `$0 ==
+# hdr` (exact line equality), which never succeeded for
+# indented YAML — the function silently returned "" for every
+# input, and `test_liveness_probe_timing_bounds` /
+# `test_readiness_probe_timing_bounds` short-circuited on the
+# empty string with `if [[ -n "$period" ]]`. A regression like
+# `periodSeconds: 1` would pass both timing-bounds tests and
+# silently break production rollouts (the liveness probe would
+# flap every second and Kubernetes would kill the pod). This
+# test injects that exact regression into a synthetic manifest
+# and asserts the bounds check detects it. The test is fully
+# hermetic — it builds a temp manifest with one liveness probe
+# whose periodSeconds is the regression value, then runs the
+# shared `check_probe_timing_bounds` helper. The test returns
+# 0 (PASS) when the helper correctly detects the regression
+# (which is what the assertion is about); a return of 1 (FAIL)
+# means the helper silently accepted the bad value, which is
+# exactly the bug we are guarding against.
+test_probe_timing_bounds_detects_period_regression() {
+  local tmp_manifest
+  tmp_manifest="$(mktemp)"
+  cat > "$tmp_manifest" <<'YAML'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ia-buscar-regression
+spec:
+  template:
+    spec:
+      containers:
+        - name: ia-buscar
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 1
+YAML
+  # Capture FAIL_COUNT around the helper call so we can assert
+  # the helper recorded at least one failure (a regression must
+  # be detected, but the bounds check must not cascade). The
+  # helper itself calls `record_fail` when the regression is
+  # detected — we DO NOT want that to be attributed to this
+  # test in the final tally, so we save and restore the count.
+  local before_fails after_fails saved_count
+  before_fails="$FAIL_COUNT"
+  saved_count="$FAIL_COUNT"
+  check_probe_timing_bounds "$tmp_manifest" 'livenessProbe:' 5 60 'livenessProbe' >/dev/null 2>&1
+  local rc=$?
+  after_fails="$FAIL_COUNT"
+  # Roll back any failures the helper recorded: the failure is
+  # the EXPECTED outcome of this test, not an error in the
+  # operator's manifest.
+  FAIL_COUNT="$saved_count"
+  rm -f "$tmp_manifest"
+  if (( rc == 0 )); then
+    record_fail "R4-004 regression NOT detected: probe_scalar_in_block / check_probe_timing_bounds accepted periodSeconds=1 (expected FAIL); the previous broken implementation silently passed on missing scalars"
+    return 1
+  fi
+  if (( after_fails - before_fails < 1 )); then
+    record_fail "R4-004 regression recorded zero failures (expected at least 1 from the bounds helper)"
+    return 1
   fi
 }
 
@@ -379,6 +511,7 @@ main() {
   run_test test_app_listen_port_derives_from_main_go
   run_test test_liveness_probe_timing_bounds
   run_test test_readiness_probe_timing_bounds
+  run_test test_probe_timing_bounds_detects_period_regression
 
   printf '\n%d passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"
   if [ "$FAIL_COUNT" -gt 0 ]; then

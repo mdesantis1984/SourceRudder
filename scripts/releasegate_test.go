@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1413,6 +1414,38 @@ func TestGateRejectsLegacyAuthorityHeader(t *testing.T) {
 			t.Fatalf("expected stderr to mention 'authority', got %q", stderr)
 		}
 	})
+
+	// "bare-header-fails" pins R2/R1 validator symmetry. The Go
+	// process guard in internal/mcp/release_gate_test.go rejects ANY
+	// line whose trimmed first column starts with `Authority:` (the
+	// `HasPrefix(trimmed, "Authority:")` check), so a bare header
+	// line (`Authority:` with NO value and NO trailing whitespace)
+	// is rejected by Go but accepted by the bash gate (its regex
+	// `^[[:space:]]*Authority:[[:space:]]` requires whitespace
+	// after the colon). The bash validator must use the same
+	// trim-then-prefix rule so a regression cannot smuggle a bare
+	// header past bash while Go still catches it (or vice versa).
+	t.Run("bare-header-fails", func(t *testing.T) {
+		h := newHarness(t)
+		head := h.headSHA()
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + head + "\n" +
+			"Branch: " + branch + "\n" +
+			"Scope: local gate validation (branch=" + branch + ")\n" +
+			"Authority:\n" +
+			"Verified Commands:\n" +
+			"  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		h.commitFile("docs/release/reviews/review-be4525bc4797e972.md", body, "add receipt with bare Authority header")
+		exit, _, stderr := h.run("RELEASE_GATE_BRANCH="+branch, "BASE_REF=main")
+		if exit == 0 {
+			t.Fatal("expected non-zero exit: bare 'Authority:' header (no value, no trailing whitespace) must be rejected to stay symmetric with the Go process guard")
+		}
+		if !strings.Contains(strings.ToLower(stderr), "authority") {
+			t.Fatalf("expected stderr to mention 'authority', got %q", stderr)
+		}
+	})
 }
 
 // TestGateParsesVerifiedCommandsOnlyInsideSection is the R3-003 +
@@ -1538,7 +1571,7 @@ func TestGateFailsClosedOnDetachedHeadWithoutTrustedEnv(t *testing.T) {
 		// Strip RELEASE_GATE_BRANCH from the run env. The
 		// harness already filters out RELEASE_GATE_*, so
 		// only BASE_REF=main is passed.
-		exit, _, stderr := h.run("RELEASE_GATE_BRANCH=", "BASE_REF=main")
+		exit, stdout, stderr := h.run("RELEASE_GATE_BRANCH=", "BASE_REF=main")
 		if exit == 0 {
 			t.Fatal("expected non-zero exit: detached HEAD with no trusted branch env must fail closed")
 		}
@@ -1546,6 +1579,32 @@ func TestGateFailsClosedOnDetachedHeadWithoutTrustedEnv(t *testing.T) {
 		// just any random gate error.
 		if !strings.Contains(stderr, "branch") && !strings.Contains(stderr, "detached") && !strings.Contains(stderr, "HEAD") {
 			t.Fatalf("expected stderr to mention branch/detached/HEAD, got %q", stderr)
+		}
+		// Hard fail-closed assertion: the gate MUST exit at the
+		// branch-resolution step and MUST NOT continue to any
+		// subsequent gate log. The previous bug was that
+		// `fail` was called before its definition, so bash
+		// reported "fail: command not found" and the script
+		// continued to print "could not resolve merge-base"
+		// (the next step's log line). Both downstream lines are
+		// pinned here so a regression that re-introduces the
+		// pre-definition call OR fails to terminate the script
+		// on branch-resolution failure surfaces here.
+		if strings.Contains(stderr, "fail: orden no encontrada") || strings.Contains(stderr, "fail: command not found") {
+			t.Fatalf("detached-HEAD gate printed 'fail: command not found' — the fail() helper is called before its definition; the script must define fail() before any caller (R4-001/NEW-001). stderr=%q", stderr)
+		}
+		// The next gate step (merge-base resolution) MUST NOT
+		// log; its appearance proves the gate continued past
+		// the branch-resolution failure.
+		if strings.Contains(stdout, "could not resolve merge-base") || strings.Contains(stderr, "could not resolve merge-base") {
+			t.Fatalf("detached-HEAD gate continued past the branch-resolution failure and logged the merge-base step; the gate MUST exit non-zero immediately at the branch-resolution step (R4-001/NEW-001). stdout=%q stderr=%q", stdout, stderr)
+		}
+		// The structured log line for the BASE_REF / BRANCH /
+		// MERGE_BASE block is emitted by the gate ONLY after
+		// branch resolution succeeds, so its presence in the
+		// detached-HEAD case is also a regression signal.
+		if strings.Contains(stdout, "BASE_REF=") || strings.Contains(stdout, "MERGE_BASE=") {
+			t.Fatalf("detached-HEAD gate emitted a structured BASE_REF / MERGE_BASE log line; the gate must not advance past the branch-resolution step. stdout=%q", stdout)
 		}
 	})
 
@@ -1644,7 +1703,14 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 
 	// Helper that writes a valid-shape receipt with an
 	// arbitrary Candidate Commit, then runs the gate and
-	// returns (exit, stderr).
+	// returns (exit, stderr). The harness does NOT stage an
+	// intermediate commit: the receipt is committed directly
+	// on top of the initial commit, so the new harness's
+	// HEAD~1 equals the initial commit's SHA. This is the
+	// shape the `candidate-equals-head-passes` sub-test
+	// depends on (the receipt's Candidate == HEAD of the
+	// test harness == HEAD~1 of the new harness, which the
+	// precise contract accepts).
 	runWithCommit := func(t *testing.T, commit, scope string) (int, string) {
 		t.Helper()
 		h := newHarness(t)
@@ -1661,6 +1727,30 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 		return exit, stderr
 	}
 
+	// resolveHeadN returns the SHA of the n-th ancestor of
+	// HEAD (HEAD itself when depth=0, HEAD~1 when depth=1,
+	// HEAD~2 when depth=2, etc.). It uses `git log` so the
+	// test is robust across git versions where
+	// `git rev-parse HEAD~N` can exit non-zero on shallow
+	// repos or under the harness's `commit.gpgsign=false`
+	// config. The harness must have at least depth+1 commits
+	// for the function to return a valid SHA; callers MUST
+	// stage extra commits when they need a deeper ancestor.
+	resolveHeadN := func(t *testing.T, h *harness, depth int) string {
+		t.Helper()
+		cmd := exec.Command("git", "log", "--format=%H", "-n", strconv.Itoa(depth+1))
+		cmd.Dir = h.repo
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git log depth=%d: %v", depth, err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) < depth+1 {
+			t.Fatalf("harness has %d commits, cannot resolve HEAD~%d (need %d)", len(lines), depth, depth+1)
+		}
+		return lines[depth]
+	}
+
 	t.Run("candidate-equals-head-passes", func(t *testing.T) {
 		h := newHarness(t)
 		head := h.headSHA()
@@ -1671,50 +1761,83 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 	})
 
 	t.Run("candidate-equals-head-parent-passes", func(t *testing.T) {
+		// The previous skip-when-shallow pattern
+		// retired by R2-NEW-001 used a single-commit
+		// harness whose HEAD~1 didn't exist. The
+		// `addValidRDDPassReceipt` helper builds the
+		// two-commit receipt workflow (placeholder
+		// commit then final receipt commit), so HEAD~1
+		// resolves to the placeholder receipt and the
+		// receipt's Candidate Commit is HEAD~1 by
+		// construction. The gate MUST accept this
+		// shape because it is the canonical two-commit
+		// code-then-receipt workflow documented in
+		// scripts/release-gate.sh. This sub-test
+		// replaces the skip-when-shallow skip with an
+		// actual assertion.
 		h := newHarness(t)
-		// Resolve HEAD~1 via `git log` so the test is robust
-		// across git versions where `git rev-parse HEAD~1`
-		// can exit non-zero on single-commit repos or under
-		// the harness's `commit.gpgsign=false` config.
-		cmd := exec.Command("git", "log", "--format=%H", "-n", "2")
-		cmd.Dir = h.repo
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("git log: %v", err)
-		}
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if len(lines) < 2 {
-			t.Skipf("harness repo has fewer than 2 commits, cannot test HEAD~1 (got %d)", len(lines))
-		}
-		parent := lines[1]
-		exit, stderr := runWithCommit(t, parent, "local gate validation")
+		h.addValidRDDPassReceipt(branch)
+		exit, stdout, stderr := h.run("RELEASE_GATE_BRANCH="+branch, "BASE_REF=main")
 		if exit != 0 {
 			t.Fatalf("expected exit 0 (Candidate == HEAD~1), got %d; stderr=%q", exit, stderr)
+		}
+		if !strings.Contains(stdout, "release-gate: PASS") {
+			t.Fatalf("expected PASS line, got stdout=%q", stdout)
 		}
 	})
 
 	t.Run("candidate-grandparent-fails", func(t *testing.T) {
+		// Stage two intermediate commits in the test
+		// harness so HEAD~2 resolves to a SHA that is
+		// deeper than HEAD~1 of the new harness (where
+		// the receipt is committed). The receipt's
+		// Candidate points at HEAD~2 of the test
+		// harness — which, after `runWithCommit` lands
+		// the receipt as the new HEAD, becomes HEAD~2
+		// of the new harness (the receipt is at HEAD,
+		// HEAD~1 is the new harness's initial commit,
+		// HEAD~2 is the test harness's HEAD~2 = the
+		// new harness's initial commit — but the new
+		// harness's HEAD~1 is the test harness's
+		// HEAD~2 only when the test harness's HEAD~2
+		// is the initial commit AND `runWithCommit`
+		// does not stage an intermediate). The trap
+		// here is that `runWithCommit` does NOT stage
+		// an intermediate, so the new harness's HEAD~1
+		// IS the initial commit — same SHA as the test
+		// harness's HEAD~2 — which would make the
+		// gate accept it. To break the tie, stage TWO
+		// intermediates in the test harness and use
+		// HEAD~2 (a different commit, NOT the
+		// initial).
 		h := newHarness(t)
-		// Build enough history so HEAD~2 exists: the
-		// harness has 1 initial commit, runWithCommit adds
-		// 1 receipt commit, so HEAD~1 is the initial
-		// commit. To reach HEAD~2 we need a third commit,
-		// which runWithCommit does not produce. We test
-		// the precise contract by instead asserting that
-		// HEAD~1 itself, while still reachable, must be
-		// valid; HEAD~2 is exercised below via a
-		// purpose-built harness with one extra commit.
-		cmd := exec.Command("git", "log", "--format=%H", "-n", "3")
-		cmd.Dir = h.repo
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("git log: %v", err)
+		h.commitFile("intermediate_b1.txt", "b1\n", "add intermediate b1 (so HEAD~2 is deeper than the new harness's HEAD~1)")
+		h.commitFile("intermediate_b2.txt", "b2\n", "add intermediate b2 (so HEAD~2 is deeper than the new harness's HEAD~1)")
+		h.commitFile("intermediate_b3.txt", "b3\n", "add intermediate b3 (so HEAD~3 = initial-commit and HEAD~2 = intermediate_b1, which is unique to the test harness)")
+		grandparent := resolveHeadN(t, h, 2)
+		// Sanity-check: the SHA we just resolved must NOT
+		// be the harness HEAD or HEAD~1 (otherwise the
+		// test would degenerate into a HEAD-or-HEAD~1
+		// case and not exercise the precise rejection).
+		currentHead := h.headSHA()
+		headParent := resolveHeadN(t, h, 1)
+		if grandparent == currentHead || grandparent == headParent {
+			t.Fatalf("test setup error: HEAD~2 (%s) equals HEAD (%s) or HEAD~1 (%s) — cannot exercise the precise-rejection path", grandparent, currentHead, headParent)
 		}
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if len(lines) < 3 {
-			t.Skipf("harness repo has fewer than 3 commits, cannot test HEAD~2 (got %d)", len(lines))
+		// Sanity-check 2: in the new harness built by
+		// `runWithCommit`, the new HEAD~1 will be the
+		// new harness's initial commit (which shares
+		// its SHA with the test harness's initial
+		// commit). The test harness's HEAD~2 is the
+		// first intermediate (NOT the initial commit),
+		// so it differs from the new harness's HEAD~1.
+		// Verify this by comparing against the new
+		// harness's initial commit SHA (= test harness
+		// initial commit SHA).
+		newHarnessInitial := newHarness(t).headSHA() // throws the harness away, just for SHA
+		if grandparent == newHarnessInitial {
+			t.Fatalf("test setup error: HEAD~2 (%s) equals the initial-commit SHA (%s) — the new harness would accept Candidate == HEAD~1 instead of rejecting HEAD~2; stage an extra commit before HEAD~2 in the test harness", grandparent, newHarnessInitial)
 		}
-		grandparent := lines[2]
 		exit, stderr := runWithCommit(t, grandparent, "local gate validation")
 		if exit == 0 {
 			t.Fatalf("expected non-zero exit (Candidate == HEAD~2 is too old), got 0; stderr=%q", stderr)

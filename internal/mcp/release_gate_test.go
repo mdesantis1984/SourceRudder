@@ -171,6 +171,95 @@ func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
 	}
 }
 
+// TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext is the
+// R2-NEW-008 RED gate. The Go process guard previously silently
+// skipped Branch exact-match validation when the worktree's git
+// context was unresolvable (detached HEAD returning the literal
+// string `HEAD`, or `git rev-parse` failing outright). A future
+// regression that wires the process guard into a CI step without
+// a clean worktree would then quietly accept ANY `Branch:` value
+// in the receipt — including a value that does not match the
+// target branch. The pure validator MUST fail closed: when the
+// caller passes an empty `currentBranch` (or HEAD/HEAD~1), the
+// Branch exact-match check MUST surface a problem rather than be
+// silently waived. The detached-HEAD / git-error seam lives in
+// the wrapper (`rddReceiptValidateStaged`) so the wrapper's job
+// is to either resolve a real branch and HEAD/HEAD~1, or surface
+// its own failure as a problem. The pure helper cannot be tricked
+// into a silent pass by an unresolvable git context.
+func TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext(t *testing.T) {
+	const branch = "feature/close-fetch-resilience-release-gates-exception"
+	const head = "0123456789abcdef0123456789abcdef01234567"
+
+	cases := []struct {
+		name              string
+		body              string
+		headSHA           string
+		headParentSHA     string
+		currentBranch     string
+		wantProblemSubstr string
+	}{
+		{
+			name: "empty-branch-fails-closed",
+			body: "# RDD Receipt\n" +
+				"Status: pass\n" +
+				"Candidate Commit: " + head + "\n" +
+				"Branch: " + branch + "\n" +
+				"Scope: " + branch + "\n" +
+				"Verified Commands:\n  - go build ./...: PASS\n" +
+				"Unresolved Blocker Policy: none\n",
+			headSHA:           head,
+			headParentSHA:     head,
+			currentBranch:     "",
+			wantProblemSubstr: "branch context",
+		},
+		{
+			name: "detached-head-fails-closed",
+			body: "# RDD Receipt\n" +
+				"Status: pass\n" +
+				"Candidate Commit: " + head + "\n" +
+				"Branch: " + branch + "\n" +
+				"Scope: " + branch + "\n" +
+				"Verified Commands:\n  - go build ./...: PASS\n" +
+				"Unresolved Blocker Policy: none\n",
+			headSHA:           head,
+			headParentSHA:     head,
+			currentBranch:     "HEAD",
+			wantProblemSubstr: "branch context",
+		},
+		{
+			name: "empty-head-sha-fails-closed",
+			body: "# RDD Receipt\n" +
+				"Status: pass\n" +
+				"Candidate Commit: " + head + "\n" +
+				"Branch: " + branch + "\n" +
+				"Scope: " + branch + "\n" +
+				"Verified Commands:\n  - go build ./...: PASS\n" +
+				"Unresolved Blocker Policy: none\n",
+			headSHA:           "",
+			headParentSHA:     "",
+			currentBranch:     branch,
+			wantProblemSubstr: "HEAD context",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA)
+			found := false
+			for _, p := range problems {
+				if strings.Contains(strings.ToLower(p), strings.ToLower(tt.wantProblemSubstr)) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected a problem mentioning %q (fail-closed on unresolvable git context), got %v", tt.wantProblemSubstr, problems)
+			}
+		})
+	}
+}
+
 // rddReceiptValidateStaged mirrors the gate's RDD validator for the
 // receipt as it is staged on disk. The receipt MUST carry a
 // dedicated `Branch:` line whose value exactly matches the
@@ -187,7 +276,98 @@ func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
 // two-commit code-then-receipt workflow still satisfies this
 // because the receipt commit is HEAD and the code commit it
 // attests sits at HEAD~1.
+//
+// R2-NEW-008 fail-closed contract: when the worktree's git
+// context cannot be resolved (detached HEAD returning the
+// literal `HEAD`, `git rev-parse` failing, or any other
+// unresolvable state), the wrapper MUST surface a problem
+// rather than silently waive the Branch exact-match check.
+// This function delegates to `rddReceiptValidatePure` after
+// resolving the context; if the resolution returns an empty
+// branch / HEAD SHA, the wrapper injects a fail-closed problem
+// so the guard cannot be tricked into accepting an arbitrary
+// `Branch:` value.
 func rddReceiptValidateStaged(body string) []string {
+	repoRoot := stagedReceiptRepoRoot()
+
+	// Resolve HEAD.
+	headSHACmd := exec.Command("git", "rev-parse", "HEAD")
+	headSHACmd.Dir = repoRoot
+	headOut, headErr := headSHACmd.Output()
+	var headSHA string
+	if headErr == nil {
+		headSHA = strings.TrimSpace(string(headOut))
+	}
+
+	// Resolve HEAD~1.
+	var headParentSHA string
+	if headSHA != "" {
+		parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
+		parentCmd.Dir = repoRoot
+		parentOut, parentErr := parentCmd.Output()
+		if parentErr == nil {
+			headParentSHA = strings.TrimSpace(string(parentOut))
+		}
+	}
+
+	// Resolve the current branch.
+	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchCmd.Dir = repoRoot
+	branchOut, branchErr := branchCmd.Output()
+	var currentBranch string
+	if branchErr == nil {
+		currentBranch = strings.TrimSpace(string(branchOut))
+	}
+	// A detached HEAD returns the literal string `HEAD`; treat
+	// that AND an empty result as "branch unresolvable".
+	if currentBranch == "HEAD" {
+		currentBranch = ""
+	}
+
+	// Fail-closed seam: if the wrapper cannot establish the git
+	// context, inject a problem BEFORE delegating so the pure
+	// helper's branch/HEAD validation is never silently waived.
+	var problems []string
+	if currentBranch == "" {
+		problems = append(problems, "branch context unresolvable: could not determine current branch from git rev-parse; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
+	}
+	if headSHA == "" {
+		problems = append(problems, "HEAD context unresolvable: could not determine HEAD SHA from git rev-parse; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
+	}
+
+	// Append the pure-helper problems. The pure helper enforces
+	// its own fail-closed contract: when `currentBranch` or
+	// `headSHA` is empty it surfaces the matching problem rather
+	// than silently passing the corresponding field. This keeps
+	// the helper symmetric with the wrapper so a future caller
+	// that bypasses the wrapper cannot accidentally waive the
+	// checks.
+	problems = append(problems, rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA)...)
+	return problems
+}
+
+// rddReceiptValidatePure is the body-only validator with no git
+// dependency. It mirrors the gate's RDD validator for the
+// receipt's content: every required field is checked, AND the
+// wrapper-supplied git context (`currentBranch`, `headSHA`,
+// `headParentSHA`) is required to be non-empty so the helper
+// itself fails closed on unresolvable git context. This
+// fail-closed contract is the R2-NEW-008 fix: the previous
+// behavior silently waived the Branch exact-match check when
+// `currentBranch` was empty, which let a future regression wire
+// the guard into a CI step without a clean worktree and accept
+// ANY `Branch:` value. Now the helper refuses to validate
+// without a real branch and a real HEAD SHA — the wrapper is
+// responsible for resolving them, and any failure to resolve
+// surfaces here as a problem.
+//
+// The helper accepts a deliberately-mismatched `currentBranch`
+// as long as the value is non-empty: that lets the wrapper
+// exercise the Branch mismatch path against any valid receipt
+// shape. The helper does NOT accept the literal `HEAD` string
+// as a branch (treats it like an empty branch) because `HEAD`
+// is the detached-HEAD sentinel.
+func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA string) []string {
 	var problems []string
 
 	// 0. Hard guard: reject any line beginning with the legacy
@@ -217,34 +397,20 @@ func rddReceiptValidateStaged(body string) []string {
 	}
 
 	// 2. Candidate Commit: <full 40-char SHA> with the precise
-	//    HEAD-or-HEAD~1 contract. We resolve HEAD and HEAD~1
-	//    from the actual worktree (the receipt's `Status: pass`
-	//    commits are always made against the worktree's current
-	//    branch) so the process guard is anchored to the
-	//    same git state the bash gate would see.
+	//    HEAD-or-HEAD~1 contract. The wrapper passes `headSHA`
+	//    and `headParentSHA` resolved from the actual worktree.
+	//    Fail-closed contract: an empty `headSHA` (or empty
+	//    `headParentSHA`) MUST surface a problem rather than
+	//    silently waive the precise HEAD-or-HEAD~1 check. The
+	//    wrapper injects its own HEAD-context problem when the
+	//    git resolution fails; this branch surfaces the same
+	//    condition for direct callers of the pure helper.
 	commitLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "Candidate Commit:") {
 			commitLine = trimmed
 			break
-		}
-	}
-	repoRoot := stagedReceiptRepoRoot()
-	headSHACmd := exec.Command("git", "rev-parse", "HEAD")
-	headSHACmd.Dir = repoRoot
-	headOut, headErr := headSHACmd.Output()
-	var headSHA string
-	if headErr == nil {
-		headSHA = strings.TrimSpace(string(headOut))
-	}
-	var headParentSHA string
-	if headSHA != "" {
-		parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
-		parentCmd.Dir = repoRoot
-		parentOut, parentErr := parentCmd.Output()
-		if parentErr == nil {
-			headParentSHA = strings.TrimSpace(string(parentOut))
 		}
 	}
 	if commitLine == "" {
@@ -255,31 +421,20 @@ func rddReceiptValidateStaged(body string) []string {
 			problems = append(problems, "Candidate Commit value missing")
 		} else if !looksLikeFullSHA40(fields[0]) {
 			problems = append(problems, fmt.Sprintf("Candidate Commit %q is not a full 40-char SHA", fields[0]))
-		} else if headSHA != "" && fields[0] != headSHA && fields[0] != headParentSHA {
+		} else if headSHA == "" {
+			problems = append(problems, "HEAD context unresolvable: headSHA is empty; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
+		} else if fields[0] != headSHA && fields[0] != headParentSHA {
 			problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal HEAD (%s) or HEAD~1 (%s); arbitrary ancestors are rejected so rollback or code changes require a new receipt", fields[0], headSHA, headParentSHA))
 		}
 	}
 
-	// 3. Branch: <exact branch name>. The receipt MUST carry a
-	//    dedicated Branch: line whose value exactly matches
-	//    the current worktree's branch (resolved via git). This
-	//    replaces the previous substring-based Scope check.
-	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchCmd.Dir = repoRoot
-	branchOut, branchErr := branchCmd.Output()
-	var currentBranch string
-	if branchErr == nil {
-		currentBranch = strings.TrimSpace(string(branchOut))
-	}
-	if currentBranch == "HEAD" || currentBranch == "" {
-		// Detached HEAD or unresolvable branch. The receipt
-		// still must declare a Branch: line for the guard
-		// to be meaningful; we surface the fact that the
-		// gate will (correctly) fail closed in this state
-		// but do not fail the process guard solely on the
-		// branch-resolution detail — the bash gate handles
-		// that seam.
-		currentBranch = ""
+	// 3. Branch: <exact branch name>. Fail-closed contract:
+	//    the helper MUST surface a problem when `currentBranch`
+	//    is empty OR the detached-HEAD sentinel `HEAD` — the
+	//    previous behavior silently waived the exact-match
+	//    check in those cases.
+	if currentBranch == "" || currentBranch == "HEAD" {
+		problems = append(problems, "branch context unresolvable: currentBranch is empty or detached-HEAD sentinel; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
 	}
 	branchLine := ""
 	for _, line := range strings.Split(body, "\n") {
@@ -291,7 +446,7 @@ func rddReceiptValidateStaged(body string) []string {
 	}
 	if branchLine == "" {
 		problems = append(problems, "Branch line missing (the receipt must declare its target branch via a dedicated Branch: field for exact-match verification)")
-	} else if currentBranch != "" {
+	} else if currentBranch != "" && currentBranch != "HEAD" {
 		value := strings.TrimSpace(strings.TrimPrefix(branchLine, "Branch:"))
 		if value != currentBranch {
 			problems = append(problems, fmt.Sprintf("Branch value %q does not exactly match the current worktree branch %q", value, currentBranch))

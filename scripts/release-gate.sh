@@ -67,6 +67,26 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# ---- structured log helpers ----------------------------------------------
+#
+# IMPORTANT: `fail` MUST be defined before any caller invokes it.
+# The previous layout put these helpers AFTER the branch-resolution
+# step, and the branch-resolution step calls `fail` for the
+# detached-HEAD-without-trusted-env case. Bash reported
+# `fail: command not found` and continued into the next gate
+# step because the script does not run with `set -e`. The fix
+# defines the helpers BEFORE the first caller and documents the
+# precedence explicitly so a future refactor cannot move the
+# helpers below a caller again (R4-001 / NEW-001).
+
+log() { printf 'release-gate: %s\n' "$*"; }
+# log_failure emits a per-check FAIL line to stderr so the operator
+# (and the test harness) sees which specific gate step failed before
+# the gate exits. The final summary `fail` line below also goes to
+# stderr. Success-path `log` calls still go to stdout.
+log_failure() { printf 'release-gate: FAIL %s\n' "$*" >&2; }
+fail() { printf 'release-gate: FAIL %s\n' "$*" >&2; exit 1; }
+
 # Resolve the target branch from a trusted source in priority
 # order: CI env var (set by GitHub Actions / GitLab CI), operator
 # override, then the local git symbolic ref. The local ref is the
@@ -75,7 +95,11 @@ cd "$REPO_ROOT"
 # string `HEAD`, which would either pass or fail spuriously against
 # a substring-based Scope check. The CI env vars are set by the
 # runner BEFORE checkout so they always reflect the source branch
-# the operator intends.
+# the operator intends. When none of the trusted sources resolve
+# to a real branch name, `fail` MUST terminate the gate
+# immediately — the previous bug was that `fail` was undefined
+# at this call site, so bash printed `command not found` and the
+# gate continued into subsequent steps.
 CURRENT_BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-${CI_COMMIT_REF_NAME:-${RELEASE_GATE_BRANCH:-}}}}"
 if [[ -z "$CURRENT_BRANCH" ]]; then
   CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -95,16 +119,6 @@ SIZE_EXCEPTIONS_DIR="docs/release/size-exceptions"
 # actual branch name. Operators can override the path via
 # SIZE_EXCEPTIONS_RECEIPT to use a different receipt location.
 SIZE_EXCEPTIONS_RECEIPT="${SIZE_EXCEPTIONS_RECEIPT:-${SIZE_EXCEPTIONS_DIR}/close-fetch-resilience-and-release-gates.md}"
-
-# ---- structured log helpers ----------------------------------------------
-
-log() { printf 'release-gate: %s\n' "$*"; }
-# log_failure emits a per-check FAIL line to stderr so the operator
-# (and the test harness) sees which specific gate step failed before
-# the gate exits. The final summary `fail` line below also goes to
-# stderr. Success-path `log` calls still go to stdout.
-log_failure() { printf 'release-gate: FAIL %s\n' "$*" >&2; }
-fail() { printf 'release-gate: FAIL %s\n' "$*" >&2; exit 1; }
 
 # ---- preconditions -------------------------------------------------------
 
@@ -182,10 +196,17 @@ rdd_fail=0
 # 0. Hard guard: reject any line beginning with the legacy
 #    `Authority:` header anywhere in the receipt body. The Go
 #    process guard in internal/mcp/release_gate_test.go performs
-#    the same check; both validators must stay symmetric so a
+#    the same check via `strings.HasPrefix(strings.TrimSpace(line),
+#    "Authority:")`; both validators must stay symmetric so a
 #    future regression cannot smuggle the external-binding
-#    header back through only one of them.
-if grep -qE '^[[:space:]]*Authority:[[:space:]]' "$REVIEW_FILE"; then
+#    header back through only one of them. The regex below
+#    mirrors the Go guard exactly: a line is rejected iff its
+#    trimmed first column starts with `Authority:` — including
+#    a bare `Authority:` header with no value and no trailing
+#    whitespace (which the previous `^[[:space:]]*Authority:[[:space:]]`
+#    regex incorrectly accepted because it required whitespace
+#    after the colon).
+if grep -qE '^[[:space:]]*Authority:' "$REVIEW_FILE"; then
   log_failure "RDD receipt at $REVIEW_FILE contains a legacy 'Authority:' line; the local RDD contract replaced the external-binding header and it MUST NOT return"
   rdd_fail=1
 fi
