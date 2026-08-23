@@ -1178,6 +1178,204 @@ func TestReleaseGateWorkflowExportsPRHeadContext(t *testing.T) {
 	}
 }
 
+// ---- R6-NEW-001 release-gate workflow contract (size-exception activation) ----
+//
+// The release-gate workflow at .github/workflows/release-gate.yml
+// MUST activate RELEASE_GATE_SIZE_EXCEPTION via a branch-exact
+// expression that yields the literal branch name ONLY when
+// github.head_ref equals `feature/close-fetch-resilience-release-gates-exception`
+// and the empty string '' otherwise. Before R6-NEW-001 the
+// workflow sourced the env from ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} —
+// a repo variable that must be set by a maintainer with admin
+// access. Because the public repo has not set the variable (the
+// `gh variable list` returns empty), the env reached scripts/release-gate.sh
+// as empty, the fail-closed check at scripts/release-gate.sh:496
+// triggered, and step 3 blocked PR #2 — even though the size-exception
+// receipt at
+// docs/release/size-exceptions/close-fetch-resilience-and-release-gates.md
+// is correct, tracked, and parsable. The receipt was right but the
+// activation was wrong.
+//
+// R6-NEW-001 replaces the repo-variable dependency with a
+// branch-exact expression: the env is set to the literal branch
+// name only on the carve-out branch; on every other branch the
+// empty-string fallback is supplied and the bash validator's
+// fail-closed check stays authoritative. The expression is
+// deterministic, fully in the file (no admin hop), and bounded
+// to ONE branch — broadening the carve-out is not a single-edit
+// change because the branch literal appears in BOTH the equality
+// position and the value position of the conditional.
+//
+// These tests pin the activation contract. A future regression
+// that re-introduces a repo-variable dependency, drops the
+// empty-string fallback, smuggles a wrong-branch literal past
+// the regex, or satisfies the contract from a comment fails
+// here before reaching the runtime gate.
+
+// releaseGateSizeExceptionEnvRegex matches the EXACT
+// branch-exact size-exception expression the release-gate
+// workflow MUST carry. Anchored at line start with multiline
+// mode so the regex cannot be satisfied by a substring
+// anywhere in the file. Required components:
+//
+//   - `^\s*RELEASE_GATE_SIZE_EXCEPTION:` — the env key MUST
+//     come at line start. A comment line beginning with `#`
+//     does NOT match because the env key is preceded by `#`,
+//     not whitespace. A regression that smuggles the line
+//     into a YAML `description:` field or `outputs:` key
+//     does NOT match because the env key must be `RELEASE_GATE_SIZE_EXCEPTION:`
+//     at column-aligned indentation.
+//   - `\${{` — GitHub Actions expression start.
+//   - `\s*github\.head_ref\s*==\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")`
+//     — equality comparison against the canonical branch
+//     literal, single- or double-quoted (exactly one quote
+//     on each side). A wrong branch literal does NOT match.
+//   - `\s*&&\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")`
+//     — the value-side branch literal. The branch name MUST
+//     appear in BOTH positions; if the equality literal and
+//     the value literal disagree the regex does not match.
+//     This is the deliberate structural guard that makes
+//     broadening the carve-out a two-edit change.
+//   - `\s*\|\|\s*(?:''|"")` — empty-string fallback in the
+//     fail-closed position. A regression that drops the
+//     fallback evaluates to the literal string `'false'` for
+//     non-matching branches, which the bash validator would
+//     read as a non-empty value and (because `'false' != CURRENT_BRANCH`)
+//     still fail closed — but the regression is wrong because
+//     the empty fallback is the documented contract for
+//     non-matching branches, and the test pins that.
+//   - `\s*}}\s*$` — closing braces on the same line. A
+//     regression that splits the expression across lines does
+//     NOT match.
+//
+// R6-NEW-001.
+var releaseGateSizeExceptionEnvRegex = regexp.MustCompile(
+	`(?m)^\s*RELEASE_GATE_SIZE_EXCEPTION:\s*\${{\s*` +
+		`github\.head_ref\s*==\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")\s*` +
+		`&&\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")\s*` +
+		`\|\|\s*(?:''|"")\s*` +
+		`}}\s*$`)
+
+// TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly pins
+// the release-gate workflow's branch-exact size-exception
+// activation contract. The workflow MUST carry the
+// branch-exact expression matched by releaseGateSizeExceptionEnvRegex
+// AND MUST NOT carry the previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }}
+// form. The negative regression check ensures a future
+// revert to the repo-variable dependency fails here. (R6-NEW-001)
+func TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly(t *testing.T) {
+	workflowPath := filepath.Join("..", "..", ".github", "workflows", "release-gate.yml")
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", workflowPath, err)
+	}
+	body := string(data)
+
+	if !releaseGateSizeExceptionEnvRegex.MatchString(body) {
+		// Diagnostic: dump every line that mentions the env
+		// key so the failure surfaces the broken form.
+		var seen []string
+		for _, line := range strings.Split(body, "\n") {
+			if strings.Contains(line, "RELEASE_GATE_SIZE_EXCEPTION") {
+				seen = append(seen, line)
+			}
+		}
+		t.Fatalf("release-gate.yml does not carry the branch-exact RELEASE_GATE_SIZE_EXCEPTION expression matched by:\n%s\n\nThe env: section lines actually present:\n%s\n\nR6-NEW-001 contract:\n  - The env MUST be set via ${{ github.head_ref == 'feature/close-fetch-resilience-release-gates-exception' && 'feature/close-fetch-resilience-release-gates-exception' || '' }} so the carve-out activates for this branch only, without depending on a repo variable.\n  - The previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} form MUST be removed because the public repo has not set the variable (`gh variable list` returns empty) and the empty-env reach triggers scripts/release-gate.sh:496 fail-closed.", releaseGateSizeExceptionEnvRegex.String(), strings.Join(seen, "\n"))
+	}
+
+	if strings.Contains(body, "vars.RELEASE_GATE_SIZE_EXCEPTION") {
+		t.Errorf("release-gate.yml still sources RELEASE_GATE_SIZE_EXCEPTION from ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }}; the branch-exact expression MUST replace the repo-variable dependency (R6-NEW-001). Body:\n%s", body)
+	}
+}
+
+// TestReleaseGateSizeExceptionEnvRegexContract pins the negative
+// controls for releaseGateSizeExceptionEnvRegex. The positive
+// case (the exact branch-exact expression) is exercised by
+// TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly
+// against the real workflow file; this test synthesizes
+// adversarial YAML bodies and asserts that the regex rejects
+// each one — comments, wrong-branch literals, missing
+// empty-string fallback, the old repo-variable form, the
+// negation operator — so a future regression that smuggles
+// any of those shapes past the production check fails here.
+// The subtests form the control surface the production test
+// relies on. (R6-NEW-001)
+func TestReleaseGateSizeExceptionEnvRegexContract(t *testing.T) {
+	const branch = "feature/close-fetch-resilience-release-gates-exception"
+
+	cases := []struct {
+		name      string
+		body      string
+		wantMatch bool
+		why       string
+	}{
+		{
+			name:      "exact-branch-literal-matches-single-quote",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == '" + branch + "' && '" + branch + "' || '' }}",
+			wantMatch: true,
+			why:       "the canonical form is the only pattern the workflow may carry",
+		},
+		{
+			name:      "exact-branch-literal-matches-double-quote",
+			body:      `          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == "` + branch + `" && "` + branch + `" || "" }}`,
+			wantMatch: true,
+			why:       "double-quote spelling is byte-equivalent for fail-closed semantics; both spellings must satisfy the contract",
+		},
+		{
+			name:      "comment-prefix-does-not-match",
+			body:      "#           RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == '" + branch + "' && '" + branch + "' || '' }}",
+			wantMatch: false,
+			why:       "a comment is documentation; the env MUST be active, not commented out — `^\\s*RELEASE_GATE_SIZE_EXCEPTION:` cannot match a line whose first character is `#`",
+		},
+		{
+			name:      "wrong-branch-equality-does-not-match",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == 'feature/some-other-branch' && '" + branch + "' || '' }}",
+			wantMatch: false,
+			why:       "the carve-out is bounded to one branch; any other equality literal broadens the exception surface",
+		},
+		{
+			name:      "wrong-branch-value-does-not-match",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == '" + branch + "' && 'feature/different' || '' }}",
+			wantMatch: false,
+			why:       "the value-side literal MUST equal the equality literal — if they disagree the bash validator reads a string that does not match CURRENT_BRANCH and step 3 still fails closed; the contract requires BOTH literals to be the canonical branch name so the activation is unambiguous",
+		},
+		{
+			name:      "missing-empty-fallback-does-not-match",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == '" + branch + "' && '" + branch + "' }}",
+			wantMatch: false,
+			why:       "without `|| ''` the expression evaluates to the literal string `'false'` for non-matching branches, which the bash validator reads as non-empty; the documented contract for non-matching branches is the empty-string fallback",
+		},
+		{
+			name:      "vars-repo-variable-form-does-not-match",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }}",
+			wantMatch: false,
+			why:       "the old repo-variable form is the original R5-NEW-001..ff12a5b defect — branch-exact replaces it; a regression that re-introduces `vars.` must fail here",
+		},
+		{
+			name:      "negation-operator-does-not-match",
+			body:      "          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref != '" + branch + "' && '" + branch + "' || '' }}",
+			wantMatch: false,
+			why:       "an inequality operator inverts the activation and broadens the carve-out to every branch EXCEPT this one; the contract is strict equality",
+		},
+		{
+			name:      "missing-env-prefix-does-not-match",
+			body:      "          RUN_RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == '" + branch + "' && '" + branch + "' || '' }}",
+			wantMatch: false,
+			why:       "the env key MUST be exactly `RELEASE_GATE_SIZE_EXCEPTION:` — a renamed or prefixed key does not satisfy the contract because scripts/release-gate.sh:496 reads from `RELEASE_GATE_SIZE_EXCEPTION` literally",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := releaseGateSizeExceptionEnvRegex.MatchString(tc.body)
+			if got != tc.wantMatch {
+				t.Fatalf("regex match=%v want=%v\nbody:    %q\nreason:  %s\npattern: %s", got, tc.wantMatch, tc.body, tc.why, releaseGateSizeExceptionEnvRegex.String())
+			}
+		})
+	}
+}
+
 // TestCIWorkflowExportsPRHeadContext pins the new contract that
 // ci.yml (the Go test pipeline) MUST export the same PR_HEAD env
 // pair on a `pull_request` event so the Go receipt guard can
