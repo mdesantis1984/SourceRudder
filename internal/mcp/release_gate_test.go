@@ -378,7 +378,7 @@ func TestRDDReceiptValidateTwoContextContract(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, tt.prHeadSHA, tt.prHeadParentSHA)
+			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, tt.prHeadSHA, tt.prHeadParentSHA, "", "")
 			if tt.wantProblems && len(problems) == 0 {
 				t.Fatalf("expected at least one problem mentioning %q, got none", tt.wantProblemSubst)
 			}
@@ -399,6 +399,237 @@ func TestRDDReceiptValidateTwoContextContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRDDReceiptValidatePostMergeContract is the table-driven
+// unit test for the third (post-merge two-parent push) RDD
+// context. The wrapper resolves HEAD^2 and HEAD^2~1 and passes
+// them as the last two params. The pure helper accepts a
+// Candidate Commit that exactly equals one of those two SHAs;
+// arbitrary second-parent ancestors AND previous-main HEAD
+// are rejected so the R4-006 rollback safety is preserved.
+// A `Branch:` mismatch with `currentBranch` is accepted ONLY
+// when the receipt declares an explicit
+// `Merge Target: <exact currentBranch>` line — the wrapper
+// does NOT infer the source branch from Git.
+func TestRDDReceiptValidatePostMergeContract(t *testing.T) {
+	const mergeTarget = "main"
+	const sourceBranch = "fix/rdd-post-merge-receipt-contract"
+	const headSecondParent = "fedcba9876543210fedcba9876543210fedcba98"
+	const headSecondParentParent = "76543210fedcba9876543210fedcba9876543210"
+	const arbitrarySecondAncestor = "abcdef0123456789abcdef0123456789abcdef01"
+	const previousMain = "0123456789abcdef0123456789abcdef01234567"
+	const farAncestor = "1111111111111111111111111111111111111111"
+
+	makeReceipt := func(candidate, branchValue, mergeTargetValue string) string {
+		return "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + candidate + "\n" +
+			"Branch: " + branchValue + "\n" +
+			"Merge Target: " + mergeTargetValue + "\n" +
+			"Scope: " + sourceBranch + " (post-merge recovery)\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+	}
+
+	cases := []struct {
+		name    string
+		body    string
+		wantOK  bool
+		wantSub string
+	}{
+		{
+			name:   "valid-candidate-second-parent",
+			body:   makeReceipt(headSecondParent, sourceBranch, mergeTarget),
+			wantOK: true,
+		},
+		{
+			name:   "valid-candidate-second-parent-parent",
+			body:   makeReceipt(headSecondParentParent, sourceBranch, mergeTarget),
+			wantOK: true,
+		},
+		{
+			name:    "missing-merge-target-rejected",
+			body:    makeReceipt(headSecondParent, sourceBranch, ""),
+			wantOK:  false,
+			wantSub: "Merge Target",
+		},
+		{
+			name:    "wrong-merge-target-rejected",
+			body:    makeReceipt(headSecondParent, sourceBranch, "develop"),
+			wantOK:  false,
+			wantSub: "Merge Target",
+		},
+		{
+			name:    "arbitrary-second-parent-ancestor-rejected",
+			body:    makeReceipt(arbitrarySecondAncestor, sourceBranch, mergeTarget),
+			wantOK:  false,
+			wantSub: "Candidate Commit",
+		},
+		{
+			name:    "previous-main-as-source-rejected",
+			body:    makeReceipt(previousMain, sourceBranch, mergeTarget),
+			wantOK:  false,
+			wantSub: "Candidate Commit",
+		},
+		{
+			name:    "far-arbitrary-sha-rejected",
+			body:    makeReceipt(farAncestor, sourceBranch, mergeTarget),
+			wantOK:  false,
+			wantSub: "Candidate Commit",
+		},
+		{
+			name:   "branch-matches-current-branch-no-merge-target-required",
+			body:   makeReceipt(headSecondParentParent, mergeTarget, ""),
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			problems := rddReceiptValidatePure(tt.body, mergeTarget, "", "", "", "", headSecondParent, headSecondParentParent)
+			if tt.wantOK {
+				if len(problems) > 0 {
+					t.Fatalf("expected no problems, got: %v", problems)
+				}
+				return
+			}
+			if len(problems) == 0 {
+				t.Fatalf("expected at least one problem mentioning %q, got none", tt.wantSub)
+			}
+			found := false
+			for _, p := range problems {
+				if strings.Contains(p, tt.wantSub) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected a problem mentioning %q, got: %v", tt.wantSub, problems)
+			}
+		})
+	}
+}
+
+// TestRDDReceiptValidateStagedPostMergeContext pins the
+// wrapper-level dispatch on a synthetic 2-parent merge
+// checkout. The wrapper MUST detect the post-merge shape (2+
+// parents AND NOT in CI PR mode), resolve HEAD^2 / HEAD^2~1,
+// and route to the third-context Candidate Commit check. The
+// CI PR path MUST still take priority over post-merge: a CI
+// PR checkout with the same 2-parent HEAD routes to the
+// existing CI PR fail-closed class, not to the new
+// post-merge class.
+func TestRDDReceiptValidateStagedPostMergeContext(t *testing.T) {
+	const mergeTarget = "main"
+	const sourceBranch = "fix/rdd-post-merge-receipt-contract"
+	resetPREnv := func(t *testing.T, ci, event string) {
+		t.Helper()
+		t.Setenv("CI", ci)
+		t.Setenv("GITHUB_EVENT_NAME", event)
+		t.Setenv("RELEASE_GATE_PR_HEAD_SHA", "")
+		t.Setenv("RELEASE_GATE_PR_HEAD_PARENT_SHA", "")
+	}
+	makePostMergeReceipt := func(candidate, branchVal, mtVal string) string {
+		return "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + candidate + "\n" +
+			"Branch: " + branchVal + "\n" +
+			"Merge Target: " + mtVal + "\n" +
+			"Scope: post-merge recovery\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+	}
+
+	t.Run("post-merge-valid-receipt-passes", func(t *testing.T) {
+		resetPREnv(t, "", "")
+		repo := buildIsolatedGitRepo(t)
+		buildSyntheticTwoParentCommit(t, repo)
+		headSha2 := mustRunGit(t, repo, "rev-parse", "HEAD^2")
+		headSha2Parent := mustRunGit(t, repo, "rev-parse", "HEAD^2~1")
+		t.Setenv("RELEASE_GATE_BRANCH", mergeTarget)
+		body := makePostMergeReceipt(headSha2Parent, sourceBranch, mergeTarget)
+		bodyTip := makePostMergeReceipt(headSha2, sourceBranch, mergeTarget)
+		if p := rddReceiptValidateStagedIn(body, repo); len(p) > 0 {
+			t.Fatalf("expected HEAD^2~1 candidate to pass; got: %v", p)
+		}
+		if p := rddReceiptValidateStagedIn(bodyTip, repo); len(p) > 0 {
+			t.Fatalf("expected HEAD^2 candidate to pass; got: %v", p)
+		}
+	})
+
+	t.Run("post-merge-missing-merge-target-fails-closed", func(t *testing.T) {
+		resetPREnv(t, "", "")
+		repo := buildIsolatedGitRepo(t)
+		buildSyntheticTwoParentCommit(t, repo)
+		t.Setenv("RELEASE_GATE_BRANCH", mergeTarget)
+		body := makePostMergeReceipt("0123456789abcdef0123456789abcdef01234567", sourceBranch, "")
+		problems := rddReceiptValidateStagedIn(body, repo)
+		found := false
+		for _, p := range problems {
+			if strings.Contains(p, "Merge Target") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected Merge Target fail-closed problem, got: %v", problems)
+		}
+	})
+
+	t.Run("ci-pr-shape-takes-priority-over-post-merge", func(t *testing.T) {
+		resetPREnv(t, "true", "pull_request")
+		repo := buildIsolatedGitRepo(t)
+		buildSyntheticTwoParentCommit(t, repo)
+		t.Setenv("RELEASE_GATE_BRANCH", mergeTarget)
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: 0123456789abcdef0123456789abcdef01234567\n" +
+			"Branch: " + mergeTarget + "\n" +
+			"Scope: ci-pr priority check\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundCIPR := false
+		for _, p := range problems {
+			if strings.Contains(p, "CI PR context missing") {
+				foundCIPR = true
+			}
+			if strings.Contains(p, "Merge Target") {
+				t.Fatalf("wrapper routed to post-merge helper under CI PR mode (wrong dispatch priority): problems=%v", problems)
+			}
+		}
+		if !foundCIPR {
+			t.Fatalf("expected CI PR context missing fail-closed class, got: %v", problems)
+		}
+	})
+
+	t.Run("local-single-commit-branch-mismatch-still-rejected", func(t *testing.T) {
+		resetPREnv(t, "", "")
+		repo := buildIsolatedGitRepo(t)
+		head := mustRunGit(t, repo, "rev-parse", "HEAD")
+		t.Setenv("RELEASE_GATE_BRANCH", "main")
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + head + "\n" +
+			"Branch: feature/some-other-branch\n" +
+			"Scope: branch mismatch on local single-commit worktree\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundBranch := false
+		for _, p := range problems {
+			if strings.Contains(p, "Branch value") {
+				foundBranch = true
+			}
+			if strings.Contains(p, "Merge Target") {
+				t.Fatalf("wrapper routed to post-merge helper for non-merge worktree (wrong dispatch); third context MUST only fire when HEAD has 2+ parents AND not in CI PR mode: problems=%v", problems)
+			}
+		}
+		if !foundBranch {
+			t.Fatalf("expected Branch exact-match rejection on local non-merge worktree, got: %v", problems)
+		}
+	})
 }
 
 // TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext is the
@@ -475,7 +706,7 @@ func TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, "", "")
+			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, "", "", "", "")
 			found := false
 			for _, p := range problems {
 				if strings.Contains(strings.ToLower(p), strings.ToLower(tt.wantProblemSubstr)) {
@@ -549,6 +780,19 @@ func rddReceiptValidateStaged(body string) []string {
 // `repoDir`; the test owns the env vars and the repo state, and
 // the wrapper's fail-closed seam surfaces the matching class
 // label without leaking the real worktree's state. R5-NEW-001.
+//
+// Post-merge two-parent push context: when HEAD has 2+ parents
+// AND the checkout is NOT a GitHub PR synthetic merge, the
+// wrapper resolves HEAD^2 (PR tip on the source branch) and
+// HEAD^2~1 (the implementation commit on the source branch)
+// and passes them to the pure helper so the receipt's
+// Candidate Commit is validated against those exact two SHAs.
+// The bash gate stays PR-only and is unchanged; this
+// post-merge path is a Go-guard-only recovery for the main
+// push CI regression observed at 29bc381. The wrapper does
+// NOT infer the source branch from Git — the receipt's
+// `Branch:` field is the only source-branch signal, and the
+// `Merge Target:` field is the only target-branch signal.
 func rddReceiptValidateStagedIn(body, repoDir string) []string {
 	// Resolve HEAD.
 	headSHACmd := exec.Command("git", "rev-parse", "HEAD")
@@ -617,7 +861,8 @@ func rddReceiptValidateStagedIn(body, repoDir string) []string {
 	// Candidate Commit check (the previous SKIP path masked
 	// this exact failure with a `t.Skipf`; the new behaviour
 	// surfaces it).
-	if isGitHubPRMergeCheckoutIn(repoDir) {
+	isCIPRMerge := isGitHubPRMergeCheckoutIn(repoDir)
+	if isCIPRMerge {
 		switch {
 		case prHeadSHA == "" && prHeadParentSHA == "":
 			problems = append(problems, "CI PR context missing: GitHub pull_request merge-checkout detected but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; the workflow's `Capture PR metadata` step MUST export both before the receipt guard can validate (R4-014)")
@@ -630,15 +875,63 @@ func rddReceiptValidateStagedIn(body, repoDir string) []string {
 		}
 	}
 
+	// Post-merge two-parent push context: a real 2-parent
+	// HEAD that is NOT a GitHub PR synthetic merge. Resolves
+	// HEAD^2 and HEAD^2~1 via `git rev-parse` and passes
+	// them to the pure helper so the Candidate Commit check
+	// widens from HEAD/HEAD~1 (local) or PR_HEAD/PR_HEAD_PARENT
+	// (CI PR) to HEAD^2/HEAD^2~1 (post-merge). The dispatch
+	// priority is CI PR > post-merge > local, so a CI PR
+	// synthetic merge never reaches this path. A failure to
+	// resolve HEAD^2 / HEAD^2~1 is a wrapper-level contract
+	// violation and fails closed here rather than silently
+	// waiving the third-context Candidate Commit check.
+	var headSecondParentSHA, headSecondParentParentSHA string
+	if !isCIPRMerge && parentCountOfHEAD(repoDir) >= 2 {
+		if sha, ok := resolveHeadRev(repoDir, "HEAD^2"); ok {
+			headSecondParentSHA = sha
+		} else {
+			problems = append(problems, "post-merge context unresolvable: HEAD^2 could not be resolved via git rev-parse; the guard MUST fail closed rather than waive the third-context Candidate Commit check")
+		}
+		if sha, ok := resolveHeadRev(repoDir, "HEAD^2~1"); ok {
+			headSecondParentParentSHA = sha
+		} else {
+			problems = append(problems, "post-merge context unresolvable: HEAD^2~1 could not be resolved via git rev-parse; the guard MUST fail closed rather than waive the third-context Candidate Commit check")
+		}
+	}
+
 	// Append the pure-helper problems. The pure helper enforces
 	// its own fail-closed contract: when `currentBranch` or
 	// `headSHA` is empty it surfaces the matching problem rather
 	// than silently passing the corresponding field. This keeps
 	// the helper symmetric with the wrapper so a future caller
 	// that bypasses the wrapper cannot accidentally waive the
-	// checks.
-	problems = append(problems, rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA)...)
+	// checks. The two post-merge SHAs are passed so the helper
+	// can validate the receipt under the third context.
+	problems = append(problems, rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA, headSecondParentSHA, headSecondParentParentSHA)...)
 	return problems
+}
+
+// resolveHeadRev runs `git rev-parse <rev>` in repoDir and
+// returns the trimmed SHA plus a boolean indicating whether
+// the result is a valid 40-char hex value. Used by the wrapper
+// to resolve HEAD^2 and HEAD^2~1 on a post-merge two-parent
+// checkout. The helper is pure with respect to env vars
+// (only repoDir is consulted) so tests can drive it against
+// synthetic 2-parent merges without affecting the real
+// worktree's git state.
+func resolveHeadRev(repoDir, rev string) (string, bool) {
+	cmd := exec.Command("git", "rev-parse", rev)
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	sha := strings.TrimSpace(string(out))
+	if !looksLikeFullSHA40(sha) {
+		return "", false
+	}
+	return sha, true
 }
 
 // resolveCurrentBranchFromCIEnv returns the first non-empty
@@ -690,13 +983,31 @@ func resolveCurrentBranchFromCIEnv() string {
 // future caller that bypasses the wrapper cannot accidentally
 // accept a partial CI context).
 //
+// The helper also pins the post-merge two-parent push context:
+// when both `headSecondParentSHA` and `headSecondParentParentSHA`
+// are set (the third context, resolved by the wrapper from
+// HEAD^2 / HEAD^2~1 on a 2-parent HEAD that is NOT a GitHub
+// PR synthetic merge), the receipt's Candidate Commit MUST
+// equal one of those two SHAs — arbitrary second-parent
+// ancestors (HEAD^2~2 and deeper) AND previous-main HEAD
+// (HEAD~1 / HEAD^1) are rejected so the R4-006 rollback
+// safety is preserved across all three contexts. In the
+// third context, a `Branch:` mismatch with `currentBranch`
+// is accepted ONLY when the receipt declares an explicit
+// `Merge Target: <exact currentBranch>` line; the wrapper
+// does NOT infer the source branch from Git, so the literal
+// receipt fields are the only authoritative signals. The
+// three contexts are mutually exclusive (CI PR > post-merge
+// > local); a non-zero `headSecondParentSHA` set on a CI PR
+// path is impossible because the wrapper does not pass it.
+//
 // The helper accepts a deliberately-mismatched `currentBranch`
 // as long as the value is non-empty: that lets the wrapper
 // exercise the Branch mismatch path against any valid receipt
 // shape. The helper does NOT accept the literal `HEAD` string
 // as a branch (treats it like an empty branch) because `HEAD`
 // is the detached-HEAD sentinel.
-func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA string) []string {
+func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA, headSecondParentSHA, headSecondParentParentSHA string) []string {
 	var problems []string
 
 	// 0. Hard guard: reject any line beginning with the legacy
@@ -726,16 +1037,27 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadS
 	}
 
 	// 2. Candidate Commit: <full 40-char SHA> with the precise
-	//    two-context contract.
-	//    Local context (prHead pair unset): SHA must equal HEAD
-	//    or HEAD~1 — the R4-006 invariant unchanged.
+	//    three-context contract.
+	//    Local context (prHead pair unset AND post-merge pair
+	//    unset): SHA must equal HEAD or HEAD~1 — the R4-006
+	//    invariant unchanged.
 	//    CI context (prHead pair set): SHA must equal
 	//    prHeadSHA (PR tip) or prHeadParentSHA (PR tip~1) —
 	//    the R4-013 widening. Arbitrary ancestors are STILL
 	//    rejected on either path.
-	//    Fail-closed contract: an empty `headSHA` (local) or a
-	//    malformed/partial prHead pair (CI) MUST surface a
-	//    problem rather than silently waive the precise check.
+	//    Post-merge two-parent push context (post-merge pair
+	//    set, prHead pair unset): SHA must equal
+	//    headSecondParentSHA (PR tip on the source branch) or
+	//    headSecondParentParentSHA (the implementation commit
+	//    on the source branch). Arbitrary second-parent
+	//    ancestors (HEAD^2~2 and deeper) AND previous-main
+	//    HEAD (HEAD~1 / HEAD^1) are rejected so the R4-006
+	//    rollback safety is preserved across all three
+	//    contexts.
+	//    Fail-closed contract: an empty `headSHA` (local) or
+	//    a malformed/partial prHead pair (CI) MUST surface a
+	//    problem rather than silently waive the precise
+	//    check.
 	commitLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -766,6 +1088,13 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadS
 				} else if candidate != prHeadSHA && candidate != prHeadParentSHA {
 					problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal PR_HEAD_SHA (%s) or PR_HEAD_PARENT_SHA (%s) under the CI context; arbitrary ancestors are rejected so rollback or code changes require a new receipt (R4-013)", candidate, prHeadSHA, prHeadParentSHA))
 				}
+			case headSecondParentSHA != "" || headSecondParentParentSHA != "":
+				// Post-merge two-parent push context.
+				if headSecondParentSHA == "" || headSecondParentParentSHA == "" {
+					problems = append(problems, "post-merge context unresolvable: HEAD^2 and HEAD^2~1 are both empty; the guard MUST fail closed rather than waive the Candidate Commit HEAD^2-or-HEAD^2~1 check")
+				} else if candidate != headSecondParentSHA && candidate != headSecondParentParentSHA {
+					problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal HEAD^2 (%s) or HEAD^2~1 (%s) under the post-merge two-parent push context; arbitrary second-parent ancestors and previous-main HEAD~1 are rejected so rollback or code changes require a new receipt", candidate, headSecondParentSHA, headSecondParentParentSHA))
+				}
 			case headSHA == "":
 				problems = append(problems, "HEAD context unresolvable: headSHA is empty; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
 			default:
@@ -781,14 +1110,32 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadS
 	//    is empty OR the detached-HEAD sentinel `HEAD` — the
 	//    previous behavior silently waived the exact-match
 	//    check in those cases.
+	//
+	//    Post-merge exception: when the wrapper supplied the
+	//    post-merge SHAs (third context), a `Branch:` value
+	//    that does NOT match `currentBranch` is accepted ONLY
+	//    when the receipt also declares an explicit
+	//    `Merge Target: <exact currentBranch>` line — the
+	//    wrapper does NOT infer the source branch from Git,
+	//    so the literal `Merge Target:` is the only
+	//    authoritative target-branch signal. The receipt's
+	//    `Branch:` is preserved for human auditability
+	//    (operators grep for it in PRs) but is not verified
+	//    against `currentBranch` in the third context.
 	if currentBranch == "" || currentBranch == "HEAD" {
 		problems = append(problems, "branch context unresolvable: currentBranch is empty or detached-HEAD sentinel; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
 	}
 	branchLine := ""
+	mergeTargetLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Branch:") {
+		if branchLine == "" && strings.HasPrefix(trimmed, "Branch:") {
 			branchLine = trimmed
+		}
+		if mergeTargetLine == "" && strings.HasPrefix(trimmed, "Merge Target:") {
+			mergeTargetLine = trimmed
+		}
+		if branchLine != "" && mergeTargetLine != "" {
 			break
 		}
 	}
@@ -797,7 +1144,19 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadS
 	} else if currentBranch != "" && currentBranch != "HEAD" {
 		value := strings.TrimSpace(strings.TrimPrefix(branchLine, "Branch:"))
 		if value != currentBranch {
-			problems = append(problems, fmt.Sprintf("Branch value %q does not exactly match the current worktree branch %q", value, currentBranch))
+			isPostMerge := headSecondParentSHA != "" || headSecondParentParentSHA != ""
+			if !isPostMerge {
+				problems = append(problems, fmt.Sprintf("Branch value %q does not exactly match the current worktree branch %q", value, currentBranch))
+			} else if mergeTargetLine == "" {
+				problems = append(problems, fmt.Sprintf("Merge Target line missing in post-merge context: Branch %q does not match the current branch %q, so the receipt MUST declare an explicit `Merge Target: %s` to identify the target branch (the wrapper does NOT infer source/target from Git)", value, currentBranch, currentBranch))
+			} else {
+				mergeTargetValue := strings.TrimSpace(strings.TrimPrefix(mergeTargetLine, "Merge Target:"))
+				if mergeTargetValue == "" {
+					problems = append(problems, fmt.Sprintf("Merge Target value empty in post-merge context: Branch %q does not match the current branch %q, so the receipt MUST declare a non-empty `Merge Target: %s` to identify the target branch", value, currentBranch, currentBranch))
+				} else if mergeTargetValue != currentBranch {
+					problems = append(problems, fmt.Sprintf("Merge Target value %q does not exactly match the current worktree branch %q; in post-merge context the Merge Target is the authoritative target-branch signal and must match exactly", mergeTargetValue, currentBranch))
+				}
+			}
 		}
 	}
 
