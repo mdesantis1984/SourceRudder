@@ -1787,60 +1787,25 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 	})
 
 	t.Run("candidate-grandparent-fails", func(t *testing.T) {
-		// Stage two intermediate commits in the test
-		// harness so HEAD~2 resolves to a SHA that is
-		// deeper than HEAD~1 of the new harness (where
-		// the receipt is committed). The receipt's
-		// Candidate points at HEAD~2 of the test
-		// harness — which, after `runWithCommit` lands
-		// the receipt as the new HEAD, becomes HEAD~2
-		// of the new harness (the receipt is at HEAD,
-		// HEAD~1 is the new harness's initial commit,
-		// HEAD~2 is the test harness's HEAD~2 = the
-		// new harness's initial commit — but the new
-		// harness's HEAD~1 is the test harness's
-		// HEAD~2 only when the test harness's HEAD~2
-		// is the initial commit AND `runWithCommit`
-		// does not stage an intermediate). The trap
-		// here is that `runWithCommit` does NOT stage
-		// an intermediate, so the new harness's HEAD~1
-		// IS the initial commit — same SHA as the test
-		// harness's HEAD~2 — which would make the
-		// gate accept it. To break the tie, stage TWO
-		// intermediates in the test harness and use
-		// HEAD~2 (a different commit, NOT the
-		// initial).
+		// Stage three intermediate commits on this test
+		// harness so HEAD~2 resolves to a stable SHA that
+		// is neither HEAD nor HEAD~1 of this harness.
+		// `runWithCommit` builds a FRESH harness (its own
+		// `t.TempDir()` + `git init`), so the new harness's
+		// HEAD and HEAD~1 are unrelated to anything in this
+		// test harness. Passing this harness's HEAD~2 as the
+		// new receipt's Candidate Commit therefore forces
+		// the precise contract to reject: the new harness's
+		// HEAD or HEAD~1 cannot equal any SHA from this
+		// harness. No tie-breaking is required.
 		h := newHarness(t)
-		h.commitFile("intermediate_b1.txt", "b1\n", "add intermediate b1 (so HEAD~2 is deeper than the new harness's HEAD~1)")
-		h.commitFile("intermediate_b2.txt", "b2\n", "add intermediate b2 (so HEAD~2 is deeper than the new harness's HEAD~1)")
-		h.commitFile("intermediate_b3.txt", "b3\n", "add intermediate b3 (so HEAD~3 = initial-commit and HEAD~2 = intermediate_b1, which is unique to the test harness)")
+		h.commitFile("intermediate_b1.txt", "b1\n", "stage intermediate b1")
+		h.commitFile("intermediate_b2.txt", "b2\n", "stage intermediate b2 (HEAD~2 of test harness resolves to this commit)")
+		h.commitFile("intermediate_b3.txt", "b3\n", "stage intermediate b3")
 		grandparent := resolveHeadN(t, h, 2)
-		// Sanity-check: the SHA we just resolved must NOT
-		// be the harness HEAD or HEAD~1 (otherwise the
-		// test would degenerate into a HEAD-or-HEAD~1
-		// case and not exercise the precise rejection).
-		currentHead := h.headSHA()
-		headParent := resolveHeadN(t, h, 1)
-		if grandparent == currentHead || grandparent == headParent {
-			t.Fatalf("test setup error: HEAD~2 (%s) equals HEAD (%s) or HEAD~1 (%s) — cannot exercise the precise-rejection path", grandparent, currentHead, headParent)
-		}
-		// Sanity-check 2: in the new harness built by
-		// `runWithCommit`, the new HEAD~1 will be the
-		// new harness's initial commit (which shares
-		// its SHA with the test harness's initial
-		// commit). The test harness's HEAD~2 is the
-		// first intermediate (NOT the initial commit),
-		// so it differs from the new harness's HEAD~1.
-		// Verify this by comparing against the new
-		// harness's initial commit SHA (= test harness
-		// initial commit SHA).
-		newHarnessInitial := newHarness(t).headSHA() // throws the harness away, just for SHA
-		if grandparent == newHarnessInitial {
-			t.Fatalf("test setup error: HEAD~2 (%s) equals the initial-commit SHA (%s) — the new harness would accept Candidate == HEAD~1 instead of rejecting HEAD~2; stage an extra commit before HEAD~2 in the test harness", grandparent, newHarnessInitial)
-		}
 		exit, stderr := runWithCommit(t, grandparent, "local gate validation")
 		if exit == 0 {
-			t.Fatalf("expected non-zero exit (Candidate == HEAD~2 is too old), got 0; stderr=%q", stderr)
+			t.Fatalf("expected non-zero exit (Candidate == HEAD~2 of this harness cannot equal HEAD or HEAD~1 of the new harness), got 0; stderr=%q", stderr)
 		}
 		if !strings.Contains(stderr, "Candidate Commit") {
 			t.Fatalf("expected stderr to mention 'Candidate Commit', got %q", stderr)
