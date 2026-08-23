@@ -1,0 +1,25 @@
+# deploy/qa/searxng/settings.yml
+# Minimal SearxNG config for the local Docker QA stack. The only
+# requirement from the spec is: bind 0.0.0.0:8080, JSON output, empty
+# engine list. Empty engines => empty results, which the smoke asserts
+# (200 + empty results + cached:false) without depending on real hits.
+
+use_default_settings: true
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "qa-local-only-not-a-secret"
+
+search:
+  default_lang: "en"
+  formats:
+    - json
+  # Empty engine list — the smoke proves parse + cache paths without
+  # requiring network egress to public SearxNG engines.
+  engines: []
+
+# bot detection off keeps the smoke deterministic (no 429 surprises).
+botdetection:
+  ip_limit: 0
+  link_token: false

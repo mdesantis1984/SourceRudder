@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type NPMConnector struct {
 	baseURL    string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewNPMConnector(cacheSvc *cache.Service, memClient *memory.Client) *NPMConnector {
+func NewNPMConnector(cacheSvc *cache.Service) *NPMConnector {
 	return &NPMConnector{
 		baseURL:    "https://registry.npmjs.org",
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -44,7 +41,7 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"npm"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"npm"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[npm] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -68,10 +65,9 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("npm", "transport", resp, err)
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[npm] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -79,8 +75,6 @@ func (c *NPMConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 }
 
 func (c *NPMConnector) doNPMRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err
@@ -137,18 +131,6 @@ func (c *NPMConnector) doNPMRequest(ctx context.Context, apiURL string) ([]types
 	}
 
 	return results, nil
-}
-
-func (c *NPMConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("npm search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("npm-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *NPMConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

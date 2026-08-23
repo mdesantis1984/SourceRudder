@@ -1,0 +1,3 @@
+# deploy/qa/searxng/limiter.toml intentionally omitted — searxng/searxng:latest
+# ships a strict schema validator that rejects custom TOML. The default limiter
+# configuration that ships with the image is sufficient for local QA.

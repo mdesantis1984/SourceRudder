@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/normalization"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -13,14 +12,12 @@ import (
 type ConnectorManager struct {
 	connectors map[string]types.SearchConnector
 	cache      *cache.Service
-	memory     *memory.Client
 }
 
-func NewConnectorManager(cacheSvc *cache.Service, memClient *memory.Client) *ConnectorManager {
+func NewConnectorManager(cacheSvc *cache.Service) *ConnectorManager {
 	return &ConnectorManager{
 		connectors: make(map[string]types.SearchConnector),
 		cache:      cacheSvc,
-		memory:     memClient,
 	}
 }
 
@@ -97,4 +94,14 @@ func deduplicateResults(results []types.SearchResultItem) []types.SearchResultIt
 func (m *ConnectorManager) GetConnector(name string) (types.SearchConnector, bool) {
 	conn, ok := m.connectors[name]
 	return conn, ok
+}
+
+// Cache returns the in-process cache the ConnectorManager shares
+// with the rest of the server. It exists so stateful handlers (e.g.
+// the MCP get_cached / invalidate_cache tools restored by the
+// restore-runtime-contract change) can reach the same cache instance
+// the connectors use without going through the public connector
+// surface. The returned pointer is non-nil by construction.
+func (m *ConnectorManager) Cache() *cache.Service {
+	return m.cache
 }

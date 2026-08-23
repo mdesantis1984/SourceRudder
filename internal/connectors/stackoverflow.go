@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type StackOverflowConnector struct {
 	baseURL    string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewStackOverflowConnector(cacheSvc *cache.Service, memClient *memory.Client) *StackOverflowConnector {
+func NewStackOverflowConnector(cacheSvc *cache.Service) *StackOverflowConnector {
 	return &StackOverflowConnector{
 		baseURL:    "https://api.stackexchange.com/2.3",
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -46,7 +43,7 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 
 	var err error
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"stackoverflow"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"stackoverflow"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[stackoverflow] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -76,10 +73,9 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
-		resp.Warnings = []string{err.Error()}
+		recordDegraded("stackoverflow", "transport", resp, err)
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[stackoverflow] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -87,8 +83,6 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 }
 
 func (c *StackOverflowConnector) doStackOverflowRequest(ctx context.Context, apiURL string) ([]types.SearchResultItem, error) {
-	time.Sleep(1 * time.Second)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return []types.SearchResultItem{}, err
@@ -146,18 +140,6 @@ func (c *StackOverflowConnector) doStackOverflowRequest(ctx context.Context, api
 	}
 
 	return results, nil
-}
-
-func (c *StackOverflowConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("StackOverflow search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("stackoverflow-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *StackOverflowConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

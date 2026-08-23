@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type AcademicConnector struct {
 	searxngURL string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewAcademicConnector(searxngURL string, cacheSvc *cache.Service, memClient *memory.Client) *AcademicConnector {
+func NewAcademicConnector(searxngURL string, cacheSvc *cache.Service) *AcademicConnector {
 	return &AcademicConnector{
 		searxngURL: searxngURL,
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -44,7 +41,7 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"academic", "searxng"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"academic", "searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[academic] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -66,10 +63,10 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
+		resp.Partial = true
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[academic] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -77,8 +74,6 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 }
 
 func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
@@ -158,7 +153,16 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 	}
 
 	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		return []types.SearchResultItem{}, fmt.Errorf("all academic engines unresponsive")
+		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+		for _, entry := range searxngResp.UnresponsiveEngines {
+			if len(entry) > 0 {
+				if name, ok := entry[0].(string); ok {
+					engines = append(engines, name)
+				}
+			}
+		}
+		observability.Default().RecordSearchDegraded("academic", "unresponsive_engines")
+		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
 	}
 
 	return results, nil
@@ -201,18 +205,6 @@ func parsePublishedDate(dateStr string) *time.Time {
 		}
 	}
 	return nil
-}
-
-func (c *AcademicConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("Academic search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("academic-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *AcademicConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

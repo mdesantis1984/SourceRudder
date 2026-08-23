@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -21,15 +20,13 @@ import (
 type PyPIConnector struct {
 	baseURL    string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewPyPIConnector(cacheSvc *cache.Service, memClient *memory.Client) *PyPIConnector {
+func NewPyPIConnector(cacheSvc *cache.Service) *PyPIConnector {
 	return &PyPIConnector{
 		baseURL:    "https://pypi.org",
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -46,7 +43,7 @@ func (c *PyPIConnector) Search(ctx context.Context, req *types.SearchRequest) (*
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"pypi"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"pypi"}, "")
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[pypi] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -71,7 +68,6 @@ func (c *PyPIConnector) Search(ctx context.Context, req *types.SearchRequest) (*
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[pypi] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -216,18 +212,6 @@ func (c *PyPIConnector) parseSimpleIndex(html string, query string, maxResults i
 	}
 
 	return results, nil
-}
-
-func (c *PyPIConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("PyPI search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("pypi-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *PyPIConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

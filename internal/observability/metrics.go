@@ -19,6 +19,43 @@ type Metrics struct {
 	registry       *prometheus.Registry
 	httpRequests   *prometheus.CounterVec
 	searchLatency  *prometheus.HistogramVec
+	searchDegraded *prometheus.CounterVec
+}
+
+// defaultMetrics is the package-level Metrics instance used by connectors
+// and other packages that don't hold a direct reference. main() wires it
+// once at startup; tests that need isolation can call SetDefault.
+var (
+	defaultMu      sync.RWMutex
+	defaultMetrics *Metrics
+)
+
+// SetDefault installs m as the package-level Metrics instance. It is
+// intended to be called once during boot. Subsequent calls overwrite the
+// previous instance.
+func SetDefault(m *Metrics) {
+	defaultMu.Lock()
+	defaultMetrics = m
+	defaultMu.Unlock()
+}
+
+// Default returns the package-level Metrics instance, creating one on
+// first use so connectors can call RecordSearchDegraded from anywhere
+// without holding a direct reference. The instance is shared across the
+// process and is safe for concurrent use.
+func Default() *Metrics {
+	defaultMu.RLock()
+	m := defaultMetrics
+	defaultMu.RUnlock()
+	if m != nil {
+		return m
+	}
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	if defaultMetrics == nil {
+		defaultMetrics = New()
+	}
+	return defaultMetrics
 }
 
 func New() *Metrics {
@@ -43,8 +80,16 @@ func New() *Metrics {
 		},
 		[]string{"source"},
 	)
+	m.searchDegraded = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ia_buscar_search_degraded_total",
+			Help: "Number of search responses that surfaced an upstream degradation (e.g. SearxNG engines not responding, Reddit 429/5xx). The 'kind' label names the failure mode.",
+		},
+		[]string{"source", "kind"},
+	)
 	m.registry.MustRegister(m.httpRequests)
 	m.registry.MustRegister(m.searchLatency)
+	m.registry.MustRegister(m.searchDegraded)
 	return m
 }
 
@@ -75,6 +120,14 @@ func (m *Metrics) Handler() http.HandlerFunc {
 	}
 }
 
+// Registry exposes the underlying Prometheus registry so tests in other
+// packages can read counter values via prometheus.Registry.Gather()
+// without having to spin up an HTTP scrape. Production callers should
+// use Handler() instead.
+func (m *Metrics) Registry() *prometheus.Registry {
+	return m.registry
+}
+
 func (m *Metrics) JSON() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -94,4 +147,21 @@ func (m *Metrics) RecordSearchLatency(source string, seconds float64) {
 
 func (m *Metrics) RecordHTTPRequest(method, path, status string) {
 	m.httpRequests.WithLabelValues(method, path, status).Inc()
+}
+
+// RecordSearchDegraded increments ia_buscar_search_degraded_total whenever a
+// connector returns a response that signals upstream degradation (SearxNG
+// engines not responding, Reddit 429/5xx, etc.). The 'source' label is the
+// connector name; the 'kind' label is a stable, lowercase, snake_case tag
+// naming the failure mode (e.g. "unresponsive_engines", "rate_limited",
+// "transport", "upstream_http_5xx"). This metric is for observability
+// only — IA_Buscar does not attempt to repair external engines.
+func (m *Metrics) RecordSearchDegraded(source, kind string) {
+	if source == "" {
+		source = "unknown"
+	}
+	if kind == "" {
+		kind = "unknown"
+	}
+	m.searchDegraded.WithLabelValues(source, kind).Inc()
 }

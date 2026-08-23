@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type WebConnector struct {
 	searxngURL string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewWebConnector(searxngURL string, cacheSvc *cache.Service, memClient *memory.Client) *WebConnector {
+func NewWebConnector(searxngURL string, cacheSvc *cache.Service) *WebConnector {
 	return &WebConnector{
 		searxngURL: searxngURL,
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -44,7 +41,7 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"searxng", req.TimeRange})
+	cacheKey := cache.GenerateCacheKey(query, []string{"searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[web] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -74,10 +71,10 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
+		resp.Partial = true
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[web] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
@@ -85,8 +82,6 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 }
 
 func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
@@ -128,6 +123,7 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 			Engine      string      `json:"engine"`
 			ParsedURL   interface{} `json:"parsed_url"`
 		} `json:"results"`
+		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&searxngResp); err != nil {
@@ -151,6 +147,19 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 		})
 	}
 
+	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
+		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+		for _, entry := range searxngResp.UnresponsiveEngines {
+			if len(entry) > 0 {
+				if name, ok := entry[0].(string); ok {
+					engines = append(engines, name)
+				}
+			}
+		}
+		observability.Default().RecordSearchDegraded("web", "unresponsive_engines")
+		return []types.SearchResultItem{}, fmt.Errorf("searxng unresponsive engines: %v", engines)
+	}
+
 	return results, nil
 }
 
@@ -166,18 +175,6 @@ func (c *WebConnector) searchGeneric(ctx context.Context, query string, maxResul
 			CitationID: "searxng:unconfigured",
 		},
 	}, nil
-}
-
-func (c *WebConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("Web search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("web-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *WebConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

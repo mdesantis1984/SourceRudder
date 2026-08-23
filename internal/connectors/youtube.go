@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
@@ -19,15 +18,13 @@ import (
 type YouTubeConnector struct {
 	searxngURL string
 	cacheSvc   *cache.Service
-	memClient  *memory.Client
 	httpClient *http.Client
 }
 
-func NewYouTubeConnector(searxngURL string, cacheSvc *cache.Service, memClient *memory.Client) *YouTubeConnector {
+func NewYouTubeConnector(searxngURL string, cacheSvc *cache.Service) *YouTubeConnector {
 	return &YouTubeConnector{
 		searxngURL: searxngURL,
 		cacheSvc:   cacheSvc,
-		memClient:  memClient,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -44,7 +41,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"youtube", "searxng"})
+	cacheKey := cache.GenerateCacheKey(query, []string{"youtube", "searxng"}, req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[youtube] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -54,7 +51,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		}
 	}
 
-	results, err := c.searchSearxng(ctx, query, maxResults)
+	results, err := c.searchSearxng(ctx, query, maxResults, req)
 	if err != nil {
 		log.Printf("[youtube] search error: %v", err)
 	}
@@ -66,23 +63,24 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		Cached:      false,
 	}
 	if len(results) == 0 && err != nil {
+		resp.Partial = true
 		resp.Warnings = []string{err.Error()}
 	}
 
-	c.saveToMemory(ctx, query, len(results), time.Since(start))
 	c.cacheResults(ctx, cacheKey, resp)
 
 	log.Printf("[youtube] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
 	return resp, nil
 }
 
-func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxResults int) ([]types.SearchResultItem, error) {
-	time.Sleep(500 * time.Millisecond)
-
+func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
 	params.Set("engines", "youtube,brave")
+	if req.TimeRange != "" {
+		params.Set("time_range", req.TimeRange)
+	}
 
 	apiURL := c.searxngURL + "/search?" + params.Encode()
 
@@ -151,7 +149,16 @@ func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxR
 	}
 
 	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		return []types.SearchResultItem{}, fmt.Errorf("all video engines unresponsive")
+		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+		for _, entry := range searxngResp.UnresponsiveEngines {
+			if len(entry) > 0 {
+				if name, ok := entry[0].(string); ok {
+					engines = append(engines, name)
+				}
+			}
+		}
+		observability.Default().RecordSearchDegraded("youtube", "unresponsive_engines")
+		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
 	}
 
 	return results, nil
@@ -208,18 +215,6 @@ func truncateSnippet(snippet string) string {
 		return snippet[:300] + "..."
 	}
 	return snippet
-}
-
-func (c *YouTubeConnector) saveToMemory(ctx context.Context, query string, count int, latency time.Duration) {
-	if c.memClient == nil {
-		return
-	}
-	c.memClient.Save(ctx, &memory.Observation{
-		Title:    fmt.Sprintf("YouTube search: %s", query),
-		Content:  fmt.Sprintf("**Query**: %s\n**Results**: %d\n**Latency**: %v", query, count, latency),
-		Type:     "search",
-		TopicKey: fmt.Sprintf("youtube-%s", sanitizeTopicKey(query)),
-	})
 }
 
 func (c *YouTubeConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {

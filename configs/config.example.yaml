@@ -2,5 +2,14 @@ transport: stdio
 http_addr: :8080
 searxng_url: http://localhost:8888
 cache_ttl: 300
-memory_url: http://127.0.0.1:7438
-memory_apikey: ""
+
+# Reddit connector runs ANONYMOUS-ONLY in this delivery. Reddit's
+# anonymous JSON endpoint is rate-limited and frequently returns 401/403
+# to generic User-Agents. Override REDDIT_USER_AGENT to a deployment-
+# specific string (Reddit's API rules require "a unique and descriptive
+# User-Agent"). OAuth client_id / client_secret are intentionally NOT
+# supported: shipping a broken public configuration contract would be
+# worse than surfacing the anonymous-blocked degradation.
+reddit:
+  user_agent: "ia-buscar/<deployment> (anonymous-only)"
+  base_url: "https://www.reddit.com"

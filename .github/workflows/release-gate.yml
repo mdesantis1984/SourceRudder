@@ -1,0 +1,77 @@
+name: release-gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 fetches the full history so the receipt
+          # validator can resolve HEAD~1, and so `git merge-base
+          # $BASE_SHA HEAD` has both endpoints available locally
+          # (the synthetic merge commit is a 2-parent commit; the
+          # second parent is the PR tip, which the validator needs
+          # to walk back through). The default fetch-depth:1 would
+          # produce a single-commit shallow HEAD that breaks the
+          # precise HEAD-or-HEAD~1 contract (R4-013 / R4-014).
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Capture PR metadata
+        run: |
+          {
+            echo "PR_BRANCH=${{ github.head_ref }}"
+            echo "BASE_REF=$BASE_REF"
+            echo "BASE_SHA=$BASE_SHA"
+            # Pre-compute MERGE_BASE so the gate does not have to
+            # re-resolve `git merge-base $BASE_REF HEAD`. The PR
+            # checkout only populates refs/remotes/pull/N/* and
+            # refs/remotes/origin/*; the literal branch name
+            # `main` is NOT a local ref under that checkout shape,
+            # so the in-script `git merge-base main HEAD` returns
+            # empty and the gate would fail-closed for the wrong
+            # reason. The SHA-based merge-base computed here is
+            # stable across the synthetic merge commit. (R4-012)
+            echo "MERGE_BASE=$(git merge-base $BASE_SHA HEAD)"
+            # Export the explicit PR-head context so the receipt
+            # Candidate Commit check widens from HEAD/HEAD~1
+            # (local) to PR_HEAD_SHA/PR_HEAD_PARENT_SHA (CI).
+            # The CI merge-checkout's HEAD is the synthetic merge
+            # commit, whose HEAD~1 is the PR tip and HEAD~2 is
+            # the receipt's actual code commit — neither matches
+            # the receipt's Candidate Commit by the local
+            # contract. The two-context contract keeps the
+            # local rollback safety while making the CI path
+            # representable. (R4-013)
+            echo "RELEASE_GATE_PR_HEAD_SHA=${{ github.event.pull_request.head.sha }}"
+            echo "RELEASE_GATE_PR_HEAD_PARENT_SHA=$(git rev-parse ${{ github.event.pull_request.head.sha }}^)"
+          } >> "$GITHUB_ENV"
+      - name: Run release gate
+        env:
+          RELEASE_GATE_BRANCH: ${{ github.head_ref }}
+          # Carve-out only matches this exact branch name; empty by
+          # default. Branch-exact expression: RELEASE_GATE_SIZE_EXCEPTION
+          # evaluates to the literal branch name ONLY when github.head_ref
+          # equals `feature/close-fetch-resilience-release-gates-exception`,
+          # and to '' otherwise. The bash validator's fail-closed check
+          # at scripts/release-gate.sh:496 stays the authoritative seam;
+          # the empty-string fallback keeps it active for every other
+          # branch. Replaces the previous ${{ vars.
+          # RELEASE_GATE_SIZE_EXCEPTION }} which depended on a
+          # maintainer-set repo variable (the public repo has not set
+          # it, so the env reached bash empty and step 3 failed closed
+          # for the wrong reason). The activation contract is pinned by
+          # releaseGateSizeExceptionEnvRegex in
+          # internal/mcp/release_gate_test.go (R6-NEW-001).
+          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == 'feature/close-fetch-resilience-release-gates-exception' && 'feature/close-fetch-resilience-release-gates-exception' || '' }}
+        run: bash scripts/release-gate.sh
