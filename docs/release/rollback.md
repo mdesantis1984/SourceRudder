@@ -269,16 +269,42 @@ contract enforces.
 
 The corresponding Go test guard at
 `internal/mcp/release_gate_test.go`
-(`TestReleaseGateRDDReceiptSatisfiesLocalContract`) skips on a
-GitHub PR synthetic merge commit via the
-`isGitHubPRMergeCheckout` helper (CI=true AND
-GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents). The
-helper exists so the receipt-shape guard is not masked by the
-fail-closed "branch context unresolvable" error on a
-merge-checkout whose HEAD is the synthetic merge commit. The
-release-gate workflow is the authoritative enforcer of the
-receipt contract on CI; the Go guard exists to pin the receipt
-shape for the PR-tip checkout shape only.
+(`TestReleaseGateRDDReceiptSatisfiesLocalContract`) validates
+the staged receipt in BOTH contexts, not just locally:
+
+- **Local context** (CI unset OR push event): the wrapper
+  resolves HEAD / HEAD~1 / current branch from the worktree
+  and the receipt's Candidate Commit must equal HEAD or
+  HEAD~1.
+- **CI context** (detected via `isGitHubPRMergeCheckout`:
+  CI=true AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+
+  parents): the wrapper requires the workflow to export
+  `RELEASE_GATE_PR_HEAD_SHA` and `RELEASE_GATE_PR_HEAD_PARENT_SHA`
+  via the `Capture PR metadata` step. If either is missing or
+  malformed the wrapper fails closed (R4-014) — the previous
+  `t.Skipf` mask that let the guard silently skip on a
+  synthetic merge commit is GONE; every CI run now exercises
+  the receipt-shape contract. The wrapper also resolves
+  `currentBranch` from CI env (GITHUB_HEAD_REF /
+  GITHUB_REF_NAME / CI_COMMIT_REF_NAME / RELEASE_GATE_BRANCH)
+  so the Branch exact-match check stays consistent with the
+  bash gate's resolution chain.
+
+The synthetic 2-parent commit detection helper
+(`isGitHubPRMergeCheckoutIn`) is tested via
+`TestIsGitHubPRMergeCheckoutContract` with a real synthetic
+two-parent commit built in an isolated temp repo
+(`git commit-tree -p <a> -p <b>`); the helper's true branch is
+exercised deterministically on every CI run, so the detection
+surface is pinned against future regressions.
+
+The CI workflow at `.github/workflows/ci.yml` exports the same
+PR-head env pair on `pull_request` events as the release-gate
+workflow; this is the contract the `TestCIWorkflowExportsPRHeadContext`
+test pins. A regression that drops the export from the CI
+workflow trips the Go guard's fail-closed seam here (R4-014),
+which is exactly the defense-in-depth reduction that the
+two-context contract was designed to close.
 
 ## What Rollback Does NOT Do
 

@@ -113,7 +113,7 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 }
 
 // TestReleaseGateRDDReceiptSatisfiesLocalContract is the
-// behavior-first process guard for the local RDD receipt/evidence
+// behavior-first process guard for the RDD receipt/evidence
 // contract that replaced the fictitious external-review
 // `Authority: official` binding. The gate at
 // `scripts/release-gate.sh` parses this receipt on every merge;
@@ -122,45 +122,45 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 // external-binding resurrection) trips here before reaching the
 // release gate.
 //
+// The guard operates under the two-context R4-013 Candidate
+// Commit contract:
+//   - Local context (no PR_HEAD env): receipt's Candidate Commit
+//     must equal HEAD or HEAD~1 of the worktree.
+//   - CI context (RELEASE_GATE_PR_HEAD_SHA /
+//     RELEASE_GATE_PR_HEAD_PARENT_SHA both set, and the worktree
+//     is a GitHub PR synthetic merge checkout): receipt's
+//     Candidate Commit must equal one of those two SHAs.
+//
+// Under a CI merge-checkout WITHOUT the PR_HEAD env (or with a
+// malformed pair) the guard MUST fail closed (R4-014): a missing
+// or malformed CI context is a workflow contract violation, not a
+// reason to silently waive the Candidate Commit check. The
+// previous `t.Skipf` mask is gone — every CI run now exercises
+// the guard against the receipt, either through the local
+// contract (when the checkout is not a synthetic merge) or the
+// CI contract (when the workflow exports the PR-head context).
+//
 // Required fields, all parsed as line-start matches from the
 // receipt body. The full bash validator lives in
-// `scripts/release-gate.sh`; this Go test pins the same shape as
-// a process guard for the compiled binary's view of the
+// `scripts/release-gate.sh`; this Go test pins the same shape
+// as a process guard for the compiled binary's view of the
 // contract:
 //
 //   1. Status: pass                        (exact line)
-//   2. Candidate Commit: <full 40-char SHA>
+//   2. Candidate Commit: <full 40-char SHA> (two-context contract)
 //   3. Scope: <text mentioning current branch>
 //   4. Verified Commands:                  (section; every entry
 //      ends in `: PASS`)
 //   5. Unresolved Blocker Policy:          (header; value free-form)
 //
-// GREEN-on-first-run by construction: the staged receipt
-// already satisfies the contract. The test exists to lock the
-// contract against future regressions and to give verify a
-// passing runtime/process guard instead of an external-binding
-// dependency.
+// GREEN-on-first-run by construction for the local context:
+// the staged receipt's Candidate Commit equals HEAD~1 of the
+// real worktree (the receipt re-authoring commit sits at HEAD,
+// the implementation commit at HEAD~1). The CI context is
+// exercised in `TestRDDReceiptValidateTwoContextContract` with
+// synthetic SHAs (so the test does not depend on a real
+// `actions/checkout@v4` synthetic-merge fixture).
 func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
-	// R4-013 early-skip: the receipt is authored against the PR tip,
-	// not the synthetic merge commit that `actions/checkout@v4`
-	// produces on a pull_request event. The wrapper
-	// (rddReceiptValidateStaged) resolves HEAD/HEAD~1 from the
-	// worktree, so under a CI merge-checkout HEAD is the merge
-	// commit, HEAD~1 is the PR tip, and HEAD~2 is the receipt's
-	// actual code commit — none of which the receipt's Candidate
-	// Commit matches. The receipt-shape guard was designed for the
-	// PR-tip checkout shape (its docstring states "GREEN-on-first-run
-	// by construction"), not the merge-checkout shape. The
-	// release-gate workflow is the authoritative enforcer of the
-	// receipt contract; this Go guard exists to pin the receipt
-	// shape for the PR-tip checkout. On a GitHub PR merge-checkout
-	// the guard MUST skip rather than mask a real regression with
-	// a fail-closed "branch context unresolvable" that obscures
-	// the actual contract test.
-	if isGitHubPRMergeCheckout() {
-		t.Skipf("skipping receipt-shape guard on a GitHub pull_request synthetic merge commit (CI=%q GITHUB_EVENT_NAME=%q); the receipt is authored against the PR tip and the guard cannot represent that context under a merge-checkout. The release-gate workflow runs the receipt validator against the PR tip via the RELEASE_GATE_PR_HEAD_SHA context. (R4-013)", os.Getenv("CI"), os.Getenv("GITHUB_EVENT_NAME"))
-	}
-
 	placeholderPath := filepath.Join("..", "..", "docs", "release", "reviews", "review-be4525bc4797e972.md")
 	data, err := os.ReadFile(placeholderPath)
 	if err != nil {
@@ -168,26 +168,236 @@ func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
 	}
 	body := string(data)
 
+	// Local context: the staged receipt MUST validate against
+	// HEAD/HEAD~1 of the real worktree. The receipt's
+	// Candidate Commit equals HEAD~1 in the canonical
+	// two-commit code-then-receipt workflow (HEAD = receipt
+	// re-authoring commit, HEAD~1 = implementation commit).
 	problems := rddReceiptValidateStaged(body)
 	if len(problems) > 0 {
-		t.Fatalf("RDD receipt at %s failed validation: %v\nFull content:\n%s", placeholderPath, problems, body)
+		t.Fatalf("RDD receipt at %s failed local-context validation: %v\nFull content:\n%s", placeholderPath, problems, body)
 	}
 
-	// Hard guard: the receipt MUST NOT mention the old external-binding
-	// tokens (`Authority:` header, the word `official` as a value).
-	// A future regression that re-introduces the external-binding
-	// gate MUST fail here first, before reaching the release-gate
+	// Hard guard: the receipt MUST NOT mention the old
+	// external-binding tokens (`Authority:` header). A future
+	// regression that re-introduces the external-binding gate
+	// MUST fail here first, before reaching the release-gate
 	// subprocess tests.
-	if strings.Contains(body, "\nAuthority:") || strings.HasPrefix(body, "Authority:") {
-		// Walk every line and reject any line whose first non-blank
-		// characters are `Authority:` (the gate's parser uses
-		// line-start matches).
-		for _, line := range strings.Split(body, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "Authority:") {
-				t.Errorf("RDD receipt at %s contains the legacy `Authority:` header (line %q). The local RDD contract replaced the fictitious external review binding; that header must not return.", placeholderPath, trimmed)
-			}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Authority:") {
+			t.Errorf("RDD receipt at %s contains the legacy `Authority:` header (line %q). The local RDD contract replaced the fictitious external review binding; that header must not return.", placeholderPath, trimmed)
 		}
+	}
+}
+
+// TestRDDReceiptValidateTwoContextContract is the table-driven
+// unit test for the two-context Candidate Commit contract (R4-013
+// + R4-014). It exercises the parameterized pure helper with
+// synthetic SHA inputs so the CI path is verified deterministically
+// on every test run (no dependency on a real `actions/checkout@v4`
+// synthetic-merge fixture or on the calling test process being
+// launched inside one). Each case names the scenario, supplies
+// the receipt body and the four context SHAs, and asserts
+// whether problems should be empty (pass) or non-empty (fail).
+//
+// Sub-cases intentionally cover BOTH paths:
+//   - Local (PR_HEAD pair unset): exact-match on HEAD or HEAD~1;
+//     HEAD~2 or any other ancestor rejected.
+//   - CI (PR_HEAD pair set, both valid 40-char hex): exact-match
+//     on PR_HEAD_SHA or PR_HEAD_PARENT_SHA; deeper ancestors
+//     rejected.
+//   - CI malformed pair: any var set with non-hex value →
+//     fail-closed with "CI PR context invalid".
+//   - CI partial set: one var set, the other empty → fail-closed
+//     with "CI PR context partially set".
+//
+// The strict-mode contract is exact-match on the two SHAs in
+// either context — arbitrary ancestors are STILL rejected so
+// the R4-006 rollback safety is preserved on both paths. A
+// receipt attesting a SHA deeper than PR tip~1 will fail with
+// "must equal PR_HEAD_SHA or PR_HEAD_PARENT_SHA", the same
+// fail-closed behaviour the local contract enforces.
+func TestRDDReceiptValidateTwoContextContract(t *testing.T) {
+	const branch = "feature/close-fetch-resilience-release-gates-exception"
+	const head = "0123456789abcdef0123456789abcdef01234567"
+	const headParent = "1123456789abcdef0123456789abcdef01234567"
+	const deeper = "abcdef0123456789abcdef0123456789abcdef01"
+	const prHead = "fedcba9876543210fedcba9876543210fedcba98"
+	const prHeadParent = "76543210fedcba9876543210fedcba9876543210"
+
+	makeReceipt := func(candidate string) string {
+		return "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + candidate + "\n" +
+			"Branch: " + branch + "\n" +
+			"Scope: " + branch + "\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+	}
+
+	cases := []struct {
+		name             string
+		body             string
+		headSHA          string
+		headParentSHA    string
+		currentBranch    string
+		prHeadSHA        string
+		prHeadParentSHA  string
+		wantProblems     bool
+		wantProblemSubst string
+	}{
+		// ---- Local context (R4-006) -----------------------------
+		{
+			name:             "local-candidate-equals-head",
+			body:             makeReceipt(head),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			wantProblems:     false,
+			wantProblemSubst: "",
+		},
+		{
+			name:             "local-candidate-equals-head-parent",
+			body:             makeReceipt(headParent),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			wantProblems:     false,
+			wantProblemSubst: "",
+		},
+		{
+			name:             "local-candidate-deeper-ancestor-rejected",
+			body:             makeReceipt(deeper),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			wantProblems:     true,
+			wantProblemSubst: "Candidate Commit",
+		},
+		{
+			name:             "local-candidate-arbitrary-rejected",
+			body:             makeReceipt("0000000000000000000000000000000000000000"),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			wantProblems:     true,
+			wantProblemSubst: "Candidate Commit",
+		},
+		// ---- CI context (R4-013) ---------------------------------
+		{
+			name:             "ci-candidate-equals-pr-head",
+			body:             makeReceipt(prHead),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     false,
+			wantProblemSubst: "",
+		},
+		{
+			name:             "ci-candidate-equals-pr-head-parent",
+			body:             makeReceipt(prHeadParent),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     false,
+			wantProblemSubst: "",
+		},
+		{
+			name:             "ci-candidate-deeper-ancestor-rejected",
+			body:             makeReceipt(deeper),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     true,
+			wantProblemSubst: "Candidate Commit",
+		},
+		{
+			name:             "ci-candidate-equals-local-head-rejected",
+			body:             makeReceipt(head),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     true,
+			wantProblemSubst: "Candidate Commit",
+		},
+		// ---- CI context fail-closed surfaces (R4-014) ------------
+		{
+			name:             "ci-pr-head-non-hex-rejected",
+			body:             makeReceipt(prHead),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        "not-a-sha",
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     true,
+			wantProblemSubst: "CI PR context invalid",
+		},
+		{
+			name:             "ci-pr-head-parent-non-hex-rejected",
+			body:             makeReceipt(prHead),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  "also-not-a-sha",
+			wantProblems:     true,
+			wantProblemSubst: "CI PR context invalid",
+		},
+		{
+			name:             "ci-pr-head-set-parent-empty-rejected",
+			body:             makeReceipt(prHead),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        prHead,
+			prHeadParentSHA:  "",
+			wantProblems:     true,
+			wantProblemSubst: "CI PR context partially set",
+		},
+		{
+			name:             "ci-pr-head-empty-parent-set-rejected",
+			body:             makeReceipt(prHead),
+			headSHA:          head,
+			headParentSHA:    headParent,
+			currentBranch:    branch,
+			prHeadSHA:        "",
+			prHeadParentSHA:  prHeadParent,
+			wantProblems:     true,
+			wantProblemSubst: "CI PR context partially set",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, tt.prHeadSHA, tt.prHeadParentSHA)
+			if tt.wantProblems && len(problems) == 0 {
+				t.Fatalf("expected at least one problem mentioning %q, got none", tt.wantProblemSubst)
+			}
+			if !tt.wantProblems && len(problems) > 0 {
+				t.Fatalf("expected no problems, got: %v", problems)
+			}
+			if tt.wantProblemSubst != "" {
+				found := false
+				for _, p := range problems {
+					if strings.Contains(p, tt.wantProblemSubst) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("expected a problem mentioning %q, got: %v", tt.wantProblemSubst, problems)
+				}
+			}
+		})
 	}
 }
 
@@ -265,7 +475,7 @@ func TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA)
+			problems := rddReceiptValidatePure(tt.body, tt.currentBranch, tt.headSHA, tt.headParentSHA, "", "")
 			found := false
 			for _, p := range problems {
 				if strings.Contains(strings.ToLower(p), strings.ToLower(tt.wantProblemSubstr)) {
@@ -284,18 +494,36 @@ func TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext(t *testing.T) {
 // receipt as it is staged on disk. The receipt MUST carry a
 // dedicated `Branch:` line whose value exactly matches the
 // current worktree's branch name (queried via `git rev-parse
-// --abbrev-ref HEAD`); the previous substring-based Scope check
-// has been retired in favour of the precise exact-match contract.
-// `Scope:` remains a free-form operator-context field and is no
-// longer used for branch verification.
+// --abbrev-ref HEAD`, with CI env overrides GITHUB_HEAD_REF /
+// GITHUB_REF_NAME / CI_COMMIT_REF_NAME / RELEASE_GATE_BRANCH
+// taking precedence so the same resolution chain the bash gate
+// uses applies here). The previous substring-based Scope check
+// has been retired in favour of the precise exact-match
+// contract. `Scope:` remains a free-form operator-context field
+// and is no longer used for branch verification.
 //
 // The function is wired to the worktree's actual branch so the
 // Go process guard stays in sync with the bash gate's runtime
-// behaviour. The function also pins the new precise Candidate
-// Commit contract: the SHA must equal HEAD or HEAD~1. The
-// two-commit code-then-receipt workflow still satisfies this
-// because the receipt commit is HEAD and the code commit it
-// attests sits at HEAD~1.
+// behaviour. The function also pins the precise Candidate Commit
+// contract under the two-context R4-013 invariant: locally the
+// SHA must equal HEAD or HEAD~1; under a CI PR merge-checkout
+// (detected via `isGitHubPRMergeCheckout`, which requires
+// CI=true AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+
+// parents) the SHA must equal the workflow-supplied
+// `RELEASE_GATE_PR_HEAD_SHA` (PR tip) or
+// `RELEASE_GATE_PR_HEAD_PARENT_SHA` (PR tip~1). The two-commit
+// code-then-receipt workflow satisfies BOTH contexts with the
+// same SHA: HEAD~1 (local) equals PR_HEAD_PARENT_SHA (CI) when
+// the receipt re-authoring commit is HEAD and the implementation
+// commit is HEAD~1.
+//
+// The CI context is REQUIRED when the wrapper detects a GitHub
+// PR synthetic merge checkout: a missing or malformed
+// `RELEASE_GATE_PR_HEAD_*` env MUST fail closed (R4-014) rather
+// than silently waive the Candidate Commit check. The wrapper
+// surfaces the fail-closed problems before delegating to the
+// pure helper so a future regression that drops the env export
+// from the workflow trips here rather than at the bash gate.
 //
 // R2-NEW-008 fail-closed contract: when the worktree's git
 // context cannot be resolved (detached HEAD returning the
@@ -330,29 +558,64 @@ func rddReceiptValidateStaged(body string) []string {
 		}
 	}
 
-	// Resolve the current branch.
-	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchCmd.Dir = repoRoot
-	branchOut, branchErr := branchCmd.Output()
-	var currentBranch string
-	if branchErr == nil {
-		currentBranch = strings.TrimSpace(string(branchOut))
+	// Resolve the current branch from CI env first (matching
+	// the bash gate's trusted-source priority chain), then
+	// fall back to the local git symbolic ref. A detached
+	// HEAD returns the literal string `HEAD`; treat that
+	// AND an empty result as "branch unresolvable".
+	currentBranch := resolveCurrentBranchFromCIEnv()
+	if currentBranch == "" {
+		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		branchCmd.Dir = repoRoot
+		branchOut, branchErr := branchCmd.Output()
+		if branchErr == nil {
+			currentBranch = strings.TrimSpace(string(branchOut))
+		}
 	}
-	// A detached HEAD returns the literal string `HEAD`; treat
-	// that AND an empty result as "branch unresolvable".
 	if currentBranch == "HEAD" {
 		currentBranch = ""
 	}
+
+	// Read the PR-head context from env. The workflow's
+	// `Capture PR metadata` step exports these on a
+	// pull_request event so the wrapper can validate the
+	// receipt's Candidate Commit against PR tip / PR tip~1
+	// (the R4-013 two-context contract).
+	prHeadSHA := strings.TrimSpace(os.Getenv("RELEASE_GATE_PR_HEAD_SHA"))
+	prHeadParentSHA := strings.TrimSpace(os.Getenv("RELEASE_GATE_PR_HEAD_PARENT_SHA"))
 
 	// Fail-closed seam: if the wrapper cannot establish the git
 	// context, inject a problem BEFORE delegating so the pure
 	// helper's branch/HEAD validation is never silently waived.
 	var problems []string
 	if currentBranch == "" {
-		problems = append(problems, "branch context unresolvable: could not determine current branch from git rev-parse; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
+		problems = append(problems, "branch context unresolvable: could not determine current branch from CI env or git rev-parse; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
 	}
 	if headSHA == "" {
 		problems = append(problems, "HEAD context unresolvable: could not determine HEAD SHA from git rev-parse; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
+	}
+
+	// CI PR merge-checkout fail-closed seam (R4-014): when the
+	// wrapper detects the synthetic-merge-checkout shape via
+	// isGitHubPRMergeCheckout, the local HEAD/HEAD~1 contract
+	// cannot represent the receipt's PR-tip context, so the
+	// workflow MUST supply the explicit PR-head env. A
+	// missing or malformed pair is a contract violation and
+	// MUST fail closed here rather than silently waive the
+	// Candidate Commit check (the previous SKIP path masked
+	// this exact failure with a `t.Skipf`; the new behaviour
+	// surfaces it).
+	if isGitHubPRMergeCheckout() {
+		switch {
+		case prHeadSHA == "" && prHeadParentSHA == "":
+			problems = append(problems, "CI PR context missing: GitHub pull_request merge-checkout detected but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; the workflow's `Capture PR metadata` step MUST export both before the receipt guard can validate (R4-014)")
+		case prHeadSHA == "" || prHeadParentSHA == "":
+			problems = append(problems, "CI PR context partially set: RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA MUST both be set together; partial export is a workflow contract violation and the guard MUST fail closed (R4-014)")
+		case !looksLikeFullSHA40(prHeadSHA):
+			problems = append(problems, fmt.Sprintf("CI PR context invalid: RELEASE_GATE_PR_HEAD_SHA=%q is not a valid 40-char hex SHA; the guard MUST fail closed rather than accept a malformed PR-head context (R4-014)", prHeadSHA))
+		case !looksLikeFullSHA40(prHeadParentSHA):
+			problems = append(problems, fmt.Sprintf("CI PR context invalid: RELEASE_GATE_PR_HEAD_PARENT_SHA=%q is not a valid 40-char hex SHA; the guard MUST fail closed rather than accept a malformed PR-head context (R4-014)", prHeadParentSHA))
+		}
 	}
 
 	// Append the pure-helper problems. The pure helper enforces
@@ -362,24 +625,58 @@ func rddReceiptValidateStaged(body string) []string {
 	// the helper symmetric with the wrapper so a future caller
 	// that bypasses the wrapper cannot accidentally waive the
 	// checks.
-	problems = append(problems, rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA)...)
+	problems = append(problems, rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA)...)
 	return problems
+}
+
+// resolveCurrentBranchFromCIEnv returns the first non-empty
+// value among the trusted CI branch env vars (matching the bash
+// gate's CURRENT_BRANCH resolution chain). Returns empty when
+// none are set so the caller can fall back to `git rev-parse
+// --abbrev-ref HEAD`.
+func resolveCurrentBranchFromCIEnv() string {
+	for _, key := range []string{
+		"RELEASE_GATE_BRANCH",
+		"GITHUB_HEAD_REF",
+		"GITHUB_REF_NAME",
+		"CI_COMMIT_REF_NAME",
+	} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // rddReceiptValidatePure is the body-only validator with no git
 // dependency. It mirrors the gate's RDD validator for the
 // receipt's content: every required field is checked, AND the
 // wrapper-supplied git context (`currentBranch`, `headSHA`,
-// `headParentSHA`) is required to be non-empty so the helper
-// itself fails closed on unresolvable git context. This
-// fail-closed contract is the R2-NEW-008 fix: the previous
-// behavior silently waived the Branch exact-match check when
-// `currentBranch` was empty, which let a future regression wire
-// the guard into a CI step without a clean worktree and accept
-// ANY `Branch:` value. Now the helper refuses to validate
-// without a real branch and a real HEAD SHA — the wrapper is
-// responsible for resolving them, and any failure to resolve
-// surfaces here as a problem.
+// `headParentSHA`, `prHeadSHA`, `prHeadParentSHA`) is required
+// to be non-empty where applicable so the helper itself fails
+// closed on unresolvable git context. This fail-closed contract
+// is the R2-NEW-008 fix: the previous behavior silently waived
+// the Branch exact-match check when `currentBranch` was empty,
+// which let a future regression wire the guard into a CI step
+// without a clean worktree and accept ANY `Branch:` value. Now
+// the helper refuses to validate without a real branch and a
+// real HEAD SHA — the wrapper is responsible for resolving
+// them, and any failure to resolve surfaces here as a problem.
+//
+// The helper also pins the two-context R4-013 Candidate Commit
+// contract: when both `prHeadSHA` and `prHeadParentSHA` are set
+// (the CI context, exported by the release-gate workflow's
+// `Capture PR metadata` step), the receipt's Candidate Commit
+// MUST equal one of those two SHAs; arbitrary ancestors are
+// still rejected so the R4-006 rollback safety is preserved.
+// When the PR_HEAD pair is unset (local context), the contract
+// is HEAD or HEAD~1 — the previous R4-006 invariant, unchanged.
+// A partially-set pair (one var set, the other empty) is a
+// caller bug and is rejected: the wrapper injects its own
+// fail-closed problem in that case, and the helper also
+// surfaces a problem if a partially-set pair reaches it (so a
+// future caller that bypasses the wrapper cannot accidentally
+// accept a partial CI context).
 //
 // The helper accepts a deliberately-mismatched `currentBranch`
 // as long as the value is non-empty: that lets the wrapper
@@ -387,7 +684,7 @@ func rddReceiptValidateStaged(body string) []string {
 // shape. The helper does NOT accept the literal `HEAD` string
 // as a branch (treats it like an empty branch) because `HEAD`
 // is the detached-HEAD sentinel.
-func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA string) []string {
+func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA, prHeadSHA, prHeadParentSHA string) []string {
 	var problems []string
 
 	// 0. Hard guard: reject any line beginning with the legacy
@@ -417,14 +714,16 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA string) 
 	}
 
 	// 2. Candidate Commit: <full 40-char SHA> with the precise
-	//    HEAD-or-HEAD~1 contract. The wrapper passes `headSHA`
-	//    and `headParentSHA` resolved from the actual worktree.
-	//    Fail-closed contract: an empty `headSHA` (or empty
-	//    `headParentSHA`) MUST surface a problem rather than
-	//    silently waive the precise HEAD-or-HEAD~1 check. The
-	//    wrapper injects its own HEAD-context problem when the
-	//    git resolution fails; this branch surfaces the same
-	//    condition for direct callers of the pure helper.
+	//    two-context contract.
+	//    Local context (prHead pair unset): SHA must equal HEAD
+	//    or HEAD~1 — the R4-006 invariant unchanged.
+	//    CI context (prHead pair set): SHA must equal
+	//    prHeadSHA (PR tip) or prHeadParentSHA (PR tip~1) —
+	//    the R4-013 widening. Arbitrary ancestors are STILL
+	//    rejected on either path.
+	//    Fail-closed contract: an empty `headSHA` (local) or a
+	//    malformed/partial prHead pair (CI) MUST surface a
+	//    problem rather than silently waive the precise check.
 	commitLine := ""
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -441,10 +740,27 @@ func rddReceiptValidatePure(body, currentBranch, headSHA, headParentSHA string) 
 			problems = append(problems, "Candidate Commit value missing")
 		} else if !looksLikeFullSHA40(fields[0]) {
 			problems = append(problems, fmt.Sprintf("Candidate Commit %q is not a full 40-char SHA", fields[0]))
-		} else if headSHA == "" {
-			problems = append(problems, "HEAD context unresolvable: headSHA is empty; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
-		} else if fields[0] != headSHA && fields[0] != headParentSHA {
-			problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal HEAD (%s) or HEAD~1 (%s); arbitrary ancestors are rejected so rollback or code changes require a new receipt", fields[0], headSHA, headParentSHA))
+		} else {
+			candidate := fields[0]
+			switch {
+			case prHeadSHA != "" || prHeadParentSHA != "":
+				// CI context: both must be valid 40-char hex;
+				// partial set is a wrapper contract violation
+				// and is rejected here too (defence in depth).
+				if prHeadSHA == "" || prHeadParentSHA == "" {
+					problems = append(problems, "CI PR context partially set: RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA MUST both be set together; the guard MUST fail closed (R4-014)")
+				} else if !looksLikeFullSHA40(prHeadSHA) || !looksLikeFullSHA40(prHeadParentSHA) {
+					problems = append(problems, fmt.Sprintf("CI PR context invalid: RELEASE_GATE_PR_HEAD_SHA=%q and RELEASE_GATE_PR_HEAD_PARENT_SHA=%q must both be valid 40-char hex SHAs (R4-014)", prHeadSHA, prHeadParentSHA))
+				} else if candidate != prHeadSHA && candidate != prHeadParentSHA {
+					problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal PR_HEAD_SHA (%s) or PR_HEAD_PARENT_SHA (%s) under the CI context; arbitrary ancestors are rejected so rollback or code changes require a new receipt (R4-013)", candidate, prHeadSHA, prHeadParentSHA))
+				}
+			case headSHA == "":
+				problems = append(problems, "HEAD context unresolvable: headSHA is empty; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
+			default:
+				if candidate != headSHA && candidate != headParentSHA {
+					problems = append(problems, fmt.Sprintf("Candidate Commit %q must equal HEAD (%s) or HEAD~1 (%s); arbitrary ancestors are rejected so rollback or code changes require a new receipt (R4-006)", candidate, headSHA, headParentSHA))
+				}
+			}
 		}
 	}
 
@@ -589,128 +905,237 @@ func looksLikeFullSHA40(s string) bool {
 // signals match. A push-event CI run (no merge commit) returns
 // false; a local test (no CI) returns false; a PR run on a
 // single-commit shallow checkout (no merge parent) returns false.
-// Only the synthetic-merge-commit shape trips the skip, which is
-// the exact shape that cannot represent the receipt's PR-tip
-// context (R4-013 / R4-014).
+// Only the synthetic-merge-commit shape trips the CI-context
+// validation path, which is the exact shape that cannot represent
+// the receipt's PR-tip context under the local HEAD/HEAD~1
+// contract (R4-013). Under the CI context the receipt guard MUST
+// still execute (it now reads the workflow-supplied PR_HEAD env),
+// not skip — the helper detects the shape so the guard can switch
+// to the CI contract, not so it can stop guarding (R4-014).
 func isGitHubPRMergeCheckout() bool {
+	return isGitHubPRMergeCheckoutIn(stagedReceiptRepoRoot())
+}
+
+// isGitHubPRMergeCheckoutIn is the parameterized form of
+// isGitHubPRMergeCheckout: it accepts the repo dir explicitly so
+// tests can build a synthetic 2-parent commit in an isolated temp
+// repo and exercise the true skip path deterministically. The
+// helper is otherwise identical to the public wrapper (same
+// three-signal AND).
+func isGitHubPRMergeCheckoutIn(repoDir string) bool {
 	if os.Getenv("CI") != "true" {
 		return false
 	}
 	if os.Getenv("GITHUB_EVENT_NAME") != "pull_request" {
 		return false
 	}
-	repoRoot := stagedReceiptRepoRoot()
+	return parentCountOfHEAD(repoDir) >= 2
+}
+
+// parentCountOfHEAD returns the number of parent commits of HEAD
+// in the given repo dir, computed via `git cat-file -p HEAD` and
+// counting `parent <sha>` lines. Returns 0 on error (including
+// empty repo or detached HEAD with no parents). The helper is
+// pure: it does not consult env vars; it only inspects the
+// supplied repo so it is safe to use from tests that build
+// synthetic 2-parent commits in temp repos.
+func parentCountOfHEAD(repoDir string) int {
 	cmd := exec.Command("git", "cat-file", "-p", "HEAD")
-	cmd.Dir = repoRoot
+	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
-		return false
+		return 0
 	}
 	// Count `parent ` lines (with a trailing space so we do not
 	// match arbitrary occurrences of the substring `parent`).
-	parentCount := strings.Count(string(out), "\nparent ")
-	return parentCount >= 2
+	return strings.Count(string(out), "\nparent ")
 }
 
 // TestIsGitHubPRMergeCheckoutContract pins the detection helper so
-// a future regression that broadens or narrows the skip surface
-// surfaces here. The four sub-cases cover: (a) no CI — never
-// skip; (b) CI but push event — never skip; (c) CI + PR event +
-// single-commit (no parents) — never skip (the fail-closed guard
+// a future regression that broadens or narrows the detection
+// surface surfaces here. The sub-cases cover: (a) no CI — never
+// true; (b) CI but push event — never true; (c) CI + PR event +
+// single-commit (no parents) — never true (the fail-closed guard
 // should fire instead so a real regression is not masked); (d)
-// CI + PR event + 2-parent merge commit — skip (the only shape
-// where the receipt's PR-tip context cannot be represented).
-// The synthetic 2-parent commit is built via `git commit-tree` to
-// avoid depending on a real PR fixture.
+// CI + PR event + 2-parent merge commit — true (the only shape
+// where the receipt's PR-tip context cannot be represented
+// under the local contract, so the guard switches to the CI
+// contract rather than skip-without-validating); (e) CI unset +
+// 2-parent merge commit — false (the CI short-circuit must hold
+// even on a synthetic merge so local runs never accidentally
+// trip the CI path).
+//
+// Sub-cases (d) and (e) build a synthetic 2-parent commit in an
+// ISOLATED temp repo via `git commit-tree` so the helper's true
+// branch executes deterministically. The previous version of
+// this test inspected the REAL worktree HEAD and asserted one of
+// two environment-dependent outcomes; if the real HEAD was not a
+// merge commit the true branch was never exercised, which is
+// exactly the "no environment-dependent false green" the
+// contract forbids (R4-014). The isolated-repo path removes that
+// seam: every CI run executes the same true branch on the same
+// synthetic fixture.
 func TestIsGitHubPRMergeCheckoutContract(t *testing.T) {
-	// (a) No CI: never skip, regardless of HEAD.
-	t.Run("no-ci-never-skip", func(t *testing.T) {
+	// (a) No CI: never true, regardless of HEAD.
+	t.Run("no-ci-never-true", func(t *testing.T) {
 		t.Setenv("CI", "")
 		t.Setenv("GITHUB_EVENT_NAME", "")
-		if isGitHubPRMergeCheckout() {
+		repo := buildIsolatedGitRepo(t)
+		if isGitHubPRMergeCheckoutIn(repo) {
 			t.Fatal("expected false: CI unset")
 		}
 	})
-	// (b) CI but push event: never skip.
-	t.Run("ci-push-event-never-skip", func(t *testing.T) {
+	// (b) CI but push event: never true.
+	t.Run("ci-push-event-never-true", func(t *testing.T) {
 		t.Setenv("CI", "true")
 		t.Setenv("GITHUB_EVENT_NAME", "push")
-		if isGitHubPRMergeCheckout() {
+		repo := buildIsolatedGitRepo(t)
+		if isGitHubPRMergeCheckoutIn(repo) {
 			t.Fatal("expected false: push event is not a PR merge")
 		}
 	})
-	// (c) CI + PR event + single-commit HEAD: never skip (the
+	// (c) CI + PR event + single-commit HEAD: never true (the
 	// fail-closed guard should fire and report the missing
-	// context — masking it with a skip would hide real
+	// context — masking it with a true result would hide real
 	// regressions on shallow PR checkouts).
-	t.Run("ci-pr-event-no-parents-never-skip", func(t *testing.T) {
+	t.Run("ci-pr-event-no-parents-never-true", func(t *testing.T) {
 		t.Setenv("CI", "true")
 		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
-		if isGitHubPRMergeCheckout() {
+		repo := buildIsolatedGitRepo(t)
+		if isGitHubPRMergeCheckoutIn(repo) {
 			t.Fatal("expected false: single-commit checkout has no merge parents")
 		}
 	})
-	// (d) CI + PR event + 2-parent merge commit: skip. We build
-	// a synthetic 2-parent commit in a temp repo so the test
-	// does not depend on a real PR fixture.
-	t.Run("ci-pr-event-merge-commit-skips", func(t *testing.T) {
+	// (d) CI + PR event + 2-parent merge commit: TRUE. We build
+	// a synthetic 2-parent commit in an isolated temp repo via
+	// `git commit-tree` so the helper's true branch is exercised
+	// deterministically; we do NOT depend on the real worktree
+	// HEAD being a merge commit (R4-014).
+	t.Run("ci-pr-event-merge-commit-true", func(t *testing.T) {
 		t.Setenv("CI", "true")
 		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
-		// Build a 2-parent commit in a temp dir; the helper
-		// uses `stagedReceiptRepoRoot` for `git cat-file`,
-		// so we override the cache via the repo-root call.
-		// The helper reads `git cat-file -p HEAD` from
-		// `stagedReceiptRepoRoot()`, which is `../..` from
-		// the test cwd. We cannot change the cwd mid-test
-		// reliably, so we exercise the detection logic via
-		// the count-of-`parent `-lines seam instead.
-		// (The actual `git cat-file` call uses the real
-		// worktree; this sub-test verifies the parent-count
-		// rule on the real HEAD.)
-		repoRoot := stagedReceiptRepoRoot()
-		cmd := exec.Command("git", "cat-file", "-p", "HEAD")
-		cmd.Dir = repoRoot
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("git cat-file -p HEAD: %v", err)
+		repo := buildIsolatedGitRepo(t)
+		mergeSHA := buildSyntheticTwoParentCommit(t, repo)
+		// Sanity: the synthetic commit really has two parents.
+		if got := parentCountOfHEAD(repo); got != 2 {
+			t.Fatalf("synthetic commit %s should have 2 parents, got %d", mergeSHA, got)
 		}
-		parentCount := strings.Count(string(out), "\nparent ")
-		if parentCount >= 2 {
-			// Real worktree HEAD is a 2-parent merge
-			// commit (the test process was launched
-			// in a git context with such a HEAD). Skip
-			// should be true.
-			if !isGitHubPRMergeCheckout() {
-				t.Fatal("expected true: real worktree HEAD is a merge commit and CI/PR env is set")
-			}
-		} else {
-			// Real worktree HEAD is not a merge
-			// commit. We cannot exercise the skip-true
-			// branch in this sub-test without
-			// rewriting HEAD; the contract is pinned
-			// by the count rule above plus the
-			// helper's three-signal AND.
-			if isGitHubPRMergeCheckout() {
-				t.Fatal("expected false: HEAD is not a 2-parent commit")
-			}
+		if !isGitHubPRMergeCheckoutIn(repo) {
+			t.Fatal("expected true: synthetic 2-parent commit + CI=true + GITHUB_EVENT_NAME=pull_request")
+		}
+	})
+	// (e) Sanity triangulation: same synthetic 2-parent commit,
+	// CI unset. The CI gate MUST short-circuit and return false
+	// even when the merge shape is present. This pins the
+	// three-signal AND so a future regression that drops the
+	// CI gate does not start spuriously reporting true under
+	// local runs.
+	t.Run("ci-pr-event-merge-commit-ci-unset-stays-false", func(t *testing.T) {
+		t.Setenv("CI", "")
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		repo := buildIsolatedGitRepo(t)
+		buildSyntheticTwoParentCommit(t, repo)
+		if got := parentCountOfHEAD(repo); got != 2 {
+			t.Fatalf("synthetic commit should have 2 parents, got %d", got)
+		}
+		if isGitHubPRMergeCheckoutIn(repo) {
+			t.Fatal("expected false: CI unset short-circuits even when HEAD is a 2-parent merge")
 		}
 	})
 }
 
-// ---- R4-013 workflow contract (PR #2 CI corrective batch) ---------------
+// buildIsolatedGitRepo creates a fresh single-commit git repo
+// under t.TempDir() and returns the absolute path. The repo is
+// configured with a fixed user identity so synthetic commits
+// land without invoking the global git config. The single
+// initial commit gives the helper a deterministic
+// "no-merge-parent" baseline (parentCountOfHEAD == 1) which
+// sub-cases (a)/(b)/(c) rely on; sub-cases (d)/(e) override the
+// baseline by building a synthetic 2-parent commit on top.
+func buildIsolatedGitRepo(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	mustRunGit(t, repo, "init", "--initial-branch=main", "--quiet")
+	mustRunGit(t, repo, "config", "user.email", "guard-test@example.com")
+	mustRunGit(t, repo, "config", "user.name", "Guard Test")
+	mustRunGit(t, repo, "config", "commit.gpgsign", "false")
+	// Seed an initial commit so HEAD exists and the repo is
+	// non-empty. A single commit gives parentCountOfHEAD == 1.
+	mustRunGit(t, repo, "commit", "--allow-empty", "-m", "initial")
+	return repo
+}
+
+// buildSyntheticTwoParentCommit builds a merge commit with two
+// parents in the given repo using `git commit-tree` (the
+// low-level object-creation command). The merge SHA is then
+// reset to HEAD via `git reset --hard` so subsequent
+// parentCountOfHEAD calls return 2. The two parents are built
+// as siblings of the existing HEAD (each has HEAD as its single
+// parent, with the same tree as HEAD) so the merge commit ends
+// up with exactly two parents — the same parent-count signal
+// that `actions/checkout@v4` produces on a pull_request event
+// (synthetic merge of PR tip into base, where HEAD~1 is the PR
+// tip and HEAD~2 is the code commit).
+//
+// Returns the merge commit SHA.
+func buildSyntheticTwoParentCommit(t *testing.T, repo string) string {
+	t.Helper()
+	headSHA := mustRunGit(t, repo, "rev-parse", "HEAD")
+	headTree := mustRunGit(t, repo, "rev-parse", "HEAD^{tree}")
+	// Parent 1: a regular commit on top of HEAD with the same
+	// tree (distinct commit object).
+	parent1 := mustRunGit(t, repo, "commit-tree", headTree,
+		"-p", headSHA, "-m", "synthetic-parent-1")
+	// Parent 2: a sibling commit on top of HEAD with the same
+	// tree (distinct commit object).
+	parent2 := mustRunGit(t, repo, "commit-tree", headTree,
+		"-p", headSHA, "-m", "synthetic-parent-2")
+	// Merge commit with two parents.
+	mergeSHA := mustRunGit(t, repo, "commit-tree", headTree,
+		"-p", parent1, "-p", parent2, "-m", "synthetic-merge")
+	// Point HEAD at the merge commit so subsequent
+	// parentCountOfHEAD calls see 2.
+	mustRunGit(t, repo, "reset", "--hard", mergeSHA)
+	return mergeSHA
+}
+
+// mustRunGit runs `git <args...>` in dir and returns trimmed
+// stdout. Fails the test on error. Used by the synthetic-fixture
+// helpers above to keep the test bodies free of error-handling
+// noise.
+func mustRunGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		stderr := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		t.Fatalf("git %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// ---- R4-013 / R4-014 workflow contract (PR #2 CI corrective batch + this batch) ----
 //
 // The release-gate workflow at .github/workflows/release-gate.yml
 // MUST export the PR-head context (`RELEASE_GATE_PR_HEAD_SHA` and
 // `RELEASE_GATE_PR_HEAD_PARENT_SHA`) so the gate can validate the
 // receipt's Candidate Commit against PR tip / PR tip~1 instead of
 // the synthetic merge commit. The CI workflow at
-// .github/workflows/ci.yml MUST use `fetch-depth: 0` so the
-// receipt validator can resolve HEAD~1. These tests pin the
-// workflow contract by parsing the YAML body as text (the file is
-// small and stable, and a YAML dependency is not justified for
-// the assertion set). A future regression that drops the env
-// vars or reverts to fetch-depth:1 fails here before reaching
-// the runtime guard.
+// .github/workflows/ci.yml MUST (a) use `fetch-depth: 0` so the
+// receipt validator can resolve HEAD~1, AND (b) export the same
+// PR_HEAD env pair on a `pull_request` event so the Go receipt
+// guard executes the CI contract (not the local contract, which
+// would silently fail on a synthetic merge checkout) and not the
+// previous `t.Skipf` mask (R4-014). These tests pin the workflow
+// contract by parsing the YAML body as text (the file is small
+// and stable, and a YAML dependency is not justified for the
+// assertion set). A future regression that drops the env vars,
+// reverts to fetch-depth:1, or breaks the conditional export
+// surfaces here before reaching the runtime guard.
 
 // TestReleaseGateWorkflowExportsPRHeadContext pins the workflow
 // contract for the release-gate job. The workflow exports the
@@ -738,6 +1163,60 @@ func TestReleaseGateWorkflowExportsPRHeadContext(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("release-gate.yml missing %q; the workflow must export the PR-head context and the pre-computed MERGE_BASE so the gate can validate the receipt against PR tip / PR tip~1 (R4-012 / R4-013)", want)
 		}
+	}
+}
+
+// TestCIWorkflowExportsPRHeadContext pins the new contract that
+// ci.yml (the Go test pipeline) MUST export the same PR_HEAD env
+// pair on a `pull_request` event so the Go receipt guard can
+// validate the staged receipt against the CI contract. Before
+// this contract the guard would `t.Skipf` on a synthetic merge
+// checkout; the new behaviour is to validate via the CI contract
+// (R4-014), which is only representable when the workflow
+// supplies the env pair. The assertion checks that ci.yml
+// contains the four KEY= exports AND guards them with an
+// `if: github.event_name == 'pull_request'` (or equivalent
+// conditional) so a push event does NOT spuriously export empty
+// PR_HEAD values that would trip the local context path.
+func TestCIWorkflowExportsPRHeadContext(t *testing.T) {
+	workflowPath := filepath.Join("..", "..", ".github", "workflows", "ci.yml")
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", workflowPath, err)
+	}
+	body := string(data)
+	required := []string{
+		"RELEASE_GATE_PR_HEAD_SHA=",
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA=",
+	}
+	for _, want := range required {
+		if !strings.Contains(body, want) {
+			t.Errorf("ci.yml missing %q; the CI test pipeline MUST export the PR-head context on pull_request events so the Go receipt guard can validate the staged receipt against the CI contract (R4-014)", want)
+		}
+	}
+	// The PR_HEAD export MUST be gated on the pull_request event
+	// — otherwise a push run would spuriously export empty
+	// PR_HEAD values that the guard would treat as a partial CI
+	// contract and fail closed on. The most idiomatic GitHub
+	// Actions gate is `if: github.event_name == 'pull_request'`
+	// (or equivalent). We do NOT enforce a specific YAML
+	// expression; we only check that the file references the
+	// PR event name in the same logical block as the export.
+	prBlockIdx := strings.Index(body, "RELEASE_GATE_PR_HEAD_SHA=")
+	if prBlockIdx == -1 {
+		t.Fatalf("ci.yml must contain RELEASE_GATE_PR_HEAD_SHA export (R4-014)")
+	}
+	// Look back ~500 chars from the export for a
+	// pull_request event gate. If neither pattern appears
+	// nearby, the export is unconditional and a push run
+	// would trip the partial-set guard.
+	blockStart := prBlockIdx - 500
+	if blockStart < 0 {
+		blockStart = 0
+	}
+	block := body[blockStart:prBlockIdx]
+	if !strings.Contains(block, "pull_request") {
+		t.Errorf("ci.yml PR_HEAD export appears unconditional; the export MUST be gated on github.event_name == 'pull_request' so push runs do not spuriously trip the partial-CI-context guard (R4-014). Block before export: %q", block)
 	}
 }
 

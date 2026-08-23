@@ -80,8 +80,12 @@
 #      .codebase-memory/ allowed as untracked; seam ignored under CI).
 #   2. RDD receipt exists at docs/release/reviews/review-be4525bc4797e972.md
 #      with all required fields: Status: pass, Candidate Commit: <sha>
-#      (must equal HEAD or HEAD~1 — precise contract for rollback
-#      safety), Branch: <exact branch name> (exact match; no substring),
+#      (must equal HEAD or HEAD~1 — local contract — OR
+#      RELEASE_GATE_PR_HEAD_SHA / RELEASE_GATE_PR_HEAD_PARENT_SHA
+#      when the workflow exports them on a pull_request event;
+#      precise two-context contract for rollback safety, with
+#      arbitrary ancestors rejected in either context), Branch:
+#      <exact branch name> (exact match; no substring),
 #      Scope: <free-form operator context>, Verified Commands: section
 #      whose entries all end in ': PASS' (parsed only within the
 #      section), Unresolved Blocker Policy: header. The receipt is

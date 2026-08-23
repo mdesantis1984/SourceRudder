@@ -18,16 +18,40 @@ jobs:
           # HEAD~1. The default fetch-depth:1 yields a
           # single-commit detached HEAD that breaks the
           # precise HEAD-or-HEAD~1 contract (R4-013 / R4-014).
-          # The receipt-shape guard skips on a GitHub
-          # pull_request synthetic merge commit (see
-          # isGitHubPRMergeCheckout); on a push event the
-          # worktree is a normal checkout and HEAD~1
-          # resolves normally.
+          # The receipt-shape guard validates the staged
+          # receipt under the workflow-supplied PR-head
+          # context (CI) or the local HEAD/HEAD~1 (push /
+          # local); it does NOT skip on a GitHub
+          # pull_request synthetic merge commit anymore —
+          # the guard switches to the CI contract via the
+          # `Capture PR metadata` step below (R4-014).
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           cache: true
+      - name: Capture PR metadata (PR context only)
+        # The PR-head context is REQUIRED on a pull_request
+        # event so the Go receipt guard can validate the
+        # staged receipt against the CI contract
+        # (R4-013 + R4-014). On a push event the guard uses
+        # the local HEAD/HEAD~1 contract (R4-006), so the
+        # PR_HEAD env vars are intentionally NOT exported
+        # there. If the export below fails (empty SHA),
+        # the guard's fail-closed seam surfaces a "CI PR
+        # context missing" problem and `go test` fails —
+        # matching the bash gate's behaviour at
+        # scripts/release-gate.sh lines 304-313.
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "PR_BRANCH=${{ github.head_ref }}"
+            echo "BASE_REF=${{ github.event.pull_request.base.ref }}"
+            echo "BASE_SHA=${{ github.event.pull_request.base.sha }}"
+            echo "MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} HEAD)"
+            echo "RELEASE_GATE_PR_HEAD_SHA=${{ github.event.pull_request.head.sha }}"
+            echo "RELEASE_GATE_PR_HEAD_PARENT_SHA=$(git rev-parse ${{ github.event.pull_request.head.sha }}^)"
+          } >> "$GITHUB_ENV"
       - name: Build
         run: go build -o bin/ia-buscar ./cmd/ia-buscar
       - name: Vet

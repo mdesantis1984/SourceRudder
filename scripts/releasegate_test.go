@@ -194,6 +194,30 @@ func (h *harness) recommitRDDPassReceipt(branch string) {
 	runGit(h.t, h.repo, "commit", "-m", "recommit RDD receipt against latest code commit")
 }
 
+// recommitRDDPassReceiptWithCandidate is the parameterized
+// form of `recommitRDDPassReceipt`: it re-authors the receipt
+// with an EXPLICIT Candidate Commit value (not necessarily
+// HEAD or HEAD~1). Used by tests that need to exercise a
+// Candidate that satisfies the CI PR_HEAD contract but
+// DELIBERATELY violates the local HEAD/HEAD~1 contract — so
+// the gate must use the CI context to pass. The receipt
+// commit still lands as the new HEAD so the receipt-shape
+// structure is unchanged; only the `Candidate Commit:` value
+// is set to the supplied sha.
+//
+// IMPORTANT: callers MUST supply a sha that is reachable in
+// the synthetic repo so the receipt validator's looksLikeFullSHA40
+// check passes. The empty-tree SHA (4b825dc6...) is a common
+// choice for tests that need a sha that exists in any repo
+// but is not on HEAD/HEAD~1.
+func (h *harness) recommitRDDPassReceiptWithCandidate(branch, candidate string) {
+	h.t.Helper()
+	mustWrite(h.t, h.repo, "docs/release/reviews/review-be4525bc4797e972.md",
+		makeValidRDDPassReceipt(branch, candidate))
+	runGit(h.t, h.repo, "add", "docs/release/reviews/review-be4525bc4797e972.md")
+	runGit(h.t, h.repo, "commit", "-m", "recommit RDD receipt with explicit candidate for CI triangulation")
+}
+
 // makeValidRDDPassReceipt builds the deterministic receipt body the
 // gate's RDD validator accepts. branch is interpolated into the
 // dedicated `Branch:` field (exact match contract) and the
@@ -2199,39 +2223,84 @@ func TestGateRejectsInvalidPRHeadEnv(t *testing.T) {
 	}
 }
 
-// TestGatePRHeadContextNotLocalFallback is the R4-013
-// triangulation: when PR_HEAD env is set AND valid AND
-// matches the receipt's Candidate, the gate must use the
-// CI context (log PR_HEAD_or_PR_HEAD~1) — not the local
-// HEAD/HEAD~1 path. This proves the env path is taken
-// (not silently ignored) so a future regression that
-// drops the env branch fails here.
+// TestGatePRHeadContextNotLocalFallback is the R4-013 / R4-014
+// triangulation: when PR_HEAD env is set AND valid AND matches
+// the receipt's Candidate, the gate MUST use the CI context
+// even when the local HEAD/HEAD~1 path would FAIL. To prove
+// the CI path is taken (not silently ignored), the test
+// authors a receipt whose Candidate Commit matches the CI
+// PR_HEAD pair but does NOT match the local HEAD/HEAD~1. The
+// gate can ONLY pass via the CI contract — the local
+// HEAD/HEAD~1 contract would reject the receipt because the
+// Candidate is not HEAD or HEAD~1 in the synthetic repo.
+//
+// This is genuinely distinct from `TestGateAcceptsPRHeadContext`
+// (which uses the canonical two-commit flow where HEAD~1 ==
+// PR_HEAD_PARENT_SHA, so both paths happen to pass) and from
+// `TestGateRejectsCandidateNotInPRHeadContext` (which uses
+// fake PR_HEAD SHAs and asserts rejection). The differentiation
+// here is the SHA mismatch shape: a Candidate that the LOCAL
+// contract would reject but the CI contract accepts. The
+// success log MUST show the CI context label, proving the
+// CI path was taken (not the local fallback).
 func TestGatePRHeadContextNotLocalFallback(t *testing.T) {
 	h := newHarness(t)
 	h.addValidRDDPassReceipt("main")
-	// Re-anchor so the receipt's Candidate == HEAD~1 of the new
-	// HEAD (the placeholder). Then set PR_HEAD env to match.
-	h.recommitRDDPassReceipt("main")
-	newHead := h.headSHA()
+
+	// Resolve HEAD/HEAD~1 in the synthetic repo so we can
+	// build a Candidate that the local contract would REJECT.
+	// In the canonical two-commit flow the receipt's Candidate
+	// equals HEAD or HEAD~1; we deliberately choose neither so
+	// the local contract fails. We pick an SHA that exists in
+	// the repo (so `git cat-file` resolves it) but is not on
+	// the HEAD/HEAD~1 chain.
+	headSHA := h.headSHA()
 	parentCmd := exec.Command("git", "rev-parse", "HEAD~1")
 	parentCmd.Dir = h.repo
 	parentOut, err := parentCmd.Output()
 	if err != nil {
 		t.Fatalf("git rev-parse HEAD~1: %v", err)
 	}
-	newParent := strings.TrimSpace(string(parentOut))
+	headParentSHA := strings.TrimSpace(string(parentOut))
 
+	// Build a "deeper" SHA that is reachable in the repo but
+	// NOT HEAD or HEAD~1. The simplest such SHA is the empty
+	// tree's SHA (which exists in every repo); under git's
+	// object model this is reachable from HEAD via the
+	// commit-chain even though it is not on HEAD/HEAD~1.
+	deeperSHA := "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+	// Re-anchor the receipt at HEAD with the deeperSHA as the
+	// Candidate. Locally: Candidate == deeperSHA, which is
+	// neither HEAD nor HEAD~1 → local contract FAILS. Under
+	// CI: when PR_HEAD_SHA = deeperSHA, Candidate ==
+	// PR_HEAD_SHA → CI contract PASSES.
+	h.recommitRDDPassReceiptWithCandidate("main", deeperSHA)
+
+	// Set PR_HEAD env so the CI contract matches the
+	// deeperSHA Candidate. PR_HEAD_PARENT_SHA is HEAD~1 of the
+	// synthetic repo (not used for the match but must still be
+	// a valid 40-char hex so the gate's CI env validation
+	// passes — R4-014).
 	exit, stdout, stderr := h.run(
 		"RELEASE_GATE_BRANCH=main",
 		"BASE_REF=main",
-		"RELEASE_GATE_PR_HEAD_SHA="+newHead,
-		"RELEASE_GATE_PR_HEAD_PARENT_SHA="+newParent,
+		"RELEASE_GATE_PR_HEAD_SHA="+deeperSHA,
+		"RELEASE_GATE_PR_HEAD_PARENT_SHA="+headParentSHA,
 	)
 	if exit != 0 {
-		t.Fatalf("expected exit 0 with PR_HEAD context, got %d; stderr=%q", exit, stderr)
+		t.Fatalf("expected exit 0 via CI contract when local would fail, got %d; stderr=%q", exit, stderr)
 	}
-	// The success-path log must include the CI context label.
+	// The success-path log MUST include the CI context label,
+	// proving the CI path was taken. If the gate had silently
+	// used the local fallback the receipt would have been
+	// rejected (Candidate != HEAD/HEAD~1) and the test would
+	// have failed at the exit-code assertion above.
 	if !strings.Contains(stdout, "PR_HEAD_or_PR_HEAD~1") {
-		t.Fatalf("expected stdout to mention CI context label, got %q", stdout)
+		t.Fatalf("expected stdout to mention CI context label (proves CI path taken over local fallback), got %q", stdout)
 	}
+	// Reference SHAs in case the failure mode shifts: log
+	// them so a future regression that fails here points at
+	// the right seam.
+	t.Logf("headSHA=%s headParentSHA=%s deeperSHA=%s", headSHA, headParentSHA, deeperSHA)
 }
