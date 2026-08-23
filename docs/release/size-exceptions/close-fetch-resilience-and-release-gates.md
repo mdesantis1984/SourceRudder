@@ -45,9 +45,9 @@ declares `Status: pass`. The values are identical to the table; the
 duplicate shape exists ONLY so the gate parser can find them.
 
 Branch: feature/close-fetch-resilience-release-gates-exception
-Commit: <pr-head-sha>
+Commit: 2d10b061641199a53c3768ab1c4ed948bfa24d23
 Approval Reference: #4125 (memory://4139) — user-approved baseline size exception
-Scope: bounded (single-PR exception for Phase 12-14 pre-production security and Phase 13 release-gate hardening)
+Scope: bounded (single-PR exception for Phase 12-16: Phase 12-14 pre-production security, Phase 13 release-gate hardening, and Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013)
 Expiration: 2026-12-31
 Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)
 
@@ -68,16 +68,24 @@ The exception does NOT waive safeguards:
   Verified Commands with PASS entries + Unresolved Blocker Policy
   declaration) is mandatory before any merge; the gate's step 2
   enforces it on every merge. The previous `Authority: official`
-  external-binding header is no longer used.
-- All Phase 12-14 fixes are committed to the PR diff, not to
-  follow-up branches.
+  external-binding header is no longer used. The two-context
+  Candidate Commit contract (R4-013) means CI runs validate
+  against PR tip / PR tip~1, not the synthetic merge commit,
+  while local runs keep the R4-006 HEAD/HEAD~1 contract —
+  rollback safety is preserved on both paths.
+- All Phase 12-16 fixes are committed to the PR diff, not to
+  follow-up branches. Phase 16 is the PR #2 CI corrective batch
+  (R3-001 / R4-012 / R4-013) and is part of the same change so
+  the release-gate, the receipt contract, and the workflows
+  stay consistent at the PR tip.
 - The exception is bounded: it expires 2026-12-31. Any future
   over-budget PR MUST either fit the 400-line budget or split
   into chained PRs.
 
 ## Composition of the Over-Budget Diff
 
-This PR contains the work for Phases 1-15 of the SDD change:
+This PR contains the work for Phases 1-15 of the SDD change
+plus the Phase 16 PR #2 CI corrective batch:
 
 - **Phases 1-8** (preserved from the prior apply batch):
   release gate, fetch resilience, connector reliability, anonymous
@@ -92,6 +100,23 @@ This PR contains the work for Phases 1-15 of the SDD change:
   (SHA-pinned image placeholder, systemd identity check, atomic
   rollback doc).
 - **Phase 15** (this batch): final QA + receipt creation.
+- **Phase 16** (PR #2 CI corrective batch, R3-001 / R4-012 /
+  R4-013): the harness env-filter (R3-001) closes six
+  test symptoms caused by CI/GitHub env leakage; the gate's
+  MERGE_BASE env contract (R4-012) honors the workflow's
+  pre-computed value before the local fallback; the two-context
+  Candidate Commit contract (R4-013) makes the receipt
+  validation representable on a CI PR merge-checkout without
+  broadening the R4-006 rollback safety. The
+  `.github/workflows/release-gate.yml` workflow exports the
+  pre-computed MERGE_BASE plus RELEASE_GATE_PR_HEAD_SHA /
+  RELEASE_GATE_PR_HEAD_PARENT_SHA; the ci.yml workflow uses
+  `fetch-depth: 0` so the receipt validator can resolve
+  HEAD~1. The Go receipt-shape guard at
+  `internal/mcp/release_gate_test.go` skips on a GitHub PR
+  synthetic merge commit (the merge-checkout cannot represent
+  the receipt's PR-tip context; the release-gate workflow is
+  the authoritative enforcer on CI).
 
 ## Cross-references
 
