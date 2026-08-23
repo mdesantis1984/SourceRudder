@@ -27,9 +27,9 @@ independently re-runs `go build` / `go vet` / `go test` / `go test
 | Field | Value |
 |-------|-------|
 | Branch | `feature/close-fetch-resilience-release-gates-exception` |
-| Commit | `ff12a5b496b99399b291ccfd34996619f7c6e306` (Phase 18 R5-NEW-001/002/003 fix commit; the receipt re-authoring that follows sits at HEAD) |
+| Commit | `537f9fb3bb70991b2dc5ce8f9adf478264b71d2b` (Phase 19 R6-NEW-001 fix commit; the receipt re-authoring that follows sits at HEAD) |
 | Approval Reference | [#4125](memory://4139) — user-approved baseline size exception |
-| Scope | bounded (single-PR exception for Phase 12-18: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch, Phase 17 R4-014 Go-guard no-skip + synthetic-merge deterministic fixture + duplicate PR-head test differentiation, Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash) |
+| Scope | bounded (single-PR exception for Phase 12-19: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch, Phase 17 R4-014 Go-guard no-skip + synthetic-merge deterministic fixture + duplicate PR-head test differentiation, Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash, Phase 19 R6-NEW-001 release-gate workflow branch-exact size-exception activation replacing the repo-variable dependency with a deterministic ${{ github.head_ref == '...' && '...' || '' }} expression) |
 | Expiration | 2026-12-31 |
 | Forward Reference | `docs/release/reviews/review-be4525bc4797e972.md` (the RDD receipt is the local authority attestation; this size-exception receipt NEVER substitutes for it) |
 
@@ -45,9 +45,9 @@ declares `Status: pass`. The values are identical to the table; the
 duplicate shape exists ONLY so the gate parser can find them.
 
 Branch: feature/close-fetch-resilience-release-gates-exception
-Commit: ff12a5b496b99399b291ccfd34996619f7c6e306
+Commit: 537f9fb3bb70991b2dc5ce8f9adf478264b71d2b
 Approval Reference: #4125 (memory://4139) — user-approved baseline size exception
-Scope: bounded (single-PR exception for Phase 12-18: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013, Phase 17 R4-014 Go-guard no-skip / synthetic-merge deterministic fixture / duplicate PR-head test differentiation, and Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash)
+Scope: bounded (single-PR exception for Phase 12-19: Phase 12-14 pre-production security, Phase 13 release-gate hardening, Phase 16 PR #2 CI corrective batch R3-001 / R4-012 / R4-013, Phase 17 R4-014 Go-guard no-skip / synthetic-merge deterministic fixture / duplicate PR-head test differentiation, Phase 18 R5-NEW-001/002/003 PR_HEAD fail-closed contract tightening on Go + bash, and Phase 19 R6-NEW-001 release-gate workflow branch-exact size-exception activation)
 Expiration: 2026-12-31
 Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)
 
@@ -88,18 +88,38 @@ The exception does NOT waive safeguards:
   bash gate now emits the same three fail-closed class labels
   the Go guard emits, so a CI operator reading the log can
   act on a specific class.
-- All Phase 12-18 fixes are committed to the PR diff, not to
+  Phase 19 (R6-NEW-001) replaces the workflow's repo-variable
+  dependency with a branch-exact expression: the
+  `RELEASE_GATE_SIZE_EXCEPTION` env is set to the literal branch
+  name ONLY when `github.head_ref` equals
+  `feature/close-fetch-resilience-release-gates-exception`,
+  and to `''` otherwise. The bash validator's fail-closed check
+  at `scripts/release-gate.sh:496` stays the authoritative seam;
+  the empty-string fallback keeps it active for every other
+  branch. The activation contract is pinned by the workflow-contract
+  test
+  `TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly`
+  plus the `TestReleaseGateSizeExceptionEnvRegexContract`
+  negative-control subtests (comment prefix, wrong branch
+  literals, missing empty fallback, the old `vars.` form, and
+  the negation operator are all rejected by the anchored
+  regex). Broadening the carve-out is a two-edit change
+  because the branch literal appears in BOTH the equality
+  position and the value position of the conditional.
+- All Phase 12-19 fixes are committed to the PR diff, not to
   follow-up branches. Phase 16 is the PR #2 CI corrective batch
   (R3-001 / R4-012 / R4-013), Phase 17 is the R4-014
   Go-guard no-skip batch (synthetic-merge deterministic fixture,
   duplicate PR-head test differentiation, corrected stale
-  HEAD-or-HEAD~1 comment), and Phase 18 is the R5-NEW-001/002/003
+  HEAD-or-HEAD~1 comment), Phase 18 is the R5-NEW-001/002/003
   PR_HEAD fail-closed contract tightening batch (wrapper
   refactor + integration test, step-scoped workflow assertion,
-  bash three-class fail-closed alignment with Go). All three
-  phases are part of the same change so the release-gate, the
-  receipt contract, and the workflows stay consistent at the
-  PR tip.
+  bash three-class fail-closed alignment with Go), and Phase 19
+  is the R6-NEW-001 release-gate workflow branch-exact
+  size-exception activation batch (workflow env expression +
+  workflow-contract test). All four phases are part of the same
+  change so the release-gate, the receipt contract, and the
+  workflows stay consistent at the PR tip.
 - The exception is bounded: it expires 2026-12-31. Any future
   over-budget PR MUST either fit the 400-line budget or split
   into chained PRs.
@@ -108,8 +128,10 @@ The exception does NOT waive safeguards:
 
 This PR contains the work for Phases 1-15 of the SDD change
 plus the Phase 16 PR #2 CI corrective batch, the Phase 17
-R4-014 Go-guard no-skip batch, and the Phase 18 R5-NEW-001/002/003
-PR_HEAD fail-closed contract tightening batch:
+R4-014 Go-guard no-skip batch, the Phase 18 R5-NEW-001/002/003
+PR_HEAD fail-closed contract tightening batch, and the
+Phase 19 R6-NEW-001 release-gate workflow branch-exact
+size-exception activation batch:
 
 - **Phases 1-8** (preserved from the prior apply batch):
   release gate, fetch resilience, connector reliability, anonymous
@@ -193,6 +215,34 @@ PR_HEAD fail-closed contract tightening batch:
   KEY= exports" when the test verifies exactly two is
   corrected to match the test's actual required list
   (RELEASE_GATE_PR_HEAD_SHA= and RELEASE_GATE_PR_HEAD_PARENT_SHA=).
+- **Phase 19** (R6-NEW-001 release-gate workflow
+  branch-exact size-exception activation): the
+  `.github/workflows/release-gate.yml` workflow replaces
+  `${{ vars.RELEASE_GATE_SIZE_EXCEPTION }}` (the previous
+  repo-variable dependency, which left the env unset in this
+  repo and caused the `RELEASE_GATE_SIZE_EXCEPTION != CURRENT_BRANCH`
+  fail-closed at `scripts/release-gate.sh:496`) with a
+  branch-exact expression
+  `${{ github.head_ref == 'feature/close-fetch-resilience-release-gates-exception' && 'feature/close-fetch-resilience-release-gates-exception' || '' }}`.
+  The expression activates the carve-out ONLY when
+  `github.head_ref` equals the canonical branch name; on every
+  other branch the empty-string fallback keeps the bash
+  validator's fail-closed check authoritative. Broadening the
+  carve-out is a two-edit change because the branch literal
+  appears in BOTH the equality and the value positions. The
+  activation contract is pinned by
+  `TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly`
+  (production check against the workflow file) and the
+  `releaseGateSizeExceptionEnvRegex` regex with its
+  `TestReleaseGateSizeExceptionEnvRegexContract` subtests
+  (nine negative controls: comment prefix, wrong branch
+  equality, wrong branch value, missing empty fallback, the
+  old `vars.` form, the negation operator, missing env prefix,
+  plus the positive single-quote and double-quote canonical
+  forms). The workflow-contract test mirrors the R5-NEW-002
+  step-scoped discipline so a future regression that smuggles
+  a comment or unrelated substring past the assertion surfaces
+  here before reaching the runtime gate.
 
 ## Cross-references
 
