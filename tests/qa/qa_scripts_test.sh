@@ -290,7 +290,7 @@ test_compose_entrypoint_overrides_searxng_url() {
 }
 
 test_compose_entrypoint_passes_auth_key() {
-  # B2 gate: the entrypoint must pass -auth-key with QA_AUTH_KEY env
+  # B2 gate (CT201 env-only): the QA stack provisions auth via the
   # substitution so the live binary validator (internal/auth/auth.go
   # lines 38-58) is enabled with a deterministic QA-only key. The auth
   # header requirement on /mcp then becomes a structural property of the
@@ -302,12 +302,12 @@ test_compose_entrypoint_passes_auth_key() {
   # Match a list item that contains the literal `-auth-key` token
   # (with optional quoting). YAML list bullet `-` and flag dash are
   # both present; we anchor on the trailing `auth-key"`/`auth-key'`.
-  if ! printf '%s' "$content" | grep -qE '^[[:space:]]+-[[:space:]]+"?-auth-key"?[[:space:]]*$'; then
-    record_fail "compose.entrypoint: -auth-key flag missing from command list"
+  if ! printf '%s' "$content" | grep -qF 'IA_BUSCAR_AUTH_KEY=${QA_AUTH_KEY:-}'; then
+    record_fail "compose.environment: env-only mapping 'IA_BUSCAR_AUTH_KEY=\${QA_AUTH_KEY:-}' missing"
     return 1
   fi
-  if ! printf '%s' "$content" | grep -qE 'QA_AUTH_KEY'; then
-    record_fail "compose.entrypoint: -auth-key must reference QA_AUTH_KEY env (dev-only key)"
+  if printf '%s' "$content" | grep -qE '^[[:space:]]+-[[:space:]]+"?-auth-key"?[[:space:]]*$'; then
+    record_fail "compose.entrypoint: obsolete -auth-key argv list item present (env-only contract forbids argv path)"
     return 1
   fi
 }
