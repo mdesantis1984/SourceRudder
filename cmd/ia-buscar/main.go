@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -100,6 +101,39 @@ func resolveMemoryConfig(flagURL, flagKey string) (string, string) {
 	return url, key
 }
 
+// authKeyEnvVar is the environment variable read when the operator
+// does not pass -auth-key on the command line. Promoting the value
+// out of an env var keeps the secret out of argv (ps aux / process
+// listings / shell history) — that is the CT201 fix this helper
+// exists for.
+const authKeyEnvVar = "IA_BUSCAR_AUTH_KEY"
+
+// resolveAuthKey layers the IA_BUSCAR_AUTH_KEY env var under the
+// explicit -auth-key flag value. The explicit flag wins when both
+// are set so an operator's CLI override is never silently dropped.
+//
+// The flag value is preserved verbatim (no trimming) so existing
+// scripts that pass a literal key keep working — a trailing newline
+// inside the flag is the operator's choice. The env value IS trimmed
+// because secrets files routinely carry trailing newlines and shell
+// exports routinely carry leading whitespace; a key that fails every
+// validator comparison because of a stray byte is a silent outage.
+//
+// When both inputs are empty (or whitespace-only on the env side)
+// the helper returns an empty string so auth.NewValidator produces
+// the documented fail-closed validator — the no-bypass contract
+// already in internal/auth/auth.go.
+func resolveAuthKey(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	raw, ok := os.LookupEnv(authKeyEnvVar)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(raw)
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -116,7 +150,7 @@ func main() {
 	met := observability.New()
 	observability.SetDefault(met)
 	observability.InitTracing("ia-buscar")
-	authValidator := auth.NewValidator(*authKey)
+	authValidator := auth.NewValidator(resolveAuthKey(*authKey))
 
 	memURL, memKey := resolveMemoryConfig(*memoryURL, *memoryAPIKey)
 	memClient := memory.NewClient(memURL, memKey)

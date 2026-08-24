@@ -524,7 +524,9 @@ make qa-clean    # drop volumes and the qa-net bridge
 - `POST /mcp` `search_web` returns `200`, `results: []`, `cached: false`
   — in-stack SearxNG has empty engines, no egress.
 - Every `/mcp` carries `Authorization: Bearer $QA_AUTH_KEY` matching
-  `-auth-key`. Wrong/missing header → validator 401 → smoke fails.
+  the server-side `IA_BUSCAR_AUTH_KEY` env var (NOT `-auth-key`
+  argv — see CT201). Wrong/missing header → validator 401 → smoke
+  fails.
 - Zero packets leave `qa-net` to `10.0.0.201:8080` or
   `127.0.0.1:7438` (`internal: true`; only `127.0.0.1:8080` published).
 
@@ -544,16 +546,29 @@ tests/qa/qa_scripts_test.sh        # red→green contract tests
 ### Local auth (`.env.qa`, dev-only)
 
 QA stack enables the live `auth.Validator` (same middleware production
-uses) via `-auth-key`. `.env.qa` at the repo root is **DEV-ONLY** —
-gitignored, MUST NEVER carry a production credential:
+uses). The key is provisioned through the `IA_BUSCAR_AUTH_KEY` env
+var inside the container — **never** via the `-auth-key` CLI flag —
+so the secret never reaches `argv` (and therefore never reaches
+`ps aux`, process listings, shell history, or compose's recorded
+command). `.env.qa` at the repo root is **DEV-ONLY** — gitignored,
+MUST NEVER carry a production credential:
 
 ```
 QA_AUTH_KEY=<any-non-empty-dev-string>
 ```
 
-Precedence: `$AUTH_KEY` → `.env.qa` → `""` (fail-closed). `qa-up.sh`
-exports the key into compose env; `qa-smoke.sh` sends
-`Authorization: Bearer $QA_AUTH_KEY` on every `/mcp` POST.
+`qa-up.sh` mirrors the precedence `$AUTH_KEY` → `.env.qa` → `""`
+(fail-closed) and exports `QA_AUTH_KEY` into the compose project;
+`deploy/qa/docker-compose.yml` then forwards it as
+`IA_BUSCAR_AUTH_KEY` on the `ia-buscar` service (env path — see
+CT201). `qa-smoke.sh` sends `Authorization: Bearer $QA_AUTH_KEY` on
+every `/mcp` POST so the Bearer header matches the server-side
+`IA_BUSCAR_AUTH_KEY` env var (NOT `-auth-key` argv).
+
+The `-auth-key` flag is preserved as an explicit override for ad-hoc
+local debugging and for backward compatibility with existing scripts,
+but the documented path for any operator-managed deployment is the
+env var.
 
 ### Rollback
 

@@ -60,12 +60,16 @@ services:
     networks:
       - qa-net
     # QA_AUTH_KEY is derived by qa-up.sh from $AUTH_KEY or .env.qa
-    # (dev-only). The entrypoint references it via ${QA_AUTH_KEY:-}
-    # so an unset env falls back to "" and the live auth.Validator
-    # rejects every /mcp request — fail-closed posture is the safe
-    # default.
+    # (dev-only). The key is provisioned through the
+    # IA_BUSCAR_AUTH_KEY env var (not via -auth-key argv) so the
+    # secret never appears in `ps aux` output, process listings, or
+    # compose command history. QA_AUTH_KEY is intentionally NOT
+    # injected into the container alongside the mapped value (that
+    # would re-leak the secret via `docker inspect`); the shell
+    # substitution defaults to "" so the live auth.Validator rejects
+    # every /mcp request when QA_AUTH_KEY is unset — fail-closed.
     environment:
-      - QA_AUTH_KEY
+      - IA_BUSCAR_AUTH_KEY=${QA_AUTH_KEY:-}
     # Local-only port binding. Use 0.0.0.0:8080 so docker-proxy can
     # actually listen (the `127.0.0.1:` prefix on a fresh docker-proxy
     # managed by this daemon variant is unreliable). The qa-net internal
@@ -87,12 +91,13 @@ services:
       # than structural.
       - "-memory-url"
       - ""
-      # MCP auth: enable the live auth.Validator with a dev-only key
-      # sourced from $QA_AUTH_KEY. qa-up.sh derives this from $AUTH_KEY
-      # or .env.qa. Smoke must send `Authorization: Bearer $QA_AUTH_KEY`
-      # on every /mcp POST; otherwise the validator returns 401.
-      - "-auth-key"
-      - "${QA_AUTH_KEY:-}"
+      # MCP auth is enabled via the IA_BUSCAR_AUTH_KEY env var (set
+      # in the `environment:` block above). The -auth-key argv form
+      # remains supported as an explicit override for ad-hoc local
+      # debugging, but the QA stack uses the env path so the secret
+      # never lands in `ps aux`. Smoke sends `Authorization: Bearer
+      # $QA_AUTH_KEY` on every /mcp POST; otherwise the validator
+      # returns 401.
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
       interval: 5s
