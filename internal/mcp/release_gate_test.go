@@ -632,6 +632,238 @@ func TestRDDReceiptValidateStagedPostMergeContext(t *testing.T) {
 	})
 }
 
+// TestRDDReceiptValidateStagedPostMergeDetachedHeadFallback pins
+// the R8-NEW-001 wrapper fallback for a detached-HEAD post-merge
+// push. The failure mode (read-only verified at `413c869` on a
+// detached-HEAD worktree, R4 audit memory #4555) was the
+// R2-NEW-008 branch-unresolvable seam firing BEFORE the
+// post-merge Candidate Commit check could accept the receipt's
+// `Merge Target: main`.
+//
+// The fix is fail-closed minimal: when `currentBranch` cannot be
+// resolved AND the worktree is in the post-merge two-parent
+// shape (HEAD has 2+ parents AND NOT a GitHub PR synthetic
+// merge) AND the receipt declares a nonempty `Merge Target:`
+// line, substitute `Merge Target` for `currentBranch` so the
+// third context (HEAD^2 / HEAD^2~1) Candidate Commit check can
+// run. Negative controls pin the four fail-closed contracts
+// (missing target, empty target, non-merge detached context,
+// worktree-on-branch with mismatch).
+//
+// The test runs against a synthetic detached-HEAD two-parent
+// merge (no dependency on the real worktree via
+// `git checkout --detach <merge-sha>` on a synthetic repo) so
+// the wrapper exercises the same code path a CI push to main
+// on a merge commit would.
+func TestRDDReceiptValidateStagedPostMergeDetachedHeadFallback(t *testing.T) {
+	const mergeTarget = "main"
+	const sourceBranch = "fix/rdd-main-ci-determinism"
+	resetAll := func(t *testing.T) {
+		t.Helper()
+		// The harness filter strips CI/GITHUB_*/CI_COMMIT_REF_NAME
+		// from the test process's env in scripts/, but
+		// `internal/mcp/` runs in-process so the env vars are
+		// read directly via os.Getenv. Clear them here so the
+		// wrapper's `resolveCurrentBranchFromCIEnv` returns ""
+		// AND `isGitHubPRMergeCheckoutIn` returns false.
+		for _, k := range []string{
+			"CI", "GITHUB_EVENT_NAME",
+			"RELEASE_GATE_BRANCH", "GITHUB_HEAD_REF", "GITHUB_REF_NAME", "CI_COMMIT_REF_NAME",
+			"RELEASE_GATE_PR_HEAD_SHA", "RELEASE_GATE_PR_HEAD_PARENT_SHA",
+		} {
+			t.Setenv(k, "")
+		}
+	}
+	makePostMergeReceipt := func(candidate, branchVal, mtVal string) string {
+		return "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + candidate + "\n" +
+			"Branch: " + branchVal + "\n" +
+			"Merge Target: " + mtVal + "\n" +
+			"Scope: post-merge recovery on detached HEAD\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+	}
+	// buildDetachedTwoParentRepo builds an isolated repo with
+	// HEAD having 2+ parents (post-merge shape) AND in
+	// detached-HEAD state (`git rev-parse --abbrev-ref HEAD`
+	// returns the literal "HEAD" sentinel which the wrapper
+	// converts to ""). Matches the CI push-event shape after
+	// `actions/checkout@v4` on a merge commit.
+	buildDetachedTwoParentRepo := func(t *testing.T) (repo, headSha2, headSha2Parent string) {
+		t.Helper()
+		repo = buildIsolatedGitRepo(t)
+		mergeSHA := buildSyntheticTwoParentCommit(t, repo)
+		c := exec.Command("git", "checkout", "--detach", mergeSHA)
+		c.Dir = repo
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git checkout --detach: %v\n%s", err, string(out))
+		}
+		headSha2 = mustRunGit(t, repo, "rev-parse", "HEAD^2")
+		headSha2Parent = mustRunGit(t, repo, "rev-parse", "HEAD^2~1")
+		return
+	}
+
+	t.Run("detached-post-merge-with-merge-target-passes", func(t *testing.T) {
+		resetAll(t)
+		repo, _, headSha2Parent := buildDetachedTwoParentRepo(t)
+		body := makePostMergeReceipt(headSha2Parent, sourceBranch, mergeTarget)
+		problems := rddReceiptValidateStagedIn(body, repo)
+		if len(problems) > 0 {
+			t.Fatalf("expected detached post-merge receipt with nonempty Merge Target to pass (R8-NEW-001 substitution), got problems: %v", problems)
+		}
+	})
+
+	t.Run("detached-post-merge-head2-candidate-also-passes", func(t *testing.T) {
+		resetAll(t)
+		repo, headSha2, _ := buildDetachedTwoParentRepo(t)
+		body := makePostMergeReceipt(headSha2, sourceBranch, mergeTarget)
+		problems := rddReceiptValidateStagedIn(body, repo)
+		if len(problems) > 0 {
+			t.Fatalf("expected HEAD^2 candidate to pass under R8-NEW-001 detached fallback, got problems: %v", problems)
+		}
+	})
+
+	t.Run("detached-post-merge-empty-merge-target-still-fails-closed", func(t *testing.T) {
+		// Negative control: empty Merge Target. The
+		// substitution block checks `mergeTargetValue != ""`
+		// before overriding `currentBranch`, so an empty
+		// Merge Target leaves `currentBranch` empty. The
+		// pre-existing R2-NEW-008 fail-closed seam then
+		// fires (Branch context unresolvable).
+		resetAll(t)
+		repo, _, headSha2Parent := buildDetachedTwoParentRepo(t)
+		body := makePostMergeReceipt(headSha2Parent, sourceBranch, "")
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundFailClosed := false
+		for _, p := range problems {
+			if strings.Contains(p, "branch context unresolvable") ||
+				strings.Contains(p, "Merge Target") {
+				foundFailClosed = true
+				break
+			}
+		}
+		if !foundFailClosed {
+			t.Fatalf("expected fail-closed on empty Merge Target in detached post-merge context (R8-NEW-001 fail-closed contract), got: %v", problems)
+		}
+	})
+
+	t.Run("detached-post-merge-no-merge-target-line-still-fails-closed", func(t *testing.T) {
+		// Negative control: missing Merge Target line
+		// entirely. The substitution block's `for _, line :=
+		// range body` loop never sees a `Merge Target:` prefix,
+		// so `currentBranch` stays empty. The R2-NEW-008 seam
+		// fires.
+		resetAll(t)
+		repo, _, headSha2Parent := buildDetachedTwoParentRepo(t)
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + headSha2Parent + "\n" +
+			"Branch: " + sourceBranch + "\n" +
+			"Scope: post-merge no-merge-target line\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundFailClosed := false
+		for _, p := range problems {
+			if strings.Contains(p, "branch context unresolvable") ||
+				strings.Contains(p, "Merge Target") {
+				foundFailClosed = true
+				break
+			}
+		}
+		if !foundFailClosed {
+			t.Fatalf("expected fail-closed on missing Merge Target line in detached post-merge context, got: %v", problems)
+		}
+	})
+
+	t.Run("detached-non-merge-still-fails-closed-R2-NEW-008", func(t *testing.T) {
+		// Negative control: detached HEAD but the worktree
+		// has 1 parent (NOT a merge commit). The substitution
+		// block's condition `parentCountOfHEAD(repoDir) >= 2`
+		// is false, so `currentBranch` is NOT substituted
+		// and the R2-NEW-008 fail-closed seam fires with
+		// "branch context unresolvable". This is the
+		// existing R2-NEW-008 contract for non-merge
+		// detached-HEAD contexts; R8-NEW-001 must not
+		// regress it.
+		resetAll(t)
+		repo := buildIsolatedGitRepo(t)
+		headSHA := mustRunGit(t, repo, "rev-parse", "HEAD")
+		c := exec.Command("git", "checkout", "--detach", headSHA)
+		c.Dir = repo
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git checkout --detach: %v\n%s", err, string(out))
+		}
+		// Receipt has Merge Target but the worktree is NOT
+		// in post-merge shape, so substitution MUST NOT fire.
+		body := makePostMergeReceipt(headSHA, sourceBranch, mergeTarget)
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundR2 := false
+		for _, p := range problems {
+			if strings.Contains(p, "branch context unresolvable") {
+				foundR2 = true
+				break
+			}
+		}
+		if !foundR2 {
+			t.Fatalf("expected R2-NEW-008 fail-closed seam on detached non-merge context (R8-NEW-001 must NOT override R2-NEW-008 for non-merge shapes), got: %v", problems)
+		}
+	})
+
+	t.Run("worktree-on-branch-with-mismatched-merge-target-still-fails", func(t *testing.T) {
+		// Negative control: worktree on a branch (non-empty
+		// `currentBranch` resolved via RELEASE_GATE_BRANCH
+		// env, matching the R7 synthetic-test pattern) with
+		// `Merge Target:` mismatched against the worktree
+		// branch. The substitution block only fires when
+		// `currentBranch == ""`, so `currentBranch` keeps its
+		// worktree-branch value and the pure helper's existing
+		// post-merge `Merge Target != currentBranch` mismatch
+		// surfaces as a problem. R8-NEW-001 must not weaken
+		// the R7-NEW-001 third-context Branch exact-match
+		// check for non-detached worktrees.
+		resetAll(t)
+		// buildIsolatedGitRepo creates a branch named "main";
+		// `t.Setenv("RELEASE_GATE_BRANCH", "main")` makes the
+		// wrapper resolve currentBranch = "main" via the env
+		// chain (matching the R7 synthetic-test pattern).
+		// The receipt's Branch = sourceBranch (NOT "main"),
+		// so the pure helper enters the post-merge Branch
+		// mismatch path and validates Merge Target against
+		// currentBranch ("main"); Merge Target = "develop"
+		// mismatches, surfacing the expected problem.
+		repo := buildIsolatedGitRepo(t)
+		buildSyntheticTwoParentCommit(t, repo)
+		t.Setenv("RELEASE_GATE_BRANCH", "main")
+		headSha2Parent := mustRunGit(t, repo, "rev-parse", "HEAD^2~1")
+		// Receipt: Branch = source branch (≠ currentBranch),
+		// Merge Target = "develop" (≠ currentBranch = "main"),
+		// Candidate = HEAD^2~1 (post-merge-correct). The pure
+		// helper's post-merge Branch mismatch path sees
+		// Merge Target != currentBranch and surfaces a problem.
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + headSha2Parent + "\n" +
+			"Branch: " + sourceBranch + "\n" +
+			"Merge Target: develop\n" +
+			"Scope: post-merge mismatch negative control\n" +
+			"Verified Commands:\n  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundMismatch := false
+		for _, p := range problems {
+			if strings.Contains(p, "Merge Target") && strings.Contains(p, "does not exactly match") {
+				foundMismatch = true
+				break
+			}
+		}
+		if !foundMismatch {
+			t.Fatalf("expected Merge Target mismatch rejection on non-detached post-merge worktree (R8-NEW-001 must NOT override R7-NEW-001 exact-match check), got: %v", problems)
+		}
+	})
+}
+
 // TestRDDReceiptValidateFailsClosedOnUnresolvableGitContext is the
 // R2-NEW-008 RED gate. The Go process guard previously silently
 // skipped Branch exact-match validation when the worktree's git
@@ -830,6 +1062,41 @@ func rddReceiptValidateStagedIn(body, repoDir string) []string {
 	}
 	if currentBranch == "HEAD" {
 		currentBranch = ""
+	}
+
+	// R8-NEW-001: detached-HEAD post-merge two-parent
+	// fallback. When `currentBranch` cannot be resolved AND
+	// the worktree is in the post-merge two-parent shape
+	// (HEAD has 2+ parents AND NOT a GitHub PR synthetic
+	// merge) AND the receipt declares a nonempty `Merge
+	// Target:` line, substitute `Merge Target` for
+	// `currentBranch` so the post-merge Candidate Commit
+	// check (HEAD^2 / HEAD^2~1) can run. The receipt is
+	// the authoritative target-branch signal in post-merge
+	// context (per the existing helper comment at lines
+	// 411-413); without this fallback, a detached-HEAD CI
+	// push to main on a merge commit fails closed at the
+	// R2-NEW-008 branch-unresolvable seam below for the
+	// wrong reason.
+	//
+	// Fail-closed by construction: missing or empty
+	// `Merge Target:` leaves `currentBranch` empty (R2-NEW-008
+	// seam fires); non-merge detached context (parentCount==1)
+	// skips the substitution (R2-NEW-008 seam fires);
+	// non-detached worktree (non-empty `currentBranch`)
+	// bypasses the substitution entirely so the pre-existing
+	// R7-NEW-001 exact-match check still applies.
+	if currentBranch == "" && !isGitHubPRMergeCheckoutIn(repoDir) && parentCountOfHEAD(repoDir) >= 2 {
+		for _, line := range strings.Split(body, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "Merge Target:") {
+				mergeTargetValue := strings.TrimSpace(strings.TrimPrefix(trimmed, "Merge Target:"))
+				if mergeTargetValue != "" {
+					currentBranch = mergeTargetValue
+				}
+				break
+			}
+		}
 	}
 
 	// Read the PR-head context from env. The workflow's
