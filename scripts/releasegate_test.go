@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // harness controls one synthetic gate scenario.
@@ -1848,11 +1849,116 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 	}
 
 	t.Run("candidate-equals-head-passes", func(t *testing.T) {
+		// Rewritten (R8-NEW-002) from the original
+		// two-harness SHA-collision pattern to a
+		// deterministic one-harness HEAD~1 construction.
+		// The original `h := newHarness(t); head := h.headSHA();
+		// runWithCommit(t, head, ...)` passed ONLY when both
+		// harnesses' initial-commit timestamps fell within
+		// the same second; the identical content collided so
+		// the test harness's HEAD equalled the second
+		// harness's initial-commit SHA, which after
+		// `commitFile` became HEAD~1 (NOT HEAD) of the second
+		// harness — so the receipt's `Candidate Commit`
+		// accidentally equalled the second harness's HEAD~1
+		// (see `runWithCommit`'s doc comment above). Under
+		// >1s jitter the SHAs diverge and the gate correctly
+		// rejects; the `with-deliberate-jitter-is-broken`
+		// sub-test below pins that regression in RED.
+		//
+		// Candidate == HEAD cannot be tested deterministically
+		// (writing HEAD's SHA into the receipt body makes the
+		// SHA circular: `git commit --amend` rewrites HEAD,
+		// and `git commit` produces a new HEAD whose body
+		// references the old HEAD). The precise contract is
+		// therefore exercised here via HEAD~1 (the canonical
+		// code-then-receipt workflow), which `addValidRDDPassReceipt`
+		// produces by construction. The sub-test name is
+		// preserved to keep the RED gate slot contiguous with
+		// the rest of the R4-006 matrix; the positive contract
+		// coverage it asserts is the same one
+		// `candidate-equals-head-parent-passes` asserts
+		// below, and both are intentional so a future
+		// regression that swaps the helper for the broken
+		// two-harness pattern still fails one of them.
 		h := newHarness(t)
-		head := h.headSHA()
-		exit, stderr := runWithCommit(t, head, "local gate validation")
+		h.addValidRDDPassReceipt(branch)
+		exit, stdout, stderr := h.run("RELEASE_GATE_BRANCH="+branch, "BASE_REF=main")
 		if exit != 0 {
-			t.Fatalf("expected exit 0 (Candidate == HEAD), got %d; stderr=%q", exit, stderr)
+			t.Fatalf("expected exit 0 (Candidate == HEAD~1 via addValidRDDPassReceipt), got %d; stderr=%q", exit, stderr)
+		}
+		if !strings.Contains(stdout, "release-gate: PASS") {
+			t.Fatalf("expected PASS line, got stdout=%q", stdout)
+		}
+	})
+
+	t.Run("with-deliberate-jitter-is-broken", func(t *testing.T) {
+		// RED demonstration (R8-NEW-002): the original
+		// two-harness setup of `candidate-equals-head-passes`
+		// produces identical initial-commit SHAs ONLY when
+		// the two harnesses are created within the same
+		// second. With >1s system jitter between the two
+		// `newHarness(t)` calls (simulating slow CI, a busy
+		// runner, or an interleaved parallel test), the
+		// initial-commit SHAs diverge and the receipt's
+		// `Candidate Commit` (harness1's HEAD) no longer
+		// matches harness2's HEAD or HEAD~1. The gate MUST
+		// reject the receipt — proving that the original
+		// test passed by SHA-collision accident, not by
+		// design. After the R8-NEW-002 fix to
+		// `candidate-equals-head-passes` and the corresponding
+		// wrapper work, the SHA collision is structurally
+		// avoided (the fixed test uses ONE harness) so this
+		// sub-test remains a permanent regression witness:
+		// it pins the broken behaviour for documentation
+		// purposes (the SHA collision shape) without
+		// asserting anything the wrapper needs to honour.
+		//
+		// The sub-test is skipped under `-short` because
+		// the deliberate >1s sleep would otherwise inflate
+		// the local test-suite runtime on every CI run.
+		if testing.Short() {
+			t.Skip("deliberate >1s jitter test; skip in -short mode")
+		}
+		// Step 1: create harness1 and capture its HEAD.
+		h1 := newHarness(t)
+		head1 := h1.headSHA()
+		// Step 2: deliberate >1s jitter so harness2's
+		// initial-commit SHA diverges from harness1's.
+		// 1100ms is the smallest offset that crosses the
+		// git author/committer timestamp resolution
+		// consistently across Linux/macOS without flaking
+		// on the boundary.
+		time.Sleep(1100 * time.Millisecond)
+		// Step 3: create harness2 with the broken pattern
+		// (separate harness whose HEAD cannot match head1).
+		// The SHA collision between the two initial commits
+		// is gone — git stores `1787544204` and `1787544205`
+		// (one second apart) and the commit SHAs differ.
+		h2 := newHarness(t)
+		head2 := h2.headSHA()
+		if head1 == head2 {
+			t.Fatalf("expected head1 != head2 after >1s jitter; both = %s — the SHA-collision bug returned, the original test would silently pass again", head1)
+		}
+		// Step 4: stage a receipt on h2 whose Candidate
+		// Commit equals head1 (h1's SHA, not h2's HEAD).
+		// The gate MUST reject: head1 is neither HEAD of
+		// h2 nor HEAD~1 of h2.
+		body := "# RDD Receipt\n" +
+			"Status: pass\n" +
+			"Candidate Commit: " + head1 + "\n" +
+			"Branch: " + branch + "\n" +
+			"Scope: local gate validation (deliberate >1s jitter witness)\n" +
+			"Verified Commands:\n" +
+			"  - go build ./...: PASS\n" +
+			"Unresolved Blocker Policy: none\n"
+		h2.commitFile("docs/release/reviews/review-be4525bc4797e972.md", body, "add receipt with foreign-harness Candidate Commit (R8-NEW-002 RED witness)")
+		exit, _, stderr := h2.run("RELEASE_GATE_BRANCH="+branch, "BASE_REF=main")
+		if exit == 0 {
+			t.Fatalf("expected non-zero exit (Candidate from foreign harness != HEAD or HEAD~1), got 0; SHA collision is masking the bug — the original two-harness pattern returned, stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "Candidate Commit") {
+			t.Fatalf("expected stderr to mention 'Candidate Commit', got %q", stderr)
 		}
 	})
 
