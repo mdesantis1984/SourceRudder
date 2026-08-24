@@ -1855,14 +1855,16 @@ func TestGateCandidateCommitMustBeHeadOrParent(t *testing.T) {
 		// The original `h := newHarness(t); head := h.headSHA();
 		// runWithCommit(t, head, ...)` passed ONLY when both
 		// harnesses' initial-commit timestamps fell within
-		// the same second; the identical content
-		// (go.mod / hello.go / hello_test.go / release-gate.sh)
-		// collided and the receipt's `Candidate Commit`
-		// accidentally equalled the second harness's HEAD.
-		// Under >1s system jitter the initial-commit SHAs
-		// diverge and the gate correctly rejects the receipt.
-		// `TestGateCandidateCommitMustBeHeadOrParent/with-deliberate-jitter-is-broken`
-		// below pins that regression in RED.
+		// the same second; the identical content collided so
+		// the test harness's HEAD equalled the second
+		// harness's initial-commit SHA, which after
+		// `commitFile` became HEAD~1 (NOT HEAD) of the second
+		// harness — so the receipt's `Candidate Commit`
+		// accidentally equalled the second harness's HEAD~1
+		// (see `runWithCommit`'s doc comment above). Under
+		// >1s jitter the SHAs diverge and the gate correctly
+		// rejects; the `with-deliberate-jitter-is-broken`
+		// sub-test below pins that regression in RED.
 		//
 		// Candidate == HEAD cannot be tested deterministically
 		// (writing HEAD's SHA into the receipt body makes the

@@ -748,6 +748,29 @@ func TestRDDReceiptValidateStagedPostMergeDetachedHeadFallback(t *testing.T) {
 		}
 	})
 
+	t.Run("detached-post-merge-head-sentinel-merge-target-still-fails-closed", func(t *testing.T) {
+		// Negative control: `Merge Target: HEAD` is the
+		// detached-HEAD sentinel, NOT a branch name. The
+		// wrapper rejects it: surfaces an R8-NEW-001
+		// problem AND fires the R2-NEW-008 seam.
+		resetAll(t)
+		repo, _, headSha2Parent := buildDetachedTwoParentRepo(t)
+		body := makePostMergeReceipt(headSha2Parent, sourceBranch, "HEAD")
+		problems := rddReceiptValidateStagedIn(body, repo)
+		foundSentinel, foundUnresolvable := false, false
+		for _, p := range problems {
+			if strings.Contains(p, "detached-HEAD sentinel") && strings.Contains(p, "R8-NEW-001") {
+				foundSentinel = true
+			}
+			if strings.Contains(p, "branch context unresolvable") {
+				foundUnresolvable = true
+			}
+		}
+		if !foundSentinel || !foundUnresolvable {
+			t.Fatalf("expected R8-NEW-001 sentinel reject AND R2-NEW-008 unresolvable seam on `Merge Target: HEAD`, got: %v", problems)
+		}
+	})
+
 	t.Run("detached-post-merge-no-merge-target-line-still-fails-closed", func(t *testing.T) {
 		// Negative control: missing Merge Target line
 		// entirely. The substitution block's `for _, line :=
@@ -1064,34 +1087,21 @@ func rddReceiptValidateStagedIn(body, repoDir string) []string {
 		currentBranch = ""
 	}
 
-	// R8-NEW-001: detached-HEAD post-merge two-parent
-	// fallback. When `currentBranch` cannot be resolved AND
-	// the worktree is in the post-merge two-parent shape
-	// (HEAD has 2+ parents AND NOT a GitHub PR synthetic
-	// merge) AND the receipt declares a nonempty `Merge
-	// Target:` line, substitute `Merge Target` for
-	// `currentBranch` so the post-merge Candidate Commit
-	// check (HEAD^2 / HEAD^2~1) can run. The receipt is
-	// the authoritative target-branch signal in post-merge
-	// context (per the existing helper comment at lines
-	// 411-413); without this fallback, a detached-HEAD CI
-	// push to main on a merge commit fails closed at the
-	// R2-NEW-008 branch-unresolvable seam below for the
-	// wrong reason.
-	//
-	// Fail-closed by construction: missing or empty
-	// `Merge Target:` leaves `currentBranch` empty (R2-NEW-008
-	// seam fires); non-merge detached context (parentCount==1)
-	// skips the substitution (R2-NEW-008 seam fires);
-	// non-detached worktree (non-empty `currentBranch`)
-	// bypasses the substitution entirely so the pre-existing
-	// R7-NEW-001 exact-match check still applies.
+	// R8-NEW-001: detached-HEAD post-merge fallback. Substitute
+	// `Merge Target:` for `currentBranch` when empty AND HEAD has
+	// 2+ parents AND not a CI PR synthetic merge. Fail-closed
+	// for missing/empty Merge Target, parentCount<2, or literal
+	// `HEAD` (the detached-HEAD sentinel — surfaces an
+	// R8-NEW-001 problem; currentBranch stays empty).
+	mergeTargetSawHeadSentinel := false
 	if currentBranch == "" && !isGitHubPRMergeCheckoutIn(repoDir) && parentCountOfHEAD(repoDir) >= 2 {
 		for _, line := range strings.Split(body, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "Merge Target:") {
 				mergeTargetValue := strings.TrimSpace(strings.TrimPrefix(trimmed, "Merge Target:"))
-				if mergeTargetValue != "" {
+				if mergeTargetValue == "HEAD" {
+					mergeTargetSawHeadSentinel = true
+				} else if mergeTargetValue != "" {
 					currentBranch = mergeTargetValue
 				}
 				break
@@ -1113,6 +1123,9 @@ func rddReceiptValidateStagedIn(body, repoDir string) []string {
 	var problems []string
 	if currentBranch == "" {
 		problems = append(problems, "branch context unresolvable: could not determine current branch from CI env or git rev-parse; the guard MUST fail closed rather than waive the Branch: exact-match check (R2-NEW-008)")
+	}
+	if mergeTargetSawHeadSentinel {
+		problems = append(problems, "Merge Target is the detached-HEAD sentinel: a receipt with `Merge Target: HEAD` is unresolved; the wrapper MUST treat the value as if no Merge Target were provided so the R2-NEW-008 fail-closed seam fires (R8-NEW-001 + R2-NEW-008)")
 	}
 	if headSHA == "" {
 		problems = append(problems, "HEAD context unresolvable: could not determine HEAD SHA from git rev-parse; the guard MUST fail closed rather than waive the Candidate Commit HEAD-or-HEAD~1 check (R2-NEW-008)")
