@@ -58,6 +58,18 @@ func newHarness(t *testing.T) *harness {
 }
 
 func (h *harness) run(env ...string) (int, string, string) {
+	return h.runWithLegacyReceipt(true, env...)
+}
+
+// runDefault exercises the production default, where the legacy RDD receipt
+// is not consulted. Existing receipt-parser compatibility tests use run,
+// which opts in explicitly so they remain useful without changing the gate's
+// default behavior.
+func (h *harness) runDefault(env ...string) (int, string, string) {
+	return h.runWithLegacyReceipt(false, env...)
+}
+
+func (h *harness) runWithLegacyReceipt(legacy bool, env ...string) (int, string, string) {
 	h.t.Helper()
 	cmd := exec.Command(h.gateScript)
 	cmd.Dir = h.repo
@@ -89,7 +101,12 @@ func (h *harness) run(env ...string) (int, string, string) {
 		}
 		filtered = append(filtered, e)
 	}
-	cmd.Env = append(filtered, env...)
+	legacyEnv := "RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=0"
+	if legacy {
+		legacyEnv = "RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1"
+	}
+	cmd.Env = append(filtered, legacyEnv)
+	cmd.Env = append(cmd.Env, env...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -101,6 +118,17 @@ func (h *harness) run(env ...string) (int, string, string) {
 		h.t.Fatalf("gate exec: %v", err)
 	}
 	return exit, stdout.String(), stderr.String()
+}
+
+func TestGateDefaultDoesNotRequireLegacyRDDReceipt(t *testing.T) {
+	h := newHarness(t)
+	exit, stdout, stderr := h.runDefault("RELEASE_GATE_BRANCH=main", "BASE_REF=main")
+	if exit != 0 {
+		t.Fatalf("expected default gate to pass without legacy receipt, got %d; stdout=%q stderr=%q", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "LEGACY_RDD_RECEIPT=disabled") {
+		t.Fatalf("expected explicit disabled legacy-receipt status, got stdout=%q", stdout)
+	}
 }
 
 func (h *harness) touchFile(rel, content string) {

@@ -1,5 +1,10 @@
 # Rollback Procedure — ia-buscar
 
+> **Legacy RDD receipt:** This is a historical artifact. Ordinary CI and the default release gate do not require or consume it. Compatibility validation is opt-in
+> with `RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1` and never grants
+> approval; standard build/vet/test/race, size-budget, issue/PR-policy, and
+> branch-protection checks remain required.
+
 This document is the single source of truth for reverting an
 `ia-buscar` production deployment. Every release is pinned to a
 commit SHA so the rollback path is always to a known, reviewed
@@ -23,25 +28,29 @@ Before any rollback, confirm:
    (Phase 13) must have PASSED on the rollback SHA. The gate's
    `./scripts/release-gate.sh` exits 0 on a clean checkout
    matching the SHA; running it on the rollback commit before
-   promoting is a mandatory sanity check. The gate's step 2 is
-   satisfied by the local RDD receipt at
-   `docs/release/reviews/review-be4525bc4797e972.md` (Status:
+   promoting is a mandatory sanity check. The default gate's checks are
+   independent of the historical RDD receipt at
+   `docs/release/reviews/review-be4525bc4797e972.md`. (Status:
    pass + Candidate Commit equal to HEAD or HEAD~1 of the LOCAL
    checkout, or PR_HEAD_SHA / PR_HEAD_PARENT_SHA of the CI
    merge-checkout + exact Branch: field + free-form Scope +
    Verified Commands section with PASS entries + Unresolved
-   Blocker Policy declaration). The previous `Authority: official`
-   header has been removed — there is no external review provider
-   binding.
+    Blocker Policy declaration). The previous `Authority: official`
+    header has been removed — there is no external review provider
+    binding.
 
-   The Candidate Commit check is CI-merge-aware (R4-013): a
+    The receipt and PR-head details above are historical compatibility
+    context only; ordinary rollback does not use them.
+
+    Historical compatibility details: the Candidate Commit check was
+    CI-merge-aware (R4-013): a
    local run uses HEAD/HEAD~1; a CI run on a GitHub pull_request
-   event uses the two SHAs the workflow exports
+   event used the two SHAs an explicit compatibility caller supplied
    (`RELEASE_GATE_PR_HEAD_SHA` = PR tip and
    `RELEASE_GATE_PR_HEAD_PARENT_SHA` = PR tip~1). The CI
    merge-checkout's HEAD is the synthetic merge commit and
    cannot represent the receipt's PR-tip context directly,
-   so the workflow exports the explicit context. The contract
+   so the historical compatibility caller supplied the explicit context. The contract
    is exact-match on the two SHAs in either context — arbitrary
    ancestors are NOT accepted, so the R4-006 rollback safety
    is preserved.
@@ -54,14 +63,15 @@ Before any rollback, confirm:
    `main` ref, so the in-script re-resolution fails; the
    pre-computed value is the authoritative path under CI.
 
-4. A **rollback forces a fresh RDD receipt**. The receipt's
+4. **Historical compatibility only:** an opt-in legacy receipt check may
+   require a fresh RDD receipt. Ordinary rollback does not. The receipt's
    `Candidate Commit` field MUST equal HEAD or HEAD~1 of the
    new HEAD (local context) OR the PR_HEAD_SHA / PR_HEAD_PARENT_SHA
-   the workflow exports (CI context). After `git revert
+   an explicit compatibility caller supplies (CI context). After `git revert
    <buggy-sha>`, the buggy SHA is HEAD~2 or deeper of the
    rollback commit, so the existing receipt's `Candidate
    Commit` no longer satisfies the precise contract and the
-   gate will fail. The operator MUST re-author the receipt as
+   the opt-in compatibility check may fail. An opt-in compatibility operator MAY re-author the receipt as
    a separate commit (a "recovery receipt") with:
    - `Status: pass` (kept; the receipt is the local
      attestation)
@@ -80,7 +90,7 @@ Before any rollback, confirm:
 
    The re-authoring commit is the new HEAD and the rollback
    commit is HEAD~1, satisfying the precise contract under
-   the local context. In CI, the workflow exports
+    the local context. Historically, a compatibility workflow exported
    PR_HEAD_SHA = the new HEAD (the receipt re-authoring
    commit) and PR_HEAD_PARENT_SHA = the rollback commit; the
    receipt's Candidate Commit = PR_HEAD_PARENT_SHA satisfies
@@ -107,11 +117,12 @@ git checkout main
 git pull --ff-only
 git revert --no-edit -m 1 <merge-sha>
 
-# 4. Re-author the RDD receipt as a SEPARATE commit on top of
+# 4. Optional legacy compatibility only: re-author the RDD receipt as a
+#    SEPARATE commit on top of
 #    the revert. The precise Candidate Commit contract
 #    (HEAD or HEAD~1) requires a fresh receipt — the
 #    original receipt's Candidate Commit is now HEAD~2
-#    of the new HEAD and the gate will fail until the
+#    of the new HEAD and the opt-in compatibility check may fail until the
 #    receipt is re-anchored.
 #
 #    Author the receipt via the two-commit flow (placeholder
@@ -124,8 +135,9 @@ ROLLBACK_SHA="$(git rev-parse HEAD)"
 #   Branch: <unchanged>
 #   Verified Commands: re-run go build/vet/test/-race
 #   Unresolved Blocker Policy: rollback for <original-sha>)
-git add docs/release/reviews/review-be4525bc4797e972.md
-git commit -m "chore: re-author RDD receipt for rollback $ROLLBACK_SHA"
+#    Run the following only with RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1:
+# git add docs/release/reviews/review-be4525bc4797e972.md
+# git commit -m "chore: re-author RDD receipt for rollback $ROLLBACK_SHA"
 
 # 5. Localise the rollback commit to a SHA-pinned release-image.
 make release-image GHCR=ghcr.io/thiscloud REGISTRY=ia-buscar
@@ -135,16 +147,12 @@ make release-image GHCR=ghcr.io/thiscloud REGISTRY=ia-buscar
 git diff
 bash scripts/release-gate.sh
 # Expected: release-gate: PASS
-#   (the receipt's Candidate Commit equals HEAD~1 of HEAD,
-#   the receipt's Branch field exactly matches the resolved
-#   branch, the Verified Commands section re-attests the
-#   rolled-back code, and step 4 re-runs Go against the
-#   rolled-back code)
+#   (the default gate runs the standard size-budget and build/vet/test/race checks)
 
 # 7. Push directly to main (the size-exception carve-out is tracked
 #    on the feature branch only; the rollback is on main, so the
 #    gate's strict 400-line budget applies and the revert must
-#    be a clean one-commit change plus the receipt commit).
+#    be a clean one-commit change).
 git push origin main
 ```
 
@@ -215,12 +223,10 @@ on a clean checkout of the rollback SHA:
 
 - [ ] `git log --first-parent -1` shows the revert commit (or the
       previous-good SHA) as HEAD.
-- [ ] `bash scripts/release-gate.sh` returns `release-gate: PASS`
-      with the RDD receipt at
-      `docs/release/reviews/review-be4525bc4797e972.md` declaring
-      `Status: pass` and every other required field.
-- [ ] `go build ./...` and `go vet ./...` exit 0.
-- [ ] `go test ./... -race` exits 0 with no data races.
+- [ ] `bash scripts/release-gate.sh` returns `release-gate: PASS` with legacy
+      receipt validation disabled; size/build/vet/test/race checks still run.
+- [ ] Receipt fields matter only when the operator explicitly enables compatibility
+      mode with `RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1`.
 - [ ] `make release-image` writes the expected SHA-pinned image
       into `deploy/kubernetes/deployment.yaml`.
 - [ ] The deployment manifest's `image:` field matches the
@@ -242,9 +248,9 @@ contexts:
 | Context | Trigger | Allowed SHAs |
 |---------|---------|--------------|
 | Local (operator run, push event, local checkout) | Neither `RELEASE_GATE_PR_HEAD_SHA` nor `RELEASE_GATE_PR_HEAD_PARENT_SHA` is set | HEAD or HEAD~1 |
-| CI (GitHub Actions pull_request job) | Both `RELEASE_GATE_PR_HEAD_SHA` and `RELEASE_GATE_PR_HEAD_PARENT_SHA` are set by the workflow's `Capture PR metadata` step | PR_HEAD_SHA (PR tip) or PR_HEAD_PARENT_SHA (PR tip~1) |
+| Historical CI compatibility job | Both `RELEASE_GATE_PR_HEAD_SHA` and `RELEASE_GATE_PR_HEAD_PARENT_SHA` were supplied by a compatibility caller | PR_HEAD_SHA (PR tip) or PR_HEAD_PARENT_SHA (PR tip~1) |
 
-The two contexts are mutually exclusive: a CI run ALWAYS sets
+Historically, the two contexts were mutually exclusive: a CI compatibility run set
 both PR_HEAD env vars; a local run NEVER sets them. The gate
 selects the context from env presence alone — no additional
 heuristic. A partially-set PR_HEAD env (one var set, the other
@@ -283,7 +289,7 @@ the staged receipt in BOTH contexts, not just locally:
   via the `Capture PR metadata` step. If either is missing or
   malformed the wrapper fails closed (R4-014) — the previous
   `t.Skipf` mask that let the guard silently skip on a
-  synthetic merge commit is GONE; every CI run now exercises
+  synthetic merge commit is GONE; only compatibility runs exercise
   the receipt-shape contract. The wrapper also resolves
   `currentBranch` from CI env (GITHUB_HEAD_REF /
   GITHUB_REF_NAME / CI_COMMIT_REF_NAME / RELEASE_GATE_BRANCH)
@@ -295,36 +301,26 @@ The synthetic 2-parent commit detection helper
 `TestIsGitHubPRMergeCheckoutContract` with a real synthetic
 two-parent commit built in an isolated temp repo
 (`git commit-tree -p <a> -p <b>`); the helper's true branch is
-exercised deterministically on every CI run, so the detection
+exercised deterministically on historical CI runs, so the detection
 surface is pinned against future regressions.
 
-The CI workflow at `.github/workflows/ci.yml` exports the same
-PR-head env pair on `pull_request` events as the release-gate
-workflow; this is the contract the `TestCIWorkflowExportsPRHeadContext`
-test pins. A regression that drops the export from the CI
-workflow trips the Go guard's fail-closed seam here (R4-014),
-which is exactly the defense-in-depth reduction that the
-two-context contract was designed to close.
+Historically, the CI workflow exported the same PR-head env pair on
+`pull_request` events as the release-gate workflow; compatibility tests
+pinned that contract. The historical pair represented the PR tip and its
+parent for the compatibility parser. Current workflows do not export receipt
+context.
 
 ## What Rollback Does NOT Do
 
 - It does not erase the `close-fetch-resilience-and-release-gates`
   size-exception receipt. The receipt is a tracking artefact for
   the carve-out the operator approved; it remains in git history.
-- It does not flip the RDD receipt's `Status: pass` line back to
-  `pending`. The receipt is the local deterministic attestation;
-  the gate continues to enforce its field contract on every merge.
+- It does not rewrite the historical RDD receipt. Ordinary rollback does
+  not require a receipt commit; compatibility validation is opt-in only and
+  never grants approval.
   The previous `Authority: official` external-binding header has
   been removed entirely; rollback does not re-introduce it.
-  Rollback DOES require a fresh receipt (a separate commit with
-  `Candidate Commit: <rollback-sha>`); see precondition 4 above
-  and the canonical path step 4.
 - It does not modify the prior apply-progress in Engram. The
   previous progress records remain available for audit.
-- It does not silence the `release-gate: FAIL` block if the
-  RDD receipt does not validate. The gate is the final safeguard;
-  the rollback must not bypass it. A rollback that ships without
-  a fresh receipt will fail the gate with "RDD receipt Candidate
-  Commit <old-sha> must equal HEAD or HEAD~1" — this is the
-  correct, fail-closed behaviour and the operator MUST author a
-  fresh receipt before the rollback can be promoted.
+- It does not bypass standard release-gate failures. Build, vet, test, race,
+  size-budget, issue/PR-policy, and branch-protection checks remain active.
