@@ -62,10 +62,7 @@ func (c *ImagesConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		SourcesUsed: []string{"images"},
 		Cached:      false,
 	}
-	if len(results) == 0 && err != nil {
-		resp.Partial = true
-		resp.Warnings = []string{err.Error()}
-	}
+	recordSearxngError("images", results, err, resp)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -100,15 +97,15 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 
 	var searxngResp struct {
 		Results []struct {
-			Title       string      `json:"title"`
-			URL         string      `json:"url"`
-			Content     string      `json:"content"`
-			Source      string      `json:"source"`
-			Engine      string      `json:"engine"`
-			ImgSrc      string      `json:"img_src"`
-			ThumbnailSrc string     `json:"thumbnail_src"`
-			Template    string      `json:"template"`
-			ParsedURL   interface{} `json:"parsed_url"`
+			Title        string      `json:"title"`
+			URL          string      `json:"url"`
+			Content      string      `json:"content"`
+			Source       string      `json:"source"`
+			Engine       string      `json:"engine"`
+			ImgSrc       string      `json:"img_src"`
+			ThumbnailSrc string      `json:"thumbnail_src"`
+			Template     string      `json:"template"`
+			ParsedURL    interface{} `json:"parsed_url"`
 		} `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
@@ -135,27 +132,18 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 		}
 
 		results = append(results, types.SearchResultItem{
-			Title:       item.Title,
-			URL:         imageURL,
-			Snippet:     fmt.Sprintf("Source: %s | Engine: %s", item.Source, engine),
-			Source:      engine,
-			Type:        "image",
-			Score:       float64(maxResults - i),
-			CitationID:  fmt.Sprintf("images:%s:%d", parsedDomain, i),
+			Title:      item.Title,
+			URL:        imageURL,
+			Snippet:    fmt.Sprintf("Source: %s | Engine: %s", item.Source, engine),
+			Source:     engine,
+			Type:       "image",
+			Score:      float64(maxResults - i),
+			CitationID: fmt.Sprintf("images:%s:%d", parsedDomain, i),
 		})
 	}
 
-	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
-		for _, entry := range searxngResp.UnresponsiveEngines {
-			if len(entry) > 0 {
-				if name, ok := entry[0].(string); ok {
-					engines = append(engines, name)
-				}
-			}
-		}
-		observability.Default().RecordSearchDegraded("images", "unresponsive_engines")
-		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
+	if len(searxngResp.UnresponsiveEngines) > 0 {
+		return results, newSearxngUnresponsiveError(searxngResp.UnresponsiveEngines)
 	}
 
 	return results, nil

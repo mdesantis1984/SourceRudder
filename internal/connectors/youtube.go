@@ -62,10 +62,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		SourcesUsed: []string{"youtube"},
 		Cached:      false,
 	}
-	if len(results) == 0 && err != nil {
-		resp.Partial = true
-		resp.Warnings = []string{err.Error()}
-	}
+	recordSearxngError("youtube", results, err, resp)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -102,15 +99,15 @@ func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxR
 
 	var searxngResp struct {
 		Results []struct {
-			Title       string      `json:"title"`
-			URL         string      `json:"url"`
-			Content     string      `json:"content"`
-			Source      string      `json:"source"`
-			Engine      string      `json:"engine"`
-			Template    string      `json:"template"`
-			ParsedURL   interface{} `json:"parsed_url"`
-			Thumbnail   string      `json:"thumbnail"`
-			PublishedDate string    `json:"publishedDate"`
+			Title         string      `json:"title"`
+			URL           string      `json:"url"`
+			Content       string      `json:"content"`
+			Source        string      `json:"source"`
+			Engine        string      `json:"engine"`
+			Template      string      `json:"template"`
+			ParsedURL     interface{} `json:"parsed_url"`
+			Thumbnail     string      `json:"thumbnail"`
+			PublishedDate string      `json:"publishedDate"`
 		} `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
@@ -137,28 +134,19 @@ func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxR
 		videoID := extractYouTubeVideoID(item.URL)
 
 		results = append(results, types.SearchResultItem{
-			Title:   item.Title,
-			URL:     item.URL,
-			Snippet: truncateSnippet(item.Content),
-			Source:  engine,
-			Type:    "video",
-			Score:   float64(maxResults - len(results)),
-			Tags:    []string{},
+			Title:      item.Title,
+			URL:        item.URL,
+			Snippet:    truncateSnippet(item.Content),
+			Source:     engine,
+			Type:       "video",
+			Score:      float64(maxResults - len(results)),
+			Tags:       []string{},
 			CitationID: "youtube:" + videoID,
 		})
 	}
 
-	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
-		for _, entry := range searxngResp.UnresponsiveEngines {
-			if len(entry) > 0 {
-				if name, ok := entry[0].(string); ok {
-					engines = append(engines, name)
-				}
-			}
-		}
-		observability.Default().RecordSearchDegraded("youtube", "unresponsive_engines")
-		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
+	if len(searxngResp.UnresponsiveEngines) > 0 {
+		return results, newSearxngUnresponsiveError(searxngResp.UnresponsiveEngines)
 	}
 
 	return results, nil

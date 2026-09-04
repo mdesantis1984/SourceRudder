@@ -62,10 +62,7 @@ func (c *NewsConnector) Search(ctx context.Context, req *types.SearchRequest) (*
 		SourcesUsed: []string{"news"},
 		Cached:      false,
 	}
-	if len(results) == 0 && err != nil {
-		resp.Partial = true
-		resp.Warnings = []string{err.Error()}
-	}
+	recordSearxngError("news", results, err, resp)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -109,13 +106,13 @@ func (c *NewsConnector) searchSearxng(ctx context.Context, query string, maxResu
 
 	var searxngResp struct {
 		Results []struct {
-			Title       string      `json:"title"`
-			URL         string      `json:"url"`
-			Content     string      `json:"content"`
-			Source      string      `json:"source"`
-			Engine      string      `json:"engine"`
-			ParsedURL   interface{} `json:"parsed_url"`
-			PublishedDate string    `json:"publishedDate"`
+			Title         string      `json:"title"`
+			URL           string      `json:"url"`
+			Content       string      `json:"content"`
+			Source        string      `json:"source"`
+			Engine        string      `json:"engine"`
+			ParsedURL     interface{} `json:"parsed_url"`
+			PublishedDate string      `json:"publishedDate"`
 		} `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
@@ -132,27 +129,18 @@ func (c *NewsConnector) searchSearxng(ctx context.Context, query string, maxResu
 		parsedDomain := extractDomain(item.ParsedURL)
 
 		results = append(results, types.SearchResultItem{
-			Title:       item.Title,
-			URL:         item.URL,
-			Snippet:     item.Content,
-			Source:      item.Engine,
-			Type:        "article",
-			Score:       float64(maxResults - i),
-			CitationID:  fmt.Sprintf("news:%s:%d", parsedDomain, i),
+			Title:      item.Title,
+			URL:        item.URL,
+			Snippet:    item.Content,
+			Source:     item.Engine,
+			Type:       "article",
+			Score:      float64(maxResults - i),
+			CitationID: fmt.Sprintf("news:%s:%d", parsedDomain, i),
 		})
 	}
 
-	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
-		for _, entry := range searxngResp.UnresponsiveEngines {
-			if len(entry) > 0 {
-				if name, ok := entry[0].(string); ok {
-					engines = append(engines, name)
-				}
-			}
-		}
-		observability.Default().RecordSearchDegraded("news", "unresponsive_engines")
-		return []types.SearchResultItem{}, fmt.Errorf("searxng unresponsive engines: %v", engines)
+	if len(searxngResp.UnresponsiveEngines) > 0 {
+		return results, newSearxngUnresponsiveError(searxngResp.UnresponsiveEngines)
 	}
 
 	return results, nil
