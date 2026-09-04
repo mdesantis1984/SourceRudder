@@ -63,12 +63,14 @@ func TestSearxNGConnectorsEmitDegradationMetric(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// Use a unique query per subtest so the in-process cache
 			// cannot poison later assertions.
+			before := metricValue(t, met.Handler(), c.name, "unresponsive_engines")
 			_, err := c.ctor("metric-degraded-" + c.name)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got := metricValue(t, met.Handler(), c.name, "unresponsive_engines"); got < 1 {
-				t.Errorf("expected %s to increment ia_buscar_search_degraded_total at least once, got %d", c.name, got)
+			after := metricValue(t, met.Handler(), c.name, "unresponsive_engines")
+			if delta := after - before; delta != 1 {
+				t.Errorf("expected %s degradation metric delta=1, got %d (before=%d after=%d)", c.name, delta, before, after)
 			}
 		})
 	}
