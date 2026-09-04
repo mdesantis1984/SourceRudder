@@ -1,9 +1,7 @@
 # Rollback Procedure — ia-buscar
 
-> **Legacy RDD receipt:** This is a historical artifact. Ordinary CI and the default release gate do not require or consume it. Compatibility validation is opt-in
-> with `RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1` and never grants
-> approval; standard build/vet/test/race, size-budget, issue/PR-policy, and
-> branch-protection checks remain required.
+> **Legacy RDD receipt:** Historical only; ordinary CI and the default gate do not require or consume it. Compatibility validation is opt-in with `RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1` and never grants approval.
+> Standard build/vet/test/race, size-budget, issue/PR-policy, and branch-protection checks remain required.
 
 This document is the single source of truth for reverting an
 `ia-buscar` production deployment. Every release is pinned to a
