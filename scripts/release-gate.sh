@@ -35,27 +35,19 @@
 #                                re-resolution and fails closed if
 #                                both paths are empty. R4-012.
 #
-#   RELEASE_GATE_PR_HEAD_SHA     full PR-tip SHA (40-char hex).
+#   RELEASE_GATE_PR_HEAD_SHA     compatibility-only PR-tip SHA (40-char hex).
 #   RELEASE_GATE_PR_HEAD_PARENT_SHA
 #                                full PR-tip parent SHA (40-char hex).
-#                                When BOTH are set, the receipt
-#                                Candidate Commit check widens from
-#                                HEAD/HEAD~1 (local) to
-#                                PR_HEAD_SHA/PR_HEAD_PARENT_SHA (CI).
-#                                This is the two-context contract: a
-#                                CI merge-checkout cannot represent
-#                                the PR-tip receipt context directly
-#                                (its HEAD is the synthetic merge
-#                                commit), so the workflow exports
-#                                the explicit PR-head context. The
-#                                contract is exact-match on the two
-#                                SHAs — arbitrary ancestors are NOT
-#                                accepted so rollback safety is
-#                                preserved. R4-013.
+#                                These variables are honored only when
+#                                RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1.
+#                                They are not ordinary CI requirements and
+#                                never represent approval. When BOTH are set,
+#                                the opt-in receipt check uses this exact
+#                                two-SHA context.
 #
-#                                The bash validator distinguishes
-#                                three fail-closed classes when the
-#                                PR_HEAD env is incomplete or
+#                                The opt-in compatibility validator
+#                                distinguishes three fail-closed classes
+#                                when the PR_HEAD env is incomplete or
 #                                malformed (R4-014 + R5-NEW-003,
 #                                aligned with the Go process guard):
 #                                  - missing   — neither var set
@@ -63,12 +55,12 @@
 #                                    shape is detected (CI=true AND
 #                                    GITHUB_EVENT_NAME=pull_request
 #                                    AND HEAD has 2+ parents). The
-#                                    workflow's `Capture PR metadata`
-#                                    step is missing the env export.
+#                                    compatibility caller is missing the
+#                                    env export.
 #                                  - partial   — exactly one var set
 #                                    (export survived but only one
-#                                    half). The workflow export
-#                                    dropped or skipped one var.
+#                                    half). The compatibility export dropped
+#                                    or skipped one var.
 #                                  - invalid   — both set but at
 #                                    least one is not a valid 40-char
 #                                    hex SHA (value interpolation
@@ -78,7 +70,8 @@
 #                                Each class surfaces a distinct
 #                                `release-gate: FAIL CI PR context
 #                                <class>: ...` line so a CI operator
-#                                can act on the specific failure mode.
+#                                can act on the specific failure mode. This
+#                                path is not part of ordinary CI.
 #
 #   RELEASE_GATE_SIZE_EXCEPTION  exact branch name permitted to exceed the
 #                                400-line authored budget. Matches that
@@ -92,8 +85,8 @@
 #                                Approval Reference, Scope, Expiration,
 #                                Forward Reference). The receipt
 #                                documents the exception only; it does
-#                                NOT substitute for the RDD receipt
-#                                required by step 2.
+#                                NOT substitute for the optional legacy RDD
+#                                compatibility validation in step 2.
 #
 # Local-QA seam (default OFF; ignored under CI):
 #   RELEASE_GATE_ALLOW_DIRTY=1   skips the worktree cleanliness check
@@ -105,11 +98,12 @@
 # What it checks (in order):
 #   1. Worktree is clean (only docs/release/reviews/, .atl/, .codegraph/,
 #      .codebase-memory/ allowed as untracked; seam ignored under CI).
-#   2. RDD receipt exists at docs/release/reviews/review-be4525bc4797e972.md
+#   2. (optional) legacy RDD receipt validation when explicitly enabled with
+#      RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1; this path never grants approval
 #      with all required fields: Status: pass, Candidate Commit: <sha>
 #      (must equal HEAD or HEAD~1 — local contract — OR
 #      RELEASE_GATE_PR_HEAD_SHA / RELEASE_GATE_PR_HEAD_PARENT_SHA
-#      when the workflow exports them on a pull_request event;
+#      when an explicit compatibility caller exports them;
 #      precise two-context contract for rollback safety, with
 #      arbitrary ancestors rejected in either context), Branch:
 #      <exact branch name> (exact match; no substring),
@@ -235,7 +229,7 @@ $untracked_outside"
   fi
 fi
 
-# ---- 2. RDD receipt (deterministic local attestation) --------------------
+# ---- 2. legacy RDD receipt (explicit opt-in compatibility path) ----------
 #
 # The previous contract required an `Authority: official` header
 # whose only source was a fictitious external review provider
@@ -271,6 +265,10 @@ fi
 # / `go test` / `go test -race` in step 4 so a forged receipt cannot
 # bypass a real regression.
 
+if [[ "${RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT:-}" != "1" ]]; then
+  log "LEGACY_RDD_RECEIPT=disabled (compatibility validation is opt-in and never approval)"
+else
+  log "LEGACY_RDD_RECEIPT=enabled (compatibility validation only; not approval)"
 if [[ ! -f "$REVIEW_FILE" ]]; then
   fail "RDD receipt missing at $REVIEW_FILE (expected deterministic local attestation)"
 fi
@@ -303,7 +301,7 @@ if [[ "$rdd_status" != "Status: pass" ]]; then
 fi
 
 # 2. Candidate Commit: <sha>. The precise contract is
-#    CI-merge-aware: when the release-gate workflow exports
+#    CI-merge-aware: when an explicit compatibility caller exports
 #    RELEASE_GATE_PR_HEAD_SHA and RELEASE_GATE_PR_HEAD_PARENT_SHA
 #    (the explicit PR-head context), the SHA must equal one of
 #    those two SHAs (PR tip or its direct parent). Otherwise the
@@ -313,7 +311,7 @@ fi
 #    NOT accepted so rollback safety is preserved. A CI
 #    merge-checkout cannot represent the receipt's PR-tip
 #    context directly (its HEAD is the synthetic merge commit),
-#    so the workflow exports the explicit context; without it,
+#    so the compatibility caller exports the explicit context; without it,
 #    the gate would refuse a receipt authored against the PR
 #    tip. Either source must be a non-empty 40-char hex SHA or
 #    the gate fails closed. R4-006 (local) + R4-013 (CI).
@@ -372,7 +370,7 @@ else
       # HEAD MUST supply the PR_HEAD env. The previous
       # behavior silently fell through to the local HEAD/HEAD~1
       # contract, masking the missing workflow export. R5-NEW-003.
-      log_failure "CI PR context missing: GitHub pull_request merge-checkout detected (CI=true AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents) but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; the workflow's 'Capture PR metadata' step MUST export both before the gate can validate the receipt (R4-014)"
+      log_failure "CI PR context missing: GitHub pull_request merge-checkout detected (CI=true AND GITHUB_EVENT_NAME=pull_request AND HEAD has 2+ parents) but neither RELEASE_GATE_PR_HEAD_SHA nor RELEASE_GATE_PR_HEAD_PARENT_SHA is set; an explicit compatibility caller MUST export both before the opt-in gate can validate the receipt (R4-014)"
       rdd_fail=1
     else
       rdd_head_sha="$(git rev-parse HEAD)"
@@ -482,6 +480,7 @@ if [[ -n "${RELEASE_GATE_PR_HEAD_SHA:-}" || -n "${RELEASE_GATE_PR_HEAD_PARENT_SH
   log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=PR_HEAD_or_PR_HEAD~1"
 else
   log "RDD_RECEIPT=$REVIEW_FILE validated status=pass branch=$CURRENT_BRANCH candidate=HEAD_or_HEAD~1"
+fi
 fi
 
 # ---- 3. line-budget (with exact-branch carve-out + tracked receipt) ----
