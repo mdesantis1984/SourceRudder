@@ -62,10 +62,7 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 		SourcesUsed: []string{"academic"},
 		Cached:      false,
 	}
-	if len(results) == 0 && err != nil {
-		resp.Partial = true
-		resp.Warnings = []string{err.Error()}
-	}
+	recordSearxngError("academic", results, err, resp)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -108,13 +105,13 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 
 	var searxngResp struct {
 		Results []struct {
-			Title       string      `json:"title"`
-			URL         string      `json:"url"`
-			Content     string      `json:"content"`
-			Source      string      `json:"source"`
-			Engine      string      `json:"engine"`
-			ParsedURL   interface{} `json:"parsed_url"`
-			PublishedDate string    `json:"publishedDate"`
+			Title         string      `json:"title"`
+			URL           string      `json:"url"`
+			Content       string      `json:"content"`
+			Source        string      `json:"source"`
+			Engine        string      `json:"engine"`
+			ParsedURL     interface{} `json:"parsed_url"`
+			PublishedDate string      `json:"publishedDate"`
 		} `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
@@ -152,17 +149,8 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 		})
 	}
 
-	if len(results) == 0 && len(searxngResp.UnresponsiveEngines) > 0 {
-		engines := make([]string, 0, len(searxngResp.UnresponsiveEngines))
-		for _, entry := range searxngResp.UnresponsiveEngines {
-			if len(entry) > 0 {
-				if name, ok := entry[0].(string); ok {
-					engines = append(engines, name)
-				}
-			}
-		}
-		observability.Default().RecordSearchDegraded("academic", "unresponsive_engines")
-		return []types.SearchResultItem{}, fmt.Errorf("searxng: %d unresponsive engines %v: timeout", len(engines), engines)
+	if len(searxngResp.UnresponsiveEngines) > 0 {
+		return results, newSearxngUnresponsiveError(searxngResp.UnresponsiveEngines)
 	}
 
 	return results, nil
