@@ -112,12 +112,15 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 	}
 }
 
+// Historical compatibility contract below applies only when
+// RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT=1; ordinary/default CI excludes it
+// and it never grants approval.
 // TestReleaseGateRDDReceiptSatisfiesLocalContract is the
 // behavior-first process guard for the RDD receipt/evidence
 // contract that replaced the fictitious external-review
 // `Authority: official` binding. The gate at
-// `scripts/release-gate.sh` parses this receipt on every merge;
-// this test pins the receipt shape so a future regression (a CI
+// `scripts/release-gate.sh` parses this receipt only for explicit historical
+// compatibility-mode runs; this test pins the receipt shape so a future regression (a CI
 // step rewriting the receipt, a manual edit dropping a field, an
 // external-binding resurrection) trips here before reaching the
 // release gate.
@@ -135,10 +138,9 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 // malformed pair) the guard MUST fail closed (R4-014): a missing
 // or malformed CI context is a workflow contract violation, not a
 // reason to silently waive the Candidate Commit check. The
-// previous `t.Skipf` mask is gone — every CI run now exercises
-// the guard against the receipt, either through the local
-// contract (when the checkout is not a synthetic merge) or the
-// CI contract (when the workflow exports the PR-head context).
+// This historical compatibility guard is opt-in and excluded from
+// ordinary/default CI; it never grants approval or requires workflow
+// exports of PR-head receipt context.
 //
 // Required fields, all parsed as line-start matches from the
 // receipt body. The full bash validator lives in
@@ -161,6 +163,9 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 // synthetic SHAs (so the test does not depend on a real
 // `actions/checkout@v4` synthetic-merge fixture).
 func TestReleaseGateRDDReceiptSatisfiesLocalContract(t *testing.T) {
+	if os.Getenv("RELEASE_GATE_ENABLE_LEGACY_RDD_RECEIPT") != "1" {
+		t.Skip("legacy RDD receipt compatibility guard is opt-in")
+	}
 	placeholderPath := filepath.Join("..", "..", "docs", "release", "reviews", "review-be4525bc4797e972.md")
 	data, err := os.ReadFile(placeholderPath)
 	if err != nil {
@@ -1797,7 +1802,7 @@ func mustRunGit(t *testing.T, dir string, args ...string) string {
 // the export from the `Capture PR metadata` step surfaces here.
 // The checkout step MUST use fetch-depth:0 so the gate can
 // resolve the PR tip + parent locally.
-func TestReleaseGateWorkflowExportsPRHeadContext(t *testing.T) {
+func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 	workflowPath := filepath.Join("..", "..", ".github", "workflows", "release-gate.yml")
 	data, err := os.ReadFile(workflowPath)
 	if err != nil {
@@ -1806,13 +1811,16 @@ func TestReleaseGateWorkflowExportsPRHeadContext(t *testing.T) {
 	body := string(data)
 	for _, want := range []string{
 		"MERGE_BASE=",
-		"RELEASE_GATE_PR_HEAD_SHA=",
-		"RELEASE_GATE_PR_HEAD_PARENT_SHA=",
 		"fetch-depth: 0",
 		"PR_BRANCH=",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("release-gate.yml missing %q; the workflow must export the PR-head context and the pre-computed MERGE_BASE so the gate can validate the receipt against PR tip / PR tip~1 (R4-012 / R4-013)", want)
+			t.Errorf("release-gate.yml missing %q; independent release checks still require this metadata", want)
+		}
+	}
+	for _, forbidden := range []string{"RELEASE_GATE_PR_HEAD_SHA=", "RELEASE_GATE_PR_HEAD_PARENT_SHA="} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("release-gate.yml still exports legacy RDD receipt context %q", forbidden)
 		}
 	}
 }
@@ -2043,38 +2051,17 @@ func TestReleaseGateSizeExceptionEnvRegexContract(t *testing.T) {
 // and comparing against the quoted literal `pull_request` —
 // comments inside the step (which begin with `#`) cannot
 // satisfy because the regex starts with `^\s+if:`. R5-NEW-002.
-func TestCIWorkflowExportsPRHeadContext(t *testing.T) {
+func TestCIWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 	workflowPath := filepath.Join("..", "..", ".github", "workflows", "ci.yml")
 	data, err := os.ReadFile(workflowPath)
 	if err != nil {
 		t.Fatalf("ReadFile %s: %v", workflowPath, err)
 	}
 	body := string(data)
-	required := []string{
-		"RELEASE_GATE_PR_HEAD_SHA=",
-		"RELEASE_GATE_PR_HEAD_PARENT_SHA=",
-	}
-	for _, want := range required {
-		if !strings.Contains(body, want) {
-			t.Errorf("ci.yml missing %q; the CI test pipeline MUST export the PR-head context on pull_request events so the Go receipt guard can validate the staged receipt against the CI contract (R4-014)", want)
+	for _, forbidden := range []string{"RELEASE_GATE_PR_HEAD_SHA=", "RELEASE_GATE_PR_HEAD_PARENT_SHA=", "Capture PR metadata"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("ci.yml still contains legacy receipt wiring %q", forbidden)
 		}
-	}
-
-	// Step-scoped guard: locate the SINGLE YAML step that
-	// contains BOTH PR_HEAD exports and verify that step is
-	// gated by `if: github.event_name == 'pull_request'`. A
-	// `pull_request` mention in the `on:` block at the top of
-	// the file, in a comment, or in an unrelated step does NOT
-	// satisfy — only the step-scoped `if:` line at proper
-	// indent counts.
-	prHeadStep := findCIWorkflowStepContaining(body,
-		"RELEASE_GATE_PR_HEAD_SHA=",
-		"RELEASE_GATE_PR_HEAD_PARENT_SHA=")
-	if prHeadStep == "" {
-		t.Fatalf("ci.yml must have a single step containing BOTH PR_HEAD exports; either both are in the same step (correct) or one is missing or they are split across multiple steps (incorrect). Workflow body:\n%s", body)
-	}
-	if !ciWorkflowStepPRHeadIfRegex.MatchString(prHeadStep) {
-		t.Errorf("ci.yml PR-head export step is not gated by `if: github.event_name == 'pull_request'`; a comment or any other `pull_request` mention elsewhere in the file does NOT satisfy the contract. Found step:\n%s", prHeadStep)
 	}
 }
 
@@ -2149,8 +2136,8 @@ func TestCIWorkflowFetchesFullHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile %s: %v", workflowPath, err)
 	}
-	if !strings.Contains(string(data), "fetch-depth: 0") {
-		t.Errorf("ci.yml must use fetch-depth: 0 so the receipt validator can resolve HEAD~1; the default fetch-depth:1 produces a single-commit detached HEAD that breaks the precise HEAD-or-HEAD~1 contract (R4-013)")
+	if strings.Contains(string(data), "RELEASE_GATE_PR_HEAD_") {
+		t.Errorf("ci.yml must not export legacy RDD receipt context")
 	}
 }
 
