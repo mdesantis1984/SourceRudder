@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible bug for causal and root-cause clustering.
+title: "[Bug]: "
+labels:
+  - bug
+  - "status:needs-review"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide reproducible, evidence-based details so maintainers can group this report with the correct causal cluster.
+
+        Redact credentials, local absolute paths, hostnames, private addresses, and private project names. Do not include secrets or raw environment dumps.
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: Describe what happened, including the visible result and any relevant error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: List the smallest reliable sequence of steps that reproduces the behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the behavior that should have occurred.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Verification evidence
+      description: Include safe logs, test output, screenshots, or other evidence that verifies the report. Redact sensitive data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: root_cause
+    attributes:
+      label: Suspected root-cause cluster
+      description: Optional hypothesis only. If known, identify the likely causal cluster or subsystem; do not present an unverified cause as fact.
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and affected surfaces
+      description: Identify affected commands, APIs, workflows, platforms, versions, or other relevant surfaces without sharing private environment details.
+    validations:
+      required: true
