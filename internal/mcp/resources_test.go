@@ -13,8 +13,8 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/auth"
 	"github.com/thiscloud/ia-buscar/internal/cache"
 	"github.com/thiscloud/ia-buscar/internal/connectors"
-	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/fetch"
+	"github.com/thiscloud/ia-buscar/internal/memory"
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
@@ -143,7 +143,7 @@ func TestAgentGuideCoversWireContractContent(t *testing.T) {
 		// Stable SearchResponse fields.
 		"results", "strategy", "partial", "warnings", "errors", "cached",
 		// Distinguishing healthy empty vs degraded vs unconfigured.
-		"healthy", "degradado", "local_index_unavailable", "official_doc_web_fallback", "reddit_unconfigured",
+		"healthy", "degradado", "local_index_unavailable", "official_doc_web_fallback", "searxng_reddit_index",
 		// Specialized tool limitations.
 		"search_doc_oficial", "search_local_index",
 		// Output shapes for each family.

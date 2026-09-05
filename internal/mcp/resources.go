@@ -62,7 +62,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 - search_local_index — NO redirige a búsqueda web. Mientras no haya un proveedor real de índice local configurado, devuelve strategy="local_index_unavailable", results=[] y un warning local_index_unavailable. No lo confundas con un resultado vacío real: es una señal de "esta tool no está wired todavía".
 - search_github, search_github_pr, search_github_issue — endpoints de GitHub. search_github_pr y search_github_issue leen filters.state ("open" / "closed") para reducir el resultado.
 - search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_youtube, search_images — conectores dedicados a un proveedor.
-- search_reddit — Reddit API. Esta entrega es anonymous-only: IA_Buscar no soporta OAuth ni tokens de portador. Cuando Reddit rechaza un pedido anónimo con 401/403, la respuesta devuelve strategy="reddit_unconfigured" con un warning que menciona REDDIT_USER_AGENT (Reddit requiere un User-Agent único y descriptivo por despliegue).
+- search_reddit — posts públicos de Reddit indexados por el SearXNG local. Agrega la restricción site:reddit.com, acepta solo URLs de hilos públicos y devuelve strategy="searxng_reddit_index". Un fallo de SearXNG devuelve partial=true con warnings; un resultado 200 vacío es un resultado vacío real.
 
 ## 3. Input schema estable para tools de búsqueda
 
@@ -84,7 +84,7 @@ timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran
 |------------|--------------------|-------------|
 | query      | string             | El query que recibió el server. |
 | results    | SearchResultItem[] | SIEMPRE un array (nunca null, nunca ausente), aunque esté vacío. Cada elemento es SearchResultItem. |
-| strategy   | string, opcional   | Backend concreto que respondió: "searxng", "reddit", "official_doc_web_fallback", "local_index_unavailable", "reddit_unconfigured". Te dice si la tool habló con un proveedor real. |
+| strategy   | string, opcional   | Backend concreto que respondió: "searxng", "searxng_reddit_index", "official_doc_web_fallback", "local_index_unavailable". Te dice si la tool habló con un proveedor real. |
 | cached     | bool, opcional     | true si la respuesta vino del caché en proceso. |
 | partial    | bool, opcional     | true cuando hubo degradación upstream (timeouts, 5xx, 429). Distingue "el upstream nos dio una respuesta incompleta" de "todo OK". |
 | warnings   | string[], opcional | Lista de advertencias accionables (configuración, intent del planner, etc.). |
@@ -96,9 +96,9 @@ summary, keyFindings, sourcesUsed, confidence siguen presentes para compatibilid
 
 | Caso                                 | results | strategy                              | partial | errors | Notas |
 |--------------------------------------|---------|---------------------------------------|----------|--------|-------|
-| healthy empty (resultado vacío sano) | []      | "searxng", "reddit", "npm", etc.      | false    | []     | El upstream respondió 200 con cero items. No es degradación. |
+| healthy empty (resultado vacío sano) | []      | "searxng", "searxng_reddit_index", "npm", etc.      | false    | []     | El upstream respondió 200 con cero items. No es degradación. |
 | Upstream degradado (timeouts, 5xx)   | []      | nombre del conector                   | true     | [err]  | Hubo un error de transporte o HTTP >= 400 no recuperable. |
-| Unconfigured (local_index, reddit)   | []      | "local_index_unavailable", "reddit_unconfigured" | false    | [tag]  | La tool no habló con ningún proveedor real. |
+| Unconfigured (local_index)           | []      | "local_index_unavailable" | false    | [tag]  | La tool no habló con ningún proveedor real. |
 | Fallback explícito (doc_oficial)     | [items] | "official_doc_web_fallback"           | false    | []     | Los resultados vienen del fallback web, no de docs oficiales. |
 
 Regla práctica: si strategy empieza por "unavailable" o "unconfigured", la tool no habló con ningún proveedor real — no generes contenido a partir de sus resultados.
@@ -216,14 +216,15 @@ Política de retry: SOLO 429 y 502-504 más timeouts del transporte se reintenta
 
 SSRF: el motor resuelve A/AAAA en cada hop (target inicial Y cada redirect), rechaza el hop si ALGUNA dirección cae en rango no público (loopback, RFC1918, link-local, CGNAT, multicast, reservados), y diala solo a la IP aprobada preservando el Host header y TLS ServerName. Rebinding entre validación y dial queda bloqueado porque la IP se fija en Transport.DialContext.
 
-Reddit es anonymous-only: sin OAuth, sin client_id/secret. La estrategia reddit_unconfigured se emite cuando Reddit rechaza con 401/403.
+search_reddit no llama a la API de Reddit: consulta el SearXNG configurado para descubrir posts públicos ya indexados. La estrategia searxng_reddit_index identifica este backend.
 
 ## 11. Versionado
 
-El contrato SearchResponse y los nombres de tools están congelados en esta rama. Cambios incompatibles requieren bump mayor del servidor y un changelog explícito en el README. Los IDs de estrategia ("reddit_unconfigured", "local_index_unavailable", "official_doc_web_fallback") también son estables — puedes hacer pattern matching sobre ellos.
+El contrato SearchResponse y los nombres de tools están congelados en esta rama. Cambios incompatibles requieren bump mayor del servidor y un changelog explícito en el README. Los IDs de estrategia ("searxng_reddit_index", "local_index_unavailable", "official_doc_web_fallback") también son estables — puedes hacer pattern matching sobre ellos.
 
 ## 12. Changelog
 
+- **1.3.0 release candidate** — search_reddit discovers public Reddit posts indexed by the configured SearXNG service and returns the stable ` + "`" + `searxng_reddit_index` + "`" + ` strategy. The SearchResponse schema is unchanged; deprecated Reddit user-agent and base-URL CLI options are no-ops retained for compatibility. This candidate has local Docker QA evidence only and is not deployed.
 - **1.2.0** — Anonymous-only Reddit (sin OAuth, sin client_id/secret), release gate ejecutable con carve-out por nombre exacto de rama, fetch engine con outcomes explícitos (success / blocked-target / blocked-redirect / too-many-redirects / timeout / transport-error / http-error / non-transient-failure / transient-failure-retried-exhausted), degradación centralizada vía recordDegraded, cache key incluye TimeRange.
 `
 

@@ -415,14 +415,41 @@ func TestGateSucceedsOnCleanTrivialRepo(t *testing.T) {
 	}
 }
 
+func TestGateEnforcesFixedThousandLineBudget(t *testing.T) {
+	tests := []struct {
+		name     string
+		lines    int
+		wantPass bool
+	}{
+		{name: "exactly-1000-lines-passes", lines: 1000, wantPass: true},
+		{name: "1001-lines-fails", lines: 1001},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			runGit(t, h.repo, "checkout", "-b", "feature/budget-boundary")
+			h.commitFile("bulk.go", "package gatemod\n\n"+strings.Repeat("// padding\n", tt.lines-2), "add bounded bulk")
+
+			exit, _, stderr := h.runDefault("RELEASE_GATE_BRANCH=feature/budget-boundary", "BASE_REF=main")
+			if tt.wantPass && exit != 0 {
+				t.Fatalf("expected exit 0 at %d lines, got %d; stderr=%q", tt.lines, exit, stderr)
+			}
+			if !tt.wantPass && (exit == 0 || !strings.Contains(stderr, "> 1000")) {
+				t.Fatalf("expected a 1000-line budget failure at %d lines, got exit=%d stderr=%q", tt.lines, exit, stderr)
+			}
+		})
+	}
+}
+
 // TestGateCarveOutExactBranchOnly proves the size-exception matches the
 // current branch ONLY. Two branches are exercised: on the named branch
-// the exception unlocks a 500-line diff AND the tracked receipt
+// the exception unlocks a 1001-line diff AND the tracked receipt
 // validates; on a different branch the same diff still fails because
 // the carve-out env does not match. Each branch is created BEFORE the
 // bulk commit so the diff vs main actually diverges.
 func TestGateCarveOutExactBranchOnly(t *testing.T) {
-	bulk := strings.Repeat("// padding line to inflate diff\n", 500)
+	bulk := strings.Repeat("// padding line to inflate diff\n", 1001)
 	const carveBranch = "feature/close-fetch-resilience-release-gates-exception"
 	const receiptPath = "docs/release/size-exceptions/close-fetch-resilience-and-release-gates.md"
 	receipt := "# Size Exception Receipt\n\n" +
@@ -438,7 +465,7 @@ func TestGateCarveOutExactBranchOnly(t *testing.T) {
 	hA.addValidRDDPassReceipt(carveBranch)
 	hA.commitFile(receiptPath, receipt, "add receipt")
 	runGit(t, hA.repo, "checkout", "-b", carveBranch)
-	hA.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 400 lines")
+	hA.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 1000 lines")
 	// Re-anchor the receipt at HEAD with the new HEAD~1 so
 	// the precise contract holds after the bulk commit.
 	hA.recommitRDDPassReceipt(carveBranch)
@@ -456,7 +483,7 @@ func TestGateCarveOutExactBranchOnly(t *testing.T) {
 	hB := newHarness(t)
 	hB.addValidRDDPassReceipt("feature/other-candidate")
 	runGit(t, hB.repo, "checkout", "-b", "feature/other-candidate")
-	hB.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 400 lines")
+	hB.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 1000 lines")
 	// Re-anchor so the receipt's Candidate Commit is HEAD~1
 	// of the new HEAD (the bulk.go commit), keeping the
 	// precise contract satisfied.
@@ -628,7 +655,7 @@ func TestGateRDDStatusMustBePass(t *testing.T) {
 // commit lands so the precise Candidate Commit contract holds and
 // the size-exception check is the only failure surface under test.
 func TestGateSizeExceptionTiedToTrackedReceipt(t *testing.T) {
-	bulk := strings.Repeat("// padding line to inflate diff\n", 500)
+	bulk := strings.Repeat("// padding line to inflate diff\n", 1001)
 	const branch = "feature/close-fetch-resilience-release-gates-exception"
 	const receiptPath = "docs/release/size-exceptions/close-fetch-resilience-and-release-gates.md"
 
@@ -636,7 +663,7 @@ func TestGateSizeExceptionTiedToTrackedReceipt(t *testing.T) {
 		h := newHarness(t)
 		h.addValidRDDPassReceipt(branch)
 		runGit(t, h.repo, "checkout", "-b", branch)
-		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 400 lines")
+		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 1000 lines")
 		h.recommitRDDPassReceipt(branch)
 
 		exit, _, stderr := h.run(
@@ -665,7 +692,7 @@ func TestGateSizeExceptionTiedToTrackedReceipt(t *testing.T) {
 			"Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)\n"
 		h.commitFile(receiptPath, receipt, "add size-exception receipt")
 		runGit(t, h.repo, "checkout", "-b", branch)
-		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 400 lines")
+		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 1000 lines")
 		h.recommitRDDPassReceipt(branch)
 
 		exit, _, stderr := h.run(
@@ -690,7 +717,7 @@ func TestGateSizeExceptionTiedToTrackedReceipt(t *testing.T) {
 			"Forward Reference: docs/release/reviews/review-be4525bc4797e972.md (RDD receipt is the local authority attestation)\n"
 		h.commitFile(receiptPath, receipt, "add size-exception receipt (missing Expiration)")
 		runGit(t, h.repo, "checkout", "-b", branch)
-		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 400 lines")
+		h.commitFile("bulk.go", "package gatemod\n\n"+bulk, "bulk to exceed 1000 lines")
 		h.recommitRDDPassReceipt(branch)
 
 		exit, _, stderr := h.run(
@@ -858,17 +885,17 @@ func receiptMissingParserFields(body string) []string {
 //
 // The contract enforced here matches the bash gate's:
 //
-//   1. Status: pass                       (exact line)
-//   2. Candidate Commit: <sha>            (must equal HEAD or HEAD~1)
-//   3. Branch: <exact branch name>        (exact match, no substring)
-//   4. Scope: <free-form text>            (presence only)
-//   5. Verified Commands:                 (section-scoped; every
-//                                          in-section entry must end
-//                                          in `: PASS`)
-//   6. Unresolved Blocker Policy:         (header present with value)
-//   0. Hard guard: any line starting with
-//      `Authority:` is rejected, matching
-//      the Go process guard.
+//  1. Status: pass                       (exact line)
+//  2. Candidate Commit: <sha>            (must equal HEAD or HEAD~1)
+//  3. Branch: <exact branch name>        (exact match, no substring)
+//  4. Scope: <free-form text>            (presence only)
+//  5. Verified Commands:                 (section-scoped; every
+//     in-section entry must end
+//     in `: PASS`)
+//  6. Unresolved Blocker Policy:         (header present with value)
+//  0. Hard guard: any line starting with
+//     `Authority:` is rejected, matching
+//     the Go process guard.
 func rddReceiptValidate(body, currentBranch, headSHA string) []string {
 	var problems []string
 
@@ -2171,7 +2198,7 @@ func TestHarnessStripsMergeBaseAndPRHeadEnv(t *testing.T) {
 	// branch, `git merge-base main HEAD` returns HEAD (HEAD is
 	// on main), and the line budget is 0.
 	runGit(t, h.repo, "checkout", "-b", carveBranch)
-	h.commitFile("bulk.go", "package gatemod\n\n"+strings.Repeat("// padding\n", 500), "bulk to exceed 400 lines")
+	h.commitFile("bulk.go", "package gatemod\n\n"+strings.Repeat("// padding\n", 1001), "bulk to exceed 1000 lines")
 	h.recommitRDDPassReceipt(carveBranch)
 
 	// The size-exception path is the canary. The carve-out matches

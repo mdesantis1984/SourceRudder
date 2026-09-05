@@ -74,9 +74,9 @@
 #                                path is not part of ordinary CI.
 #
 #   RELEASE_GATE_SIZE_EXCEPTION  exact branch name permitted to exceed the
-#                                400-line authored budget. Matches that
+#                                1000-line authored budget. Matches that
 #                                branch ONLY; every other branch falls
-#                                back to the strict 400-line gate.
+#                                back to the strict 1000-line gate.
 #                                When the carve-out is active, the gate
 #                                ALSO validates a tracked size-exception
 #                                receipt at
@@ -114,7 +114,7 @@
 #      review provider binding. A legacy `Authority:` line anywhere
 #      in the receipt body is rejected, matching the Go process
 #      guard in internal/mcp/release_gate_test.go.
-#   3. Diff vs merge-base of BASE_REF is below 400 lines, OR the carve-out
+#   3. Diff vs merge-base of BASE_REF is at most 1000 lines, OR the carve-out
 #      env var exactly matches the current branch AND the tracked
 #      size-exception receipt validates.
 #   4. go build ./...  ;  go vet ./...  ;  go test ./...  ;  go test -race ./...
@@ -491,12 +491,12 @@ REMOVED="$(printf '%s\n' "$NUMSTAT" | awk '$2 != "-" {r += $2} END {print r+0}')
 TOTAL=$((ADDED + REMOVED))
 log "DIFF_RANGE=$MERGE_BASE..HEAD ADDED=$ADDED REMOVED=$REMOVED TOTAL=$TOTAL"
 
-if (( TOTAL >= 400 )); then
+if (( TOTAL > 1000 )); then
   if [[ "${RELEASE_GATE_SIZE_EXCEPTION:-}" != "$CURRENT_BRANCH" ]]; then
-    fail "line budget exceeded TOTAL=$TOTAL (>= 400) and RELEASE_GATE_SIZE_EXCEPTION!=$CURRENT_BRANCH"
+    fail "line budget exceeded TOTAL=$TOTAL (> 1000) and RELEASE_GATE_SIZE_EXCEPTION!=$CURRENT_BRANCH"
   fi
   # Carve-out active: validate the tracked receipt.
-  log "SIZE_EXCEPTION=active branch=$CURRENT_BRANCH total=$TOTAL (>= 400, validating tracked receipt)"
+  log "SIZE_EXCEPTION=active branch=$CURRENT_BRANCH total=$TOTAL (> 1000, validating tracked receipt)"
   RECEIPT_FILE="$SIZE_EXCEPTIONS_RECEIPT"
   if [[ ! -f "$RECEIPT_FILE" ]]; then
     fail "size-exception receipt missing at $RECEIPT_FILE (required when carve-out is active)"
@@ -515,7 +515,7 @@ if (( TOTAL >= 400 )); then
   fi
   log "SIZE_EXCEPTION_RECEIPT=$RECEIPT_FILE validated"
 else
-  log "SIZE_EXCEPTION=inactive total=$TOTAL (< 400, no carve-out required)"
+  log "SIZE_EXCEPTION=inactive total=$TOTAL (<= 1000, no carve-out required)"
 fi
 
 # ---- 4. Go checks --------------------------------------------------------

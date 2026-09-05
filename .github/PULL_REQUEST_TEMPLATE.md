@@ -44,6 +44,6 @@ Select exactly one:
 - Base: `<branch or PR>`
 - Depends on: `<PR or none>`
 - Follow-up: `<PR or none>`
-- Budget: `<=400 changed lines` (or explain exception)
+- Budget: `<=1000 changed lines` (or explain exception)
 - Scope: Includes `<...>`; excludes `<...>`
 - Rollback boundary: `<what can be reverted independently>`

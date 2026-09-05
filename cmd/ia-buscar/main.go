@@ -23,14 +23,16 @@ import (
 )
 
 var (
-	transport       = flag.String("transport", "stdio", "Transport mode: stdio or http")
-	httpAddr        = flag.String("http-addr", ":8080", "HTTP server address")
-	searxngURL      = flag.String("searxng-url", "http://10.0.0.201:8080", "SearxNG URL")
-	cacheTTL        = flag.Int("cache-ttl", 300, "In-process cache TTL in seconds")
-	fetchTimeoutMs  = flag.Int("fetch-timeout-ms", 30000, "Fetch timeout in milliseconds")
-	authKey         = flag.String("auth-key", "", "API key for authentication (optional)")
-	redditUserAgent = flag.String("reddit-user-agent", envDefault("REDDIT_USER_AGENT", "ia-buscar/1.2 (anonymous-only)"), "User-Agent header for Reddit requests; deployment-specific UA is required by Reddit's anonymous API contract")
-	redditBaseURL   = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", "https://www.reddit.com"), "Reddit base URL; always anonymous against the public www.reddit.com JSON endpoint")
+	transport      = flag.String("transport", "stdio", "Transport mode: stdio or http")
+	httpAddr       = flag.String("http-addr", ":8080", "HTTP server address")
+	searxngURL     = flag.String("searxng-url", "http://10.0.0.201:8080", "SearxNG URL")
+	cacheTTL       = flag.Int("cache-ttl", 300, "In-process cache TTL in seconds")
+	fetchTimeoutMs = flag.Int("fetch-timeout-ms", 30000, "Fetch timeout in milliseconds")
+	authKey        = flag.String("auth-key", "", "API key for authentication (optional)")
+	// Deprecated no-op compatibility flags. Reddit search is now served only by
+	// the configured SearXNG instance and never calls Reddit's API directly.
+	redditUserAgent = flag.String("reddit-user-agent", envDefault("REDDIT_USER_AGENT", ""), "Deprecated no-op; search_reddit uses SearXNG")
+	redditBaseURL   = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", ""), "Deprecated no-op; search_reddit uses SearXNG")
 	memoryURL       = flag.String("memory-url", "", "IA_Recuerdo (memory) base URL; when empty, the integration is disabled and Save is a no-op (env: MEMORY_URL)")
 	memoryAPIKey    = flag.String("memory-apikey", "", "IA_Recuerdo (memory) bearer key; travels as Authorization: Bearer (env: MEMORY_APIKEY)")
 )
@@ -166,10 +168,7 @@ func main() {
 	cm.Register(connectors.NewPyPIConnector(cacheSvc))
 	cm.Register(connectors.NewDockerHubConnector(cacheSvc))
 	cm.Register(connectors.NewAcademicConnector(*searxngURL, cacheSvc))
-	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{
-		BaseURL:   *redditBaseURL,
-		UserAgent: *redditUserAgent,
-	}, cacheSvc))
+	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{SearxngURL: *searxngURL}, cacheSvc))
 	cm.Register(connectors.NewYouTubeConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc))

@@ -76,11 +76,7 @@ func TestSearxNGConnectorsEmitDegradationMetric(t *testing.T) {
 	}
 }
 
-// TestRedditEmitDegradationMetric_AnonymousBlocked covers the
-// anonymous-blocked metric path: when Reddit returns 403 to an
-// anonymous request, the metric must tick with source="reddit" and
-// kind="anonymous_blocked" (not the old "unconfigured" label).
-func TestRedditEmitDegradationMetric_AnonymousBlocked(t *testing.T) {
+func TestRedditEmitDegradationMetric_SearxngForbidden(t *testing.T) {
 	met := observability.New()
 	observability.SetDefault(met)
 
@@ -89,20 +85,17 @@ func TestRedditEmitDegradationMetric_AnonymousBlocked(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewRedditConnector(RedditConfig{BaseURL: srv.URL, UserAgent: "ia-buscar/test"}, cache.NewService(60))
-	_, err := c.Search(context.Background(), &types.SearchRequest{Query: "metric-reddit-anonymous-blocked"})
+	c := NewRedditConnector(RedditConfig{SearxngURL: srv.URL}, cache.NewService(60))
+	_, err := c.Search(context.Background(), &types.SearchRequest{Query: "metric-reddit-searxng-forbidden"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := metricValue(t, met.Handler(), "reddit", "anonymous_blocked"); got != 1 {
-		t.Errorf("expected reddit/anonymous_blocked counter = 1, got %d", got)
+	if got := metricValue(t, met.Handler(), "reddit", "searxng"); got != 0 {
+		t.Errorf("HTTP failures use recordSearxngError and must not add a duplicate reddit/searxng metric, got %d", got)
 	}
 }
 
-// TestRedditEmitDegradationMetric_RateLimited covers the
-// rate_limited metric path: 429 from Reddit must tick the metric
-// without classifying as reddit_unconfigured.
-func TestRedditEmitDegradationMetric_RateLimited(t *testing.T) {
+func TestRedditEmitDegradationMetric_SearxngRateLimited(t *testing.T) {
 	met := observability.New()
 	observability.SetDefault(met)
 
@@ -111,36 +104,23 @@ func TestRedditEmitDegradationMetric_RateLimited(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewRedditConnector(RedditConfig{BaseURL: srv.URL, UserAgent: "ia-buscar/test"}, cache.NewService(60))
+	c := NewRedditConnector(RedditConfig{SearxngURL: srv.URL}, cache.NewService(60))
 	_, err := c.Search(context.Background(), &types.SearchRequest{Query: "metric-reddit-429"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := metricValue(t, met.Handler(), "reddit", "rate_limited"); got != 1 {
-		t.Errorf("expected reddit/rate_limited counter = 1, got %d", got)
-	}
-	if got := metricValue(t, met.Handler(), "reddit", "unconfigured"); got != 0 {
-		t.Errorf("expected reddit/unconfigured counter to stay at 0 on 429, got %d", got)
+	if got := metricValue(t, met.Handler(), "reddit", "searxng"); got != 0 {
+		t.Errorf("HTTP failures use recordSearxngError and must not add a duplicate reddit/searxng metric, got %d", got)
 	}
 }
 
-// TestRedditUserAgentConfigSeamIsExposed locks in the configuration
-// seam: the anonymous-only Reddit connector exposes User-Agent via
-// its constructor rather than as a hard-coded literal.
-// NewRedditConnector(cfg, cache) is the canonical signature; a future
-// regression that hard-codes the User-Agent OR re-introduces OAuth
-// fields will fail this test.
-func TestRedditUserAgentConfigSeamIsExposed(t *testing.T) {
+func TestRedditSearxngConfigSeamIsExposed(t *testing.T) {
 	cfg := RedditConfig{
-		BaseURL:   "https://example.test",
-		UserAgent: "ia-buscar/test-config-seam",
+		SearxngURL: "https://example.test",
 	}
 	c := NewRedditConnector(cfg, cache.NewService(60))
-	if c.cfg.UserAgent != cfg.UserAgent {
-		t.Errorf("User-Agent was not retained on the connector: want %q got %q", cfg.UserAgent, c.cfg.UserAgent)
-	}
-	if c.cfg.BaseURL != cfg.BaseURL {
-		t.Errorf("BaseURL was not retained on the connector: want %q got %q", cfg.BaseURL, c.cfg.BaseURL)
+	if c.cfg.SearxngURL != cfg.SearxngURL {
+		t.Errorf("SearXNG URL was not retained on the connector: want %q got %q", cfg.SearxngURL, c.cfg.SearxngURL)
 	}
 }
 
