@@ -19,6 +19,8 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
+const serverVersion = "1.3.0"
+
 type Server struct {
 	transport         string
 	httpAddr          string
@@ -148,7 +150,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
 		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
-		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: Reddit API, anonymous-only (sin OAuth). Si Reddit rechaza un pedido anónimo con 401/403, devuelve strategy=\"reddit_unconfigured\" y un warning que menciona REDDIT_USER_AGENT.", InputSchema: searchInputSchema()},
+		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: SearXNG local, con posts públicos indexados y filtro reddit.com. Devuelve strategy=\"searxng_reddit_index\"; los fallos del proveedor se señalan como partial con warnings.", InputSchema: searchInputSchema()},
 		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
 		{Name: "search_images", Description: "Diagramas, capturas o material visual. Backend: SearxNG (bing images).", InputSchema: searchInputSchema()},
 		{Name: "fetch_url", Description: "Obtener el HTML de una URL con extracción básica de title y metadata. Usa fetch_and_extract si necesitas el contenido principal. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
@@ -221,8 +223,8 @@ func fetchAndExtractInputSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"url": map[string]interface{}{"type": "string", "description": "URL http(s) a obtener (requerido). SSRF bloquea localhost, *.local y privadas."},
 			"mode": map[string]interface{}{
-				"type": []string{"string", "null"},
-				"enum": []string{"", "auto", "article", "documentation", "raw"},
+				"type":        []string{"string", "null"},
+				"enum":        []string{"", "auto", "article", "documentation", "raw"},
 				"description": "Modo de extracción del contenido principal. auto=detección por defecto; article=texto de artículo; documentation=texto de página de docs; raw=HTML sin extracción.",
 			},
 		},
@@ -259,16 +261,16 @@ func searchResultItemSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"title":       map[string]interface{}{"type": "string", "description": "Título del resultado"},
-			"url":         map[string]interface{}{"type": "string", "description": "URL canónica del resultado"},
-			"snippet":     map[string]interface{}{"type": "string", "description": "Resumen o extracto"},
-			"source":      map[string]interface{}{"type": "string", "description": "Nombre del conector que produjo el item"},
-			"type":        map[string]interface{}{"type": "string", "description": "Tipo de resultado (ej: 'web', 'article')"},
-			"score":       map[string]interface{}{"type": "number", "description": "Puntuación de relevancia"},
-			"publishedAt": map[string]interface{}{"type": "string", "format": "date-time", "description": "Fecha de publicación en RFC3339"},
-			"author":      map[string]interface{}{"type": "string", "description": "Autor"},
-			"tags":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Etiquetas"},
-			"citationId":  map[string]interface{}{"type": "string", "description": "Identificador estable entre invocaciones (lo produce el conector)"},
+			"title":        map[string]interface{}{"type": "string", "description": "Título del resultado"},
+			"url":          map[string]interface{}{"type": "string", "description": "URL canónica del resultado"},
+			"snippet":      map[string]interface{}{"type": "string", "description": "Resumen o extracto"},
+			"source":       map[string]interface{}{"type": "string", "description": "Nombre del conector que produjo el item"},
+			"type":         map[string]interface{}{"type": "string", "description": "Tipo de resultado (ej: 'web', 'article')"},
+			"score":        map[string]interface{}{"type": "number", "description": "Puntuación de relevancia"},
+			"publishedAt":  map[string]interface{}{"type": "string", "format": "date-time", "description": "Fecha de publicación en RFC3339"},
+			"author":       map[string]interface{}{"type": "string", "description": "Autor"},
+			"tags":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Etiquetas"},
+			"citationId":   map[string]interface{}{"type": "string", "description": "Identificador estable entre invocaciones (lo produce el conector)"},
 			"canonicalUrl": map[string]interface{}{"type": "string", "description": "URL canónica normalizada (la produce el connector manager)"},
 		},
 		"required": []string{"title", "url", "source"},
@@ -344,8 +346,8 @@ func (s *Server) Resources() []Resource {
 
 func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
-		ClientID          string `json:"clientId"`
-		ProtocolVersion   string `json:"protocolVersion"`
+		ClientID           string                 `json:"clientId"`
+		ProtocolVersion    string                 `json:"protocolVersion"`
 		ClientCapabilities map[string]interface{} `json:"clientCapabilities"`
 	}
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -354,12 +356,12 @@ func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (
 	if req.ClientID == "" {
 		req.ClientID = "anonymous-" + uuid.New().String()[:8]
 	}
-sessionID := uuid.New().String()
+	sessionID := uuid.New().String()
 	return map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]interface{}{
-			"name": "ia-buscar",
-			"version": "1.2.0",
+			"name":    "ia-buscar",
+			"version": serverVersion,
 		},
 		"capabilities": map[string]interface{}{
 			"tools":     map[string]interface{}{"listChanged": false},
@@ -463,7 +465,7 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      interface{}     `json:"id"`
-	Method  string           `json:"method"`
+	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
@@ -495,8 +497,8 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		if !isNotification {
 			resp = map[string]interface{}{
 				"jsonrpc": "2.0",
-				"id":     req.ID,
-				"error":  map[string]interface{}{"code": -32601, "message": fmt.Sprintf("method not found: %s", req.Method)},
+				"id":      req.ID,
+				"error":   map[string]interface{}{"code": -32601, "message": fmt.Sprintf("method not found: %s", req.Method)},
 			}
 		}
 	}
@@ -514,7 +516,7 @@ func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {
 		"id":      id,
 		"result": map[string]interface{}{
 			"protocolVersion": "2024-11-05",
-			"serverInfo":     map[string]interface{}{"name": "ia-buscar", "version": "1.2.0"},
+			"serverInfo":      map[string]interface{}{"name": "ia-buscar", "version": serverVersion},
 			"capabilities": map[string]interface{}{
 				"tools":     map[string]interface{}{"listChanged": false},
 				"resources": map[string]interface{}{"listChanged": false, "subscribe": false},

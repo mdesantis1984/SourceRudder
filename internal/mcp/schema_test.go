@@ -246,19 +246,19 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 
 	// (tool, required substrings in description, lower-case)
 	want := map[string][]string{
-		"search_web":             {"searxng", "strategy"},
-		"search_news":            {"searxng"},
-		"search_doc_oficial":     {"official_doc_web_fallback"},
-		"search_local_index":     {"local_index_unavailable"},
-		"search_reddit":          {"reddit_unconfigured", "REDDIT_USER_AGENT"},
-		"search_github":          {"github"},
-		"search_github_pr":       {"github", "filters.state"},
-		"search_github_issue":    {"github", "filters.state"},
-		"fetch_and_extract":      {"auto", "article", "documentation", "raw"},
-		"summarize_results":      {"summary", "keyFindings"},
-		"deep_research":          {"themes"},
-		"compare_sources":        {"consensus", "divergences"},
-		"get_current_date":       {"utc"},
+		"search_web":          {"searxng", "strategy"},
+		"search_news":         {"searxng"},
+		"search_doc_oficial":  {"official_doc_web_fallback"},
+		"search_local_index":  {"local_index_unavailable"},
+		"search_reddit":       {"searxng", "searxng_reddit_index"},
+		"search_github":       {"github"},
+		"search_github_pr":    {"github", "filters.state"},
+		"search_github_issue": {"github", "filters.state"},
+		"fetch_and_extract":   {"auto", "article", "documentation", "raw"},
+		"summarize_results":   {"summary", "keyFindings"},
+		"deep_research":       {"themes"},
+		"compare_sources":     {"consensus", "divergences"},
+		"get_current_date":    {"utc"},
 	}
 
 	for _, tool := range s.toolsRegistry {
@@ -357,15 +357,15 @@ func TestResourcesAccessorExposesRegistry(t *testing.T) {
 // type (e.g. a func) would break this test before they ship.
 func TestSchemasRoundTripAsValidJSON(t *testing.T) {
 	schemas := map[string]map[string]interface{}{
-		"search":               searchInputSchema(),
-		"fetchURL":             fetchURLInputSchema(),
-		"fetchAndExtract":      fetchAndExtractInputSchema(),
-		"url":                  urlInputSchema(),
-		"urlList":              urlListInputSchema(),
-		"synthesis":            synthesisInputSchema(),
-		"githubFilters":        githubFiltersInputSchema(),
-		"empty":                emptyInputSchema(),
-		"searchResultItem":     searchResultItemSchema(),
+		"search":           searchInputSchema(),
+		"fetchURL":         fetchURLInputSchema(),
+		"fetchAndExtract":  fetchAndExtractInputSchema(),
+		"url":              urlInputSchema(),
+		"urlList":          urlListInputSchema(),
+		"synthesis":        synthesisInputSchema(),
+		"githubFilters":    githubFiltersInputSchema(),
+		"empty":            emptyInputSchema(),
+		"searchResultItem": searchResultItemSchema(),
 	}
 	for name, schema := range schemas {
 		t.Run(name, func(t *testing.T) {

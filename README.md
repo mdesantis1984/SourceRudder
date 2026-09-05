@@ -46,10 +46,29 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
 | `search_pypi` | PyPI | Paquetes Python |
 | `search_docker_hub` | Docker Hub | Imágenes Docker |
 | `search_academic` | SearxNG (arxiv) | Papers y referencias académicas |
-| `search_reddit` | Reddit | Discusiones y experiencias reales |
+| `search_reddit` | SearXNG indexed web | Public Reddit posts discovered through SearXNG |
 | `search_youtube` | SearxNG (youtube,brave) | Tutoriales y demos |
 | `search_images` | SearxNG (bing images) | Diagramas y material visual |
 | `search_news` | SearxNG (qwant news) | Noticias y actualidad |
+
+---
+
+## Reddit indexed-web capability (1.3.0 release candidate)
+
+`search_reddit` searches public Reddit posts already indexed by the configured
+SearXNG service. It adds a `site:reddit.com` restriction, accepts public post
+URLs, deduplicates canonical posts, and returns the stable
+`strategy: "searxng_reddit_index"` value.
+
+The MCP `SearchResponse` schema and tool input schema are unchanged. SearXNG
+provider failures are surfaced as `partial: true` with warnings; an empty 200
+response is a valid empty result. Indexed coverage, provider availability, and
+freshness are not guaranteed.
+
+`--reddit-user-agent`, `--reddit-base-url`, `REDDIT_USER_AGENT`, and
+`REDDIT_BASE_URL` remain accepted as deprecated compatibility no-ops;
+`search_reddit` does not call Reddit's API directly. This 1.3.0 candidate has
+local Docker QA evidence only: it is not deployed or published.
 
 ---
 
@@ -103,22 +122,15 @@ Servicio MCP de búsqueda, extracción, síntesis y citación para agentes IA lo
     "ttl_seconds": 300
   },
   "reddit": {
-    "user_agent": "ia-buscar/<deployment> (by /r/ThisCloudServices)",
-    "client_id": "<reddit-oauth-app-client-id>",
-    "client_secret": "<reddit-oauth-app-client-secret>",
-    "base_url": "https://oauth.reddit.com"
+    "discovery": "public Reddit posts indexed by the configured SearXNG service"
   }
 }
 ```
 
-Los flags equivalentes en la línea de comando son `--reddit-user-agent` y
-`--reddit-base-url`, con variables de entorno `REDDIT_USER_AGENT` y
-`REDDIT_BASE_URL`. Esta entrega es **anonymous-only**: no hay OAuth, ni
-client_id, ni client_secret, ni bearer-token. Cuando Reddit rechaza un
-pedido anónimo con 401/403, la respuesta devuelve
-`strategy: "reddit_unconfigured"` y un warning accionable que menciona
-`REDDIT_USER_AGENT` (Reddit exige un User-Agent único y descriptivo por
-despliegue).
+The deprecated compatibility options `--reddit-user-agent` and
+`--reddit-base-url`, and their `REDDIT_USER_AGENT` and `REDDIT_BASE_URL`
+environment variables, are accepted but have no effect. No Reddit OAuth,
+credentials, or direct Reddit API request is used.
 
 ---
 
@@ -139,7 +151,7 @@ CT-BUSCAR (Go Service :8080)
   │   ├─ search_pypi ──> PyPI
   │   ├─ search_docker_hub ──> Docker Hub
   │   ├─ search_academic ──> SearxNG (arxiv)
-  │   ├─ search_reddit ──> Reddit API
+  │   ├─ search_reddit ──> SearXNG indexed public Reddit posts
   │   ├─ search_youtube ──> SearxNG (youtube,brave)
   │   ├─ search_images ──> SearxNG (bing images)
   │   └─ search_news ──> SearxNG (qwant news)
@@ -166,6 +178,19 @@ de la request actual.
 ---
 
 ## Changelog
+
+### 1.3.0 — 2026-09-05 (release candidate; not deployed)
+- **Reddit indexed web**: `search_reddit` now discovers public Reddit posts
+  through the configured SearXNG service, filters to canonical public post
+  URLs, and returns `strategy="searxng_reddit_index"`. The MCP search schema
+  is unchanged. SearXNG failures return `partial=true` with warnings; a 200
+  empty result remains healthy. This does not guarantee complete Reddit
+  coverage, provider availability, or index freshness.
+- **Compatibility**: `--reddit-user-agent`, `--reddit-base-url`,
+  `REDDIT_USER_AGENT`, and `REDDIT_BASE_URL` are deprecated no-ops retained
+  for CLI compatibility. Reddit's API is not called directly.
+- **Release state**: local Docker QA evidence was obtained for this candidate;
+  no deployment, tag, publication, or release was created.
 
 ### 1.5.0 — 2026-08-21 (`restore-runtime-contract`)
 - **Contrato restaurado**: 28 tools MCP registradas (25 → 28). Se

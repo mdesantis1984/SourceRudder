@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,20 +16,13 @@ import (
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
 
-// RedditConfig is the seam Reddit itself requires from operators. This
-// delivery is anonymous-only: there is no OAuth client ID, no client
-// secret, and no bearer-token plumbing. The connector hits the public
-// Reddit JSON endpoint with a deployment-specific User-Agent and
-// surfaces a degraded SearchResponse when Reddit rejects the
-// anonymous request.
-//
-// If a future delivery reintroduces authenticated Reddit access, the
-// change MUST come with a fresh SDD cycle that updates the spec,
-// design, and tests in this file. Anonymous-only is the current
-// public contract.
+// RedditConfig selects the SearXNG endpoint that indexes public Reddit posts.
+// BaseURL is retained only as a compatibility seam for in-package tests and is
+// treated as a SearXNG URL; it is never used to call Reddit's API.
 type RedditConfig struct {
-	BaseURL   string
-	UserAgent string
+	SearxngURL string
+	BaseURL    string
+	UserAgent  string
 }
 
 type RedditConnector struct {
@@ -37,19 +31,9 @@ type RedditConnector struct {
 	client   *http.Client
 }
 
-// NewRedditConnector builds a Reddit connector from the anonymous-only
-// configuration seam. Callers should always supply a non-empty
-// UserAgent: Reddit's API rules require "a unique and descriptive
-// User-Agent". The default below is deliberately generic; deployments
-// that want production-grade compliance MUST override it via
-// REDDIT_USER_AGENT or --reddit-user-agent.
+// NewRedditConnector searches public Reddit posts indexed by the locally
+// configured SearXNG instance. It does not call Reddit's API.
 func NewRedditConnector(cfg RedditConfig, cacheSvc *cache.Service) *RedditConnector {
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://www.reddit.com"
-	}
-	if cfg.UserAgent == "" {
-		cfg.UserAgent = "ia-buscar/1.2 (anonymous-only)"
-	}
 	return &RedditConnector{
 		cfg:      cfg,
 		cacheSvc: cacheSvc,
@@ -69,9 +53,7 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	// Anonymous-only: cache key depends ONLY on (query, TimeRange).
-	// It MUST NOT vary by User-Agent or by any per-deployment credential.
-	cacheKey := cache.GenerateCacheKey(query, []string{"reddit"}, req.TimeRange)
+	cacheKey := cache.GenerateCacheKey(query, redditCacheDimensions(maxResults, req), req.TimeRange)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[reddit] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -84,7 +66,7 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		}
 	}
 
-	results, err, degraded := c.doRedditRequest(ctx, query, maxResults)
+	results, err := c.searchSearxng(ctx, query, maxResults, req)
 	if err != nil {
 		log.Printf("[reddit] search error: %v", err)
 	}
@@ -93,19 +75,10 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		Query:       req.Query,
 		Results:     results,
 		SourcesUsed: []string{"reddit"},
-		Strategy:    "reddit_anonymous",
+		Strategy:    "searxng_reddit_index",
 		Cached:      false,
 	}
-
-	switch {
-	case degraded != nil:
-		resp.Strategy = "reddit_unconfigured"
-		resp.Warnings = []string{"reddit_unconfigured: " + degraded.Error()}
-		resp.Errors = []string{"reddit_unconfigured"}
-	case err != nil:
-		resp.Partial = true
-		resp.Warnings = []string{err.Error()}
-	}
+	recordSearxngError("reddit", results, err, resp)
 
 	if resp.Results == nil {
 		resp.Results = []types.SearchResultItem{}
@@ -113,117 +86,149 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 
 	c.cacheResults(ctx, cacheKey, resp)
 
-	log.Printf("[reddit] search completed: query=%s, results=%d, degraded=%v, latency=%v", query, len(results), degraded != nil, time.Since(start))
+	log.Printf("[reddit] search completed: query=%s, results=%d, latency=%v", query, len(results), time.Since(start))
 	return resp, nil
 }
 
-// doRedditRequest runs the upstream anonymous call. It returns:
-//
-//	results: parsed SearchResultItem list (always non-nil; empty on error)
-//	err:     non-nil when the request was attempted but failed
-//	degraded: non-nil when the request was NOT attempted because
-//	          Reddit's anonymous policy rejected it.
-//
-// The two error signals are mutually exclusive: a single call returns
-// at most one of err or degraded.
-func (c *RedditConnector) doRedditRequest(ctx context.Context, query string, maxResults int) ([]types.SearchResultItem, error, error) {
-	apiURL := fmt.Sprintf("%s/search.json?q=%s&limit=%d",
-		c.cfg.BaseURL, url.QueryEscape(query), maxResults)
+func (c *RedditConnector) searchSearxng(ctx context.Context, query string, maxResults int, searchReq *types.SearchRequest) ([]types.SearchResultItem, error) {
+	params := url.Values{}
+	params.Set("q", query+" site:reddit.com")
+	params.Set("format", "json")
+	params.Set("engines", "")
+	if searchReq.Language != "" {
+		params.Set("language", searchReq.Language)
+	}
+	if searchReq.TimeRange != "" {
+		params.Set("time_range", searchReq.TimeRange)
+	}
+	if searchReq.SafeSearch {
+		params.Set("safesearch", "1")
+	}
 
+	searxngURL := c.cfg.SearxngURL
+	if searxngURL == "" {
+		searxngURL = c.cfg.BaseURL
+	}
+	apiURL := searxngURL + "/search?" + params.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return []types.SearchResultItem{}, fmt.Errorf("reddit transport build failed: %w", err), nil
+		return []types.SearchResultItem{}, fmt.Errorf("searxng request build failed: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.cfg.UserAgent)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		observability.Default().RecordSearchDegraded("reddit", "transport")
-		return []types.SearchResultItem{}, fmt.Errorf("reddit transport failure: %w", err), nil
+		return []types.SearchResultItem{}, fmt.Errorf("searxng request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		// 401/403 from www.reddit.com on anonymous requests is the
-		// expected policy outcome. Surface an explicit, actionable
-		// degraded message instead of pretending the search happened.
-		observability.Default().RecordSearchDegraded("reddit", "anonymous_blocked")
-		return []types.SearchResultItem{}, nil, fmt.Errorf(
-			"reddit rejected the anonymous request with status %d; "+
-				"IA_Buscar ships anonymous-only — set REDDIT_USER_AGENT to a deployment-specific string (Reddit requires a unique User-Agent) and consider rotating the egress IP if the block is consistent",
-			resp.StatusCode,
-		)
-	case http.StatusTooManyRequests:
-		observability.Default().RecordSearchDegraded("reddit", "rate_limited")
-		return []types.SearchResultItem{}, fmt.Errorf("reddit API error: 429 (rate limited)"), nil
-	}
-
 	if resp.StatusCode >= 400 {
-		if resp.StatusCode >= 500 {
-			observability.Default().RecordSearchDegraded("reddit", "upstream_http_5xx")
-		} else {
-			observability.Default().RecordSearchDegraded("reddit", "upstream_http_4xx")
-		}
-		return []types.SearchResultItem{}, fmt.Errorf("reddit API error: %d", resp.StatusCode), nil
+		return []types.SearchResultItem{}, fmt.Errorf("searxng error: %d", resp.StatusCode)
 	}
 
 	var data struct {
-		Data struct {
-			Children []struct {
-				Data struct {
-					Title       string  `json:"title"`
-					URL         string  `json:"url"`
-					Subreddit   string  `json:"subreddit"`
-					Score       int     `json:"score"`
-					NumComments int     `json:"num_comments"`
-					Author      string  `json:"author"`
-					CreatedUTC  float64 `json:"created_utc"`
-					SelfText    string  `json:"selftext"`
-					Permalink   string  `json:"permalink"`
-				} `json:"data"`
-			} `json:"children"`
-		} `json:"data"`
+		Results []struct {
+			Title         string      `json:"title"`
+			URL           string      `json:"url"`
+			Content       string      `json:"content"`
+			Engine        string      `json:"engine"`
+			PublishedDate string      `json:"publishedDate"`
+			ParsedURL     interface{} `json:"parsed_url"`
+		} `json:"results"`
+		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return []types.SearchResultItem{}, err, nil
+		return []types.SearchResultItem{}, fmt.Errorf("searxng decode error: %w", err)
 	}
 
-	results := make([]types.SearchResultItem, 0, len(data.Data.Children))
-	for _, child := range data.Data.Children {
-		item := child.Data
-
-		snippet := item.SelfText
-		if snippet == "" {
-			snippet = fmt.Sprintf("Score: %d | Comments: %d", item.Score, item.NumComments)
-		} else if len(snippet) > 300 {
-			snippet = snippet[:300] + "..."
+	results := make([]types.SearchResultItem, 0, maxResults)
+	seen := make(map[string]struct{})
+	for _, item := range data.Results {
+		if len(results) >= maxResults {
+			break
 		}
-
-		postURL := item.URL
-		if !strings.HasPrefix(postURL, "http") {
-			postURL = "https://reddit.com" + item.Permalink
+		canonicalURL, ok := canonicalRedditPostURL(item.URL)
+		if !ok {
+			continue
 		}
-
-		publishedAt := time.Unix(int64(item.CreatedUTC), 0)
-
+		if _, ok := seen[canonicalURL]; ok {
+			continue
+		}
+		seen[canonicalURL] = struct{}{}
+		engine := item.Engine
+		if engine == "" {
+			engine = "searxng"
+		}
 		results = append(results, types.SearchResultItem{
-			Title:       item.Title,
-			URL:         postURL,
-			Snippet:     snippet,
-			Source:      "reddit",
-			Type:        "post",
-			Score:       float64(item.Score),
-			PublishedAt: &publishedAt,
-			Author:      item.Author,
-			Tags:        []string{item.Subreddit},
-			CitationID:  "reddit:" + item.Permalink,
+			Title:        item.Title,
+			URL:          canonicalURL,
+			Snippet:      item.Content,
+			Source:       engine,
+			Type:         "post",
+			Score:        float64(maxResults - len(results)),
+			PublishedAt:  parsePublishedDate(item.PublishedDate),
+			CitationID:   "reddit:" + canonicalURL,
+			CanonicalURL: canonicalURL,
 		})
 	}
 
-	return results, nil, nil
+	if len(data.UnresponsiveEngines) > 0 {
+		return results, newSearxngUnresponsiveError(data.UnresponsiveEngines)
+	}
+	return results, nil
+}
+
+func canonicalRedditPostURL(rawURL string) (string, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" {
+		return "", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "reddit.com", "www.reddit.com", "old.reddit.com", "np.reddit.com":
+	default:
+		return "", false
+	}
+	if strings.Contains(parsed.EscapedPath(), "%") {
+		return "", false
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) < 4 || !strings.EqualFold(segments[0], "r") || segments[1] == "" || !strings.EqualFold(segments[2], "comments") || !isBase36ID(segments[3]) {
+		return "", false
+	}
+	return "https://www.reddit.com/r/" + segments[1] + "/comments/" + strings.ToLower(segments[3]) + "/", true
+}
+
+func isBase36ID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			if char < 'a' || char > 'z' {
+				if char < 'A' || char > 'Z' {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func redditCacheDimensions(maxResults int, req *types.SearchRequest) []string {
+	dimensions := []string{"reddit_searxng", fmt.Sprintf("limit=%d", maxResults), "language=" + req.Language, fmt.Sprintf("safesearch=%t", req.SafeSearch)}
+	keys := make([]string, 0, len(req.Filters))
+	for key := range req.Filters {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		dimensions = append(dimensions, "filter="+key+"="+req.Filters[key])
+	}
+	return dimensions
 }
 
 func (c *RedditConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
