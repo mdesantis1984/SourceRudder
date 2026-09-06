@@ -37,6 +37,51 @@ func searxngImagesDegraded() string {
 	return `{"results":[],"unresponsive_engines":[["bing images"]]}`
 }
 
+func TestSearxngUnresponsiveErrorPreservesReasons(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries [][]interface{}
+		want    string
+	}{
+		{
+			name: "heterogeneous reasons survive in upstream order",
+			entries: [][]interface{}{
+				{"brave", "too many requests"},
+				{"google", "Suspended: CAPTCHA"},
+				{"duckduckgo", "Suspended: timeout"},
+			},
+			want: "searxng: 3 unresponsive engines [brave: too many requests, google: Suspended: CAPTCHA, duckduckgo: Suspended: timeout]",
+		},
+		{
+			name: "no timeout is fabricated",
+			entries: [][]interface{}{
+				{"brave", "too many requests"},
+				{"google", "Suspended: CAPTCHA"},
+			},
+			want: "searxng: 2 unresponsive engines [brave: too many requests, google: Suspended: CAPTCHA]",
+		},
+		{
+			name: "malformed data uses deterministic fallbacks",
+			entries: [][]interface{}{
+				{"missing reason"},
+				{"", ""},
+				{42, "too many requests"},
+				{},
+				{"nil reason", nil},
+			},
+			want: "searxng: 5 unresponsive engines [missing reason: unknown reason, unknown engine: unknown reason, unknown engine: too many requests, unknown engine: unknown reason, nil reason: unknown reason]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newSearxngUnresponsiveError(tt.entries).Error(); got != tt.want {
+				t.Fatalf("unexpected warning:\n got: %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestImagesConnectorBodyWithin50ms is the Phase 3.1 RED gate. The
 // images connector currently sleeps 500ms before its HTTP call; this
 // test asserts the request path runs in under 50ms. It must fail
@@ -82,9 +127,9 @@ func TestNewsConnectorBodyWithin50ms(t *testing.T) {
 
 // TestRecordDegradedIncrementsMetricAndSetsPartial is the Phase 3.3
 // RED gate. The helper must do THREE things atomically:
-//   1. increment ia_buscar_search_degraded_total{source, kind}
-//   2. set resp.Partial = true
-//   3. append err.Error() to resp.Warnings
+//  1. increment ia_buscar_search_degraded_total{source, kind}
+//  2. set resp.Partial = true
+//  3. append err.Error() to resp.Warnings
 func TestRecordDegradedIncrementsMetricAndSetsPartial(t *testing.T) {
 	m := observability.New()
 	observability.SetDefault(m)

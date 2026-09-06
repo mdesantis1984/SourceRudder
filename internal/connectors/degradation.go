@@ -2,29 +2,46 @@ package connectors
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
 
 type searxngUnresponsiveError struct {
-	engines []string
+	engines []searxngUnresponsiveEngine
 }
 
 func (e *searxngUnresponsiveError) Error() string {
-	return fmt.Sprintf("searxng: %d unresponsive engines %v: timeout", len(e.engines), e.engines)
+	engines := make([]string, 0, len(e.engines))
+	for _, engine := range e.engines {
+		engines = append(engines, fmt.Sprintf("%s: %s", engine.name, engine.reason))
+	}
+	return fmt.Sprintf("searxng: %d unresponsive engines [%s]", len(e.engines), strings.Join(engines, ", "))
 }
 
 func newSearxngUnresponsiveError(entries [][]interface{}) error {
-	engines := make([]string, 0, len(entries))
+	engines := make([]searxngUnresponsiveEngine, 0, len(entries))
 	for _, entry := range entries {
+		engine := searxngUnresponsiveEngine{name: "unknown engine", reason: "unknown reason"}
 		if len(entry) > 0 {
-			if name, ok := entry[0].(string); ok {
-				engines = append(engines, name)
+			if name, ok := entry[0].(string); ok && name != "" {
+				engine.name = name
 			}
 		}
+		if len(entry) > 1 {
+			if reason, ok := entry[1].(string); ok && reason != "" {
+				engine.reason = reason
+			}
+		}
+		engines = append(engines, engine)
 	}
 	return &searxngUnresponsiveError{engines: engines}
+}
+
+type searxngUnresponsiveEngine struct {
+	name   string
+	reason string
 }
 
 func recordSearxngError(source string, results []types.SearchResultItem, err error, resp *types.SearchResponse) {
