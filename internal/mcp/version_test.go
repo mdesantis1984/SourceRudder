@@ -12,11 +12,11 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-// TestServerVersionIs_1_3_1 verifies that the MCP server advertises version
-// "1.3.1" in BOTH initialize paths (the JSON-RPC
+// TestServerVersionIs_1_3_2 verifies that the MCP server advertises version
+// "1.3.2" in BOTH initialize paths (the JSON-RPC
 // HTTP handleMCPInitialize and the typed HandleInitialize). A bump in
 // one path but not the other would silently desync MCP clients.
-func TestServerVersionIs_1_3_1(t *testing.T) {
+func TestServerVersionIs_1_3_2(t *testing.T) {
 	cacheSvc := cache.NewService(60)
 	cm := search.NewConnectorManager(cacheSvc)
 	srv := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 60, 5000, nil, synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
@@ -27,14 +27,14 @@ func TestServerVersionIs_1_3_1(t *testing.T) {
 		t.Fatalf("HandleInitialize: %v", err)
 	}
 	got := versionFromInitialize(resp)
-	if got != "1.3.1" {
-		t.Fatalf("HandleInitialize reports version %q; want \"1.3.1\"", got)
+	if got != "1.3.2" {
+		t.Fatalf("HandleInitialize reports version %q; want \"1.3.2\"", got)
 	}
 
 	httpInit := srv.handleMCPInitialize(1)
 	gotHTTP := versionFromInitialize(httpInit["result"])
-	if gotHTTP != "1.3.1" {
-		t.Fatalf("handleMCPInitialize reports version %q; want \"1.3.1\"", gotHTTP)
+	if gotHTTP != "1.3.2" {
+		t.Fatalf("handleMCPInitialize reports version %q; want \"1.3.2\"", gotHTTP)
 	}
 }
 

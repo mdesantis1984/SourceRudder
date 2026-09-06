@@ -179,6 +179,12 @@ de la request actual.
 
 ## Changelog
 
+### 1.3.2 — unreleased bugfix candidate
+- **Indexed image previews**: `search_images` retains a valid, distinct
+  `thumbnail_src` as a labeled indexed preview alongside the selected image and
+  source page when it fits bounded context. This does not restore original-image
+  access or change the MCP schema, result URL, ranking, cache, or network behavior.
+
 ### 1.3.1 — unreleased bugfix candidate
 - **Image result selection**: `search_images` validates image URLs, preserves
   bounded upstream context, forwards SearXNG search options, and ranks

@@ -19,7 +19,7 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-const serverVersion = "1.3.1"
+const serverVersion = "1.3.2"
 
 type Server struct {
 	transport         string
