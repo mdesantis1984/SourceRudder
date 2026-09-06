@@ -29,6 +29,7 @@ type ImagesConnector struct {
 
 const (
 	maxImageSnippetRunes  = 320
+	maxImageContextRunes  = 600
 	searxngHighlightStart = '\uE000'
 	searxngHighlightEnd   = '\uE001'
 )
@@ -188,7 +189,7 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 		results = append(results, types.SearchResultItem{
 			Title:        candidate.item.Title,
 			URL:          candidate.imageURL,
-			Snippet:      imageSnippet(candidate.item.Content, candidate.item.URL, candidate.item.Source, engine),
+			Snippet:      imageSnippet(candidate.item.Content, candidate.item.URL, candidate.item.ThumbnailSrc, candidate.imageURL, candidate.item.Source, engine),
 			Source:       engine,
 			Type:         "image",
 			Score:        float64(maxResults - outputIndex),
@@ -324,21 +325,52 @@ func boundedImageContent(content string) string {
 	return string(runes[:maxImageSnippetRunes-1]) + "…"
 }
 
-func imageSnippet(content, pageURL, source, engine string) string {
+func imageSnippet(content, pageURL, thumbnailURL, selectedImageURL, source, engine string) string {
 	description := boundedImageContent(content)
+	contexts := make([]string, 0, 2)
 	if isHTTPURL(pageURL) {
-		context := "Source page: " + pageURL
+		contexts = append(contexts, "Source page: "+pageURL)
+	}
+	if previewURL, ok := canonicalImageURL(thumbnailURL); ok && previewURL != selectedImageURL {
+		contexts = append(contexts, "Indexed preview: "+previewURL)
+	}
+
+	context := boundedImageContext(contexts)
+	if context != "" {
 		if description == "" {
 			return context
 		}
-		if len([]rune(description))+len([]rune(context))+3 <= 600 {
-			return description + " | " + context
+		remaining := maxImageContextRunes - len([]rune(context)) - len([]rune(" | "))
+		if remaining > 0 {
+			return boundedImageRunes(description, remaining) + " | " + context
 		}
 	}
 	if description != "" {
 		return description
 	}
 	return fmt.Sprintf("Source: %s | Engine: %s", source, engine)
+}
+
+func boundedImageContext(contexts []string) string {
+	context := strings.Join(contexts, " | ")
+	if len([]rune(context)) <= maxImageContextRunes {
+		return context
+	}
+	if len(contexts) == 2 && len([]rune(contexts[0])) <= maxImageContextRunes {
+		return contexts[0]
+	}
+	return ""
+}
+
+func boundedImageRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit == 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func imageCitationID(canonicalURL string) string {

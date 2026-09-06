@@ -134,9 +134,10 @@ func TestImagesConnectorRejectsUnsafeURLsAndCanonicalizesDeduplicatedImages(t *t
 
 func TestImagesConnectorPreservesBoundedContextAndCachedPartialMetadata(t *testing.T) {
 	content := "Solar eclipse photograph with a visible corona. " + strings.Repeat("irrelevant caption ", 100)
+	previewURL := "https://preview.example.test/eclipse.png?signature=indexed-preview"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeImagesFixture(t, w, []map[string]interface{}{{
-			"title": "Solar Eclipse Photograph", "url": "https://example.test/eclipse", "img_src": "https://cdn.example.test/eclipse.jpg", "content": content, "source": "example", "engine": "bing",
+			"title": "Solar Eclipse Photograph", "url": "https://example.test/eclipse", "img_src": "https://cdn.example.test/eclipse.jpg", "thumbnail_src": previewURL, "content": content, "source": "example", "engine": "bing",
 		}}, [][]interface{}{{"slow-engine", "timeout"}})
 	}))
 	defer srv.Close()
@@ -151,11 +152,61 @@ func TestImagesConnectorPreservesBoundedContextAndCachedPartialMetadata(t *testi
 	if err != nil {
 		t.Fatalf("cached Search() error = %v", err)
 	}
-	if len(first.Results) != 1 || !strings.Contains(first.Results[0].Snippet, "visible corona") || !strings.Contains(first.Results[0].Snippet, "https://example.test/eclipse") || len([]rune(first.Results[0].Snippet)) > 600 {
+	if len(first.Results) != 1 || !strings.Contains(first.Results[0].Snippet, "visible corona") || !strings.Contains(first.Results[0].Snippet, "https://example.test/eclipse") || !strings.Contains(first.Results[0].Snippet, "Indexed preview: "+previewURL) || len([]rune(first.Results[0].Snippet)) > 600 {
 		t.Fatalf("first result did not preserve bounded context: %#v", first.Results)
 	}
 	if !cached.Cached || !cached.Partial || len(cached.Warnings) != 1 || !strings.Contains(cached.Warnings[0], "slow-engine") || cached.Results[0].Snippet != first.Results[0].Snippet {
 		t.Fatalf("cached partial response lost context or degradation metadata: %#v", cached)
+	}
+}
+
+func TestImagesConnectorOmitsInvalidOrDuplicateIndexedPreview(t *testing.T) {
+	tests := []struct {
+		name      string
+		thumbnail string
+	}{
+		{name: "userinfo preview", thumbnail: "https://user@preview.example.test/image.png"},
+		{name: "malformed preview", thumbnail: "://preview.example.test/image.png"},
+		{name: "non HTTP preview", thumbnail: "ftp://preview.example.test/image.png"},
+		{name: "duplicate preview", thumbnail: "https://cdn.example.test/image.jpg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := imagesFixtureServer(t, []map[string]interface{}{{
+				"title": "Indexed Diagram", "url": "https://source.example.test/diagram", "img_src": "https://cdn.example.test/image.jpg", "thumbnail_src": tt.thumbnail,
+			}})
+			defer srv.Close()
+
+			resp, err := NewImagesConnector(srv.URL, cache.NewService(60)).Search(context.Background(), &types.SearchRequest{Query: "indexed diagram", MaxResults: 1})
+			if err != nil {
+				t.Fatalf("Search() error = %v", err)
+			}
+			if len(resp.Results) != 1 || strings.Contains(resp.Results[0].Snippet, "Indexed preview:") {
+				t.Fatalf("indexed preview handling = %#v", resp.Results)
+			}
+		})
+	}
+}
+
+func TestImagesConnectorBoundsContextWithoutCuttingURLs(t *testing.T) {
+	sourceURL := "https://source.example.test/" + strings.Repeat("s", 180)
+	previewURL := "https://preview.example.test/image.png?signature=" + strings.Repeat("p", 180)
+	srv := imagesFixtureServer(t, []map[string]interface{}{{
+		"title": "Bounded Diagram", "url": sourceURL, "img_src": "https://cdn.example.test/image.jpg", "thumbnail_src": previewURL, "content": strings.Repeat("descriptive context ", 80),
+	}})
+	defer srv.Close()
+
+	resp, err := NewImagesConnector(srv.URL, cache.NewService(60)).Search(context.Background(), &types.SearchRequest{Query: "bounded diagram", MaxResults: 1})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("results = %#v", resp.Results)
+	}
+	snippet := resp.Results[0].Snippet
+	if len([]rune(snippet)) > 600 || !strings.Contains(snippet, "Source page: "+sourceURL) || !strings.Contains(snippet, "Indexed preview: "+previewURL) {
+		t.Fatalf("bounded context cut or omitted a URL: %q", snippet)
 	}
 }
 
