@@ -19,7 +19,7 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-const serverVersion = "1.3.0"
+const serverVersion = "1.3.1"
 
 type Server struct {
 	transport         string
@@ -152,7 +152,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
 		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: SearXNG local, con posts públicos indexados y filtro reddit.com. Devuelve strategy=\"searxng_reddit_index\"; los fallos del proveedor se señalan como partial con warnings.", InputSchema: searchInputSchema()},
 		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
-		{Name: "search_images", Description: "Diagramas, capturas o material visual. Backend: SearxNG (bing images).", InputSchema: searchInputSchema()},
+		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by bounded whole-word lexical hints in title and content before applying maxResults; this does not infer semantic relevance, and partial upstream warnings remain visible.", InputSchema: searchInputSchema()},
 		{Name: "fetch_url", Description: "Obtener el HTML de una URL con extracción básica de title y metadata. Usa fetch_and_extract si necesitas el contenido principal. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},
 		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},

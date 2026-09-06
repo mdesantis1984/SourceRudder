@@ -179,6 +179,14 @@ de la request actual.
 
 ## Changelog
 
+### 1.3.1 — unreleased bugfix candidate
+- **Image result selection**: `search_images` validates image URLs, preserves
+  bounded upstream context, forwards SearXNG search options, and ranks
+  candidates using conservative whole-word lexical hints before applying `maxResults`;
+  this does not infer semantic relevance. Partial upstream
+  warnings remain visible; the MCP schema is unchanged. No tag, deployment,
+  publication, or release was created.
+
 ### 1.3.0 — 2026-09-05 (release candidate; not deployed)
 - **Reddit indexed web**: `search_reddit` now discovers public Reddit posts
   through the configured SearXNG service, filters to canonical public post

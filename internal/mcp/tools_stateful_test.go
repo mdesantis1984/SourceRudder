@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -274,12 +276,19 @@ func TestSearchGitHubPRAppendsToSearchHistory(t *testing.T) {
 	cm.Register(connectors.NewGitHubConnector("", cacheSvc))
 	srv := buildToolsTestServerWithHistoryAndConnectors(t, history, cacheSvc, cm, searxng.URL)
 
-	// Drive the GitHub PR path. With a real GitHub token this would hit
-	// the live API; with no token the connector returns an empty
-	// response with the github source. Either way, the handler path
-	// completes and the Append MUST happen.
+	// The anonymous connector still performs HTTP. Stub the default transport
+	// for this sequential test so it drives the real uncached SearchPR path
+	// without DNS, TLS, or a live GitHub dependency.
+	originalTransport := http.DefaultTransport
+	transport := &githubPRHistoryTransport{t: t}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
 	if _, err := callToolByNameWithCtx(srv, "search_github_pr", map[string]interface{}{"query": "Add HistoryService wiring"}); err != nil {
 		t.Fatalf("search_github_pr: unexpected error: %v", err)
+	}
+	if transport.requests != 1 {
+		t.Fatalf("expected one uncached GitHub request, got %d", transport.requests)
 	}
 
 	res, err := callToolByNameWithCtx(srv, "get_search_history", map[string]interface{}{"limit": 10})
@@ -298,6 +307,29 @@ func TestSearchGitHubPRAppendsToSearchHistory(t *testing.T) {
 	if entry["source"] != "github" {
 		t.Fatalf("expected recorded source=github, got %#v", entry["source"])
 	}
+}
+
+type githubPRHistoryTransport struct {
+	t        *testing.T
+	requests int
+}
+
+func (t *githubPRHistoryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.t.Helper()
+	t.requests++
+	if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "api.github.com" || req.URL.Path != "/search/issues" {
+		t.t.Fatalf("unexpected outbound request: %s %s", req.Method, req.URL)
+	}
+	query := req.URL.Query()
+	if query.Get("q") != "Add HistoryService wiring is:pr" || query.Get("state") != "open" || query.Get("per_page") != "10" {
+		t.t.Fatalf("unexpected GitHub PR query: %q", req.URL.RawQuery)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"items":[]}`)),
+		Request:    req,
+	}, nil
 }
 
 // TestSearchFailureProducesNoHistoryEntry is the second corrective-retry
