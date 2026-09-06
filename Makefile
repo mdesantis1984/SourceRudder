@@ -1,7 +1,7 @@
 .PHONY: build run test clean deps lint release-gate
 
 BINARY=ia-buscar
-VERSION=1.3.0
+VERSION=1.3.1
 GO=go
 
 build:
@@ -32,7 +32,7 @@ fmt:
 # release-image tags the container image with the current commit SHA
 # so the production deployment references an immutable artifact.
 # Operators MUST use this target (not a mutable tag like `:latest` or
-# `:1.3.0`) so a rollback resolves to a known, reviewed image. The
+# `:1.3.1`) so a rollback resolves to a known, reviewed image. The
 # image reference is also written into deploy/kubernetes/deployment.yaml
 # and the systemd unit ExecStartPre placeholders are substituted;
 # commit the result with the release.

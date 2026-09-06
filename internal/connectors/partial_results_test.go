@@ -19,7 +19,7 @@ func TestSearxNGConnectorsPreserveResultsWithUnresponsiveEngines(t *testing.T) {
 		if strings.HasSuffix(r.URL.Query().Get("q"), "academic") {
 			resultURL = "https://arxiv.org/abs/1234"
 		}
-		body := `{"results":[{"title":"kept result","url":"` + resultURL + `","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
+		body := `{"results":[{"title":"kept result","url":"` + resultURL + `","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
 		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
@@ -63,7 +63,7 @@ func TestSearxNGConnectorsPreserveResultsWithUnresponsiveEngines(t *testing.T) {
 }
 
 func TestSearxNGConnectorsPreserveCachedPartialResponses(t *testing.T) {
-	const body = `{"results":[{"title":"kept result","url":"https://www.youtube.com/watch?v=1234","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
+	const body = `{"results":[{"title":"kept result","url":"https://www.youtube.com/watch?v=1234","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		response := body
