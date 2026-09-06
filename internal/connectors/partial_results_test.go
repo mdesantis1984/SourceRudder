@@ -19,7 +19,7 @@ func TestSearxNGConnectorsPreserveResultsWithUnresponsiveEngines(t *testing.T) {
 		if strings.HasSuffix(r.URL.Query().Get("q"), "academic") {
 			resultURL = "https://arxiv.org/abs/1234"
 		}
-		body := `{"results":[{"title":"kept result","url":"` + resultURL + `","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
+		body := `{"results":[{"title":"kept result","url":"` + resultURL + `","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["brave","too many requests"],["google","Suspended: CAPTCHA"],["duckduckgo","Suspended: timeout"]]}`
 		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
@@ -49,8 +49,9 @@ func TestSearxNGConnectorsPreserveResultsWithUnresponsiveEngines(t *testing.T) {
 			if !resp.Partial {
 				t.Fatal("expected Partial=true when an engine is unresponsive")
 			}
-			if len(resp.Warnings) != 1 || !strings.Contains(resp.Warnings[0], "failed-engine") {
-				t.Fatalf("expected warning naming failed-engine, got %#v", resp.Warnings)
+			wantWarning := "searxng: 3 unresponsive engines [brave: too many requests, google: Suspended: CAPTCHA, duckduckgo: Suspended: timeout]"
+			if len(resp.Warnings) != 1 || resp.Warnings[0] != wantWarning {
+				t.Fatalf("expected preserved upstream reasons, got %#v", resp.Warnings)
 			}
 			if len(resp.Errors) != 0 {
 				t.Fatalf("useful partial results must not be total failures: errors=%v", resp.Errors)
@@ -63,7 +64,7 @@ func TestSearxNGConnectorsPreserveResultsWithUnresponsiveEngines(t *testing.T) {
 }
 
 func TestSearxNGConnectorsPreserveCachedPartialResponses(t *testing.T) {
-	const body = `{"results":[{"title":"kept result","url":"https://www.youtube.com/watch?v=1234","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["failed-engine","timeout"]]}`
+	const body = `{"results":[{"title":"kept result","url":"https://www.youtube.com/watch?v=1234","img_src":"https://images.example.test/kept.jpg","content":"snippet","source":"source","engine":"healthy-engine","parsed_url":{"domain":"result.example"}}],"unresponsive_engines":[["brave","too many requests"],["google","Suspended: CAPTCHA"],["duckduckgo","Suspended: timeout"]]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		response := body
@@ -103,7 +104,8 @@ func TestSearxNGConnectorsPreserveCachedPartialResponses(t *testing.T) {
 			if !cached.Cached || !cached.Partial || len(cached.Results) != 1 || cached.Results[0].Title != "kept result" {
 				t.Fatalf("cached response did not preserve result metadata: %#v", cached)
 			}
-			if len(cached.Warnings) != 1 || !strings.Contains(cached.Warnings[0], "failed-engine") {
+			wantWarning := "searxng: 3 unresponsive engines [brave: too many requests, google: Suspended: CAPTCHA, duckduckgo: Suspended: timeout]"
+			if len(cached.Warnings) != 1 || cached.Warnings[0] != wantWarning {
 				t.Fatalf("cached response did not preserve warning: %#v", cached.Warnings)
 			}
 			if len(cached.Errors) != 0 {
