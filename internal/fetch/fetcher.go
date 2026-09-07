@@ -397,6 +397,8 @@ func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]
 		url   string
 	}
 	jobs := make(chan job)
+	pace := time.NewTicker(rateLimiterInterval)
+	defer pace.Stop()
 	var wg sync.WaitGroup
 	workers := maxConcurrentFetches
 	if len(urls) < workers {
@@ -411,7 +413,7 @@ func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]
 				select {
 				case <-ctx.Done():
 					result["error"] = ctx.Err().Error()
-				case <-time.After(rateLimiterInterval):
+				case <-pace.C:
 					if err := s.isAllowedURL(work.url); err != nil {
 						result["error"] = err.Error()
 					} else {

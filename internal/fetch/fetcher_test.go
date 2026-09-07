@@ -251,6 +251,7 @@ func TestCheckLinkStatusBoundsBatchAndPreservesOrder(t *testing.T) {
 	}
 
 	urls := []string{"http://localhost/first", "ftp://example.com/second"}
+	start := time.Now()
 	results, err := f.CheckLinkStatus(context.Background(), urls)
 	if err != nil {
 		t.Fatalf("CheckLinkStatus: %v", err)
@@ -259,6 +260,9 @@ func TestCheckLinkStatusBoundsBatchAndPreservesOrder(t *testing.T) {
 		if results[i]["url"] != urls[i] {
 			t.Fatalf("result %d lost input order: %#v", i, results[i])
 		}
+	}
+	if time.Since(start) < 2*rateLimiterInterval {
+		t.Fatal("link checks were not globally paced")
 	}
 }
 

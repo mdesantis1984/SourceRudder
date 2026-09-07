@@ -167,7 +167,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},
 		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
 		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad (no SSRF) de una URL. Devuelve {url, valid, error}.", InputSchema: urlInputSchema()},
-		{Name: "check_link_status", Description: "Validar un lote de URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
+		{Name: "check_link_status", Description: "Validar hasta 100 URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
 		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
@@ -270,7 +270,7 @@ func urlListInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"urls": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Lista de URLs a validar en paralelo (requerido)."},
+			"urls": map[string]interface{}{"type": "array", "maxItems": 100, "items": map[string]interface{}{"type": "string"}, "description": "Lista de hasta 100 URLs a validar en paralelo (requerido)."},
 		},
 		"required": []string{"urls"},
 	}
