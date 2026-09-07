@@ -58,7 +58,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 
 - search_web — fallback general. Usa SearxNG y respeta language, timeRange, safeSearch.
 - search_news — artículos recientes. Resuelve con SearxNG (categoría news). El planner resuelve timeRange="week" cuando detecta intent "news".
-- search_doc_oficial — NO consulta un índice curado de documentación. Hoy hace fallback a search_web y devuelve strategy="official_doc_web_fallback" con un warning. Si ves ese strategy, sabes que los resultados vinieron de búsqueda web general, no de un índice curado de documentación.
+- search_doc_oficial — resolves Go and SearXNG through the bounded IA-Buscar authoritative registry. Use filters.library to override query inference; filters.version is requested but not verified. Validated results use strategy="official_doc_registry_search". Unknown, ambiguous, failed, or unvalidated requests retain strategy="official_doc_web_fallback" and general web results.
 - search_local_index — NO redirige a búsqueda web. Mientras no haya un proveedor real de índice local configurado, devuelve strategy="local_index_unavailable", results=[] y un warning local_index_unavailable. No lo confundas con un resultado vacío real: es una señal de "esta tool no está wired todavía".
 - search_github, search_github_pr, search_github_issue — endpoints de GitHub. search_github_pr y search_github_issue leen filters.state ("open" / "closed") para reducir el resultado.
 - search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_youtube, search_images — conectores dedicados a un proveedor.
@@ -224,6 +224,7 @@ El contrato SearchResponse y los nombres de tools están congelados en esta rama
 
 ## 12. Changelog
 
+- **1.4.0 unreleased feature candidate** — search_doc_oficial resolves Go and SearXNG through a bounded local registry, restricts SearXNG execution to approved documentation hosts, validates result provenance, and returns ` + "`" + `official_doc_registry_search` + "`" + `. Unknown, ambiguous, failed, or unvalidated requests retain the typed ` + "`" + `official_doc_web_fallback` + "`" + ` path. No tag, deployment, publication, or release was created.
 - **1.3.2 unreleased bugfix candidate** — search_images retains a valid, distinct thumbnail_src as a labeled indexed preview alongside the selected image and source page when bounded context permits. This does not restore original-image access or change the SearchResponse schema, result URL, ranking, cache, or network behavior.
 - **1.3.1 unreleased bugfix candidate** — search_images validates image URLs, preserves bounded upstream context, forwards SearXNG options, and ranks candidates using conservative whole-word lexical hints before applying maxResults; this does not infer semantic relevance. Partial warnings remain visible and the SearchResponse schema is unchanged. No tag, deployment, publication, or release was created.
 - **1.3.0 release candidate** — search_reddit discovers public Reddit posts indexed by the configured SearXNG service and returns the stable ` + "`" + `searxng_reddit_index` + "`" + ` strategy. The SearchResponse schema is unchanged; deprecated Reddit user-agent and base-URL CLI options are no-ops retained for compatibility. This candidate has local Docker QA evidence only and is not deployed.

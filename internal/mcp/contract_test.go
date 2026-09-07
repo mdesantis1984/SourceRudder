@@ -95,54 +95,70 @@ func TestStableEmptyArrayContract(t *testing.T) {
 	}
 }
 
-// TestSearchDocOficialStrategySignal locks item 3.a: when the AI calls
-// search_doc_oficial, the response must explicitly say it used the web
-// fallback (no specialized documentation provider is wired) and must
-// NOT silently claim it queried an official-doc index.
+// TestSearchDocOficialStrategySignal drives the public MCP boundary for a
+// registered library. It must report an authoritative registry-backed result,
+// rather than the generic web fallback that issue #20 fixes.
 func TestSearchDocOficialStrategySignal(t *testing.T) {
 	searxng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"results":[{"title":"docs page","url":"https://example.com/docs","content":"hello"}],"unresponsive_engines":[]}`))
+		_, _ = w.Write([]byte(`{"results":[{"title":"Go documentation","url":"https://go.dev/doc/","content":"hello"}],"unresponsive_engines":[]}`))
 	}))
 	defer searxng.Close()
 
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
-	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
+	webConnector := connectors.NewWebConnector(searxng.URL, cacheSvc)
+	cm.Register(webConnector)
+	cm.Register(connectors.NewOfficialDocsConnector(webConnector))
 	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
 
-	resp, err := s.callToolByName(context.Background(), "search_doc_oficial", []byte(`{"query":"official docs"}`))
+	resp, err := s.callToolByName(context.Background(), "search_doc_oficial", []byte(`{"query":"go documentation"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Strategy != "official_doc_web_fallback" {
-		t.Errorf("expected Strategy=official_doc_web_fallback, got %q", resp.Strategy)
+	if resp.Strategy != "official_doc_registry_search" {
+		t.Errorf("expected Strategy=official_doc_registry_search, got %q", resp.Strategy)
 	}
-	foundWarning := false
-	for _, w := range resp.Warnings {
-		if strings.Contains(w, "official_doc_web_fallback") {
-			foundWarning = true
-			break
-		}
-	}
-	if !foundWarning {
-		t.Errorf("expected a warning naming the official_doc_web_fallback strategy, got %v", resp.Warnings)
-	}
-	// And the search must actually have been issued against the web
-	// connector (SearxNG), not some silent no-op.
 	if len(resp.Results) == 0 {
-		t.Errorf("expected non-empty results from web fallback, got empty")
+		t.Fatal("expected non-empty authoritative result")
+	}
+	if resp.Results[0].URL != "https://go.dev/doc/" {
+		t.Errorf("expected validated Go documentation URL, got %q", resp.Results[0].URL)
+	}
+	if !containsString(resp.Results[0].Tags, "official-documentation") {
+		t.Errorf("expected official-documentation provenance tag, got %v", resp.Results[0].Tags)
+	}
+	if !containsString(resp.SourcesUsed, "official_docs") {
+		t.Errorf("expected official_docs source metadata, got %v", resp.SourcesUsed)
 	}
 
-	// Tool description must be truthful too.
+	cachedResp, err := s.callToolByName(context.Background(), "search_doc_oficial", []byte(`{"query":"go documentation"}`))
+	if err != nil {
+		t.Fatalf("cached call: unexpected error: %v", err)
+	}
+	if !cachedResp.Cached || !containsString(cachedResp.SourcesUsed, "official_docs") {
+		t.Errorf("expected cached official response metadata, got cached=%v sources=%v", cachedResp.Cached, cachedResp.SourcesUsed)
+	}
+
+	// Tool description must document both the registry path and fallback.
 	for _, tool := range s.Tools() {
 		if tool.Name == "search_doc_oficial" {
-			if !strings.Contains(strings.ToLower(tool.Description), "official_doc_web_fallback") {
-				t.Errorf("tool description should advertise the strategy, got %q", tool.Description)
+			description := strings.ToLower(tool.Description)
+			if !strings.Contains(description, "official_doc_registry_search") || !strings.Contains(description, "official_doc_web_fallback") {
+				t.Errorf("tool description should advertise registry and fallback strategies, got %q", tool.Description)
 			}
 		}
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestSearchLocalIndexUnavailableSignal locks item 3.b: search_local_index

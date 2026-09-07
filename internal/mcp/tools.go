@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
@@ -84,9 +85,9 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
-				Query:       req.Query,
-				Results:     []types.SearchResultItem{},
-				Errors:      []string{"connector manager not initialized"},
+				Query:   req.Query,
+				Results: []types.SearchResultItem{},
+				Errors:  []string{"connector manager not initialized"},
 			}), nil
 		}
 
@@ -121,12 +122,8 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 	}
 }
 
-// makeDocOficialHandler is the truthful fallback for search_doc_oficial.
-// No specialized official-documentation provider is wired into IA_Buscar
-// today, so the tool explicitly says so: it falls back to the configured
-// web connector (SearxNG) and stamps Strategy = "official_doc_web_fallback"
-// plus a warning naming the source. AI agents reading the response can tell
-// that no real official-doc index was queried.
+// makeDocOficialHandler uses the registry-backed official-doc connector when
+// a library resolves unambiguously, while preserving the typed web fallback.
 func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req types.SearchRequest
@@ -146,23 +143,26 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 			}), nil
 		}
 
-		resp, err := s.connectorManager.Search(ctx, "web", &req)
+		resp, err := s.connectorManager.Search(ctx, "official_docs", &req)
+		if err == nil && len(resp.Errors) == 1 && strings.HasPrefix(resp.Errors[0], "unknown source:") {
+			resp, err = s.connectorManager.Search(ctx, "web", &req)
+		}
 		if err != nil {
 			return nil, err
 		}
 
-		resp.Strategy = "official_doc_web_fallback"
-		if resp.SourcesUsed == nil {
-			resp.SourcesUsed = []string{}
+		if resp.Strategy == "" {
+			resp.Strategy = "official_doc_web_fallback"
+			resp.Warnings = append(resp.Warnings,
+				"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from the authoritative documentation registry")
 		}
-		resp.Warnings = append(resp.Warnings,
-			"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from a curated official-documentation index")
 
 		// Record the completed production search with the connector
-		// name that actually answered (web, in the fallback case).
-		// This keeps history consistent with the search_web / search_news
-		// / etc. paths, which record the connector name they route to.
-		s.recordSearch(ctx, "web", resp)
+		source := "web"
+		if resp.Strategy == "official_doc_registry_search" {
+			source = "official_docs"
+		}
+		s.recordSearch(ctx, source, resp)
 
 		return normalizeSearchResponse(resp), nil
 	}
@@ -355,10 +355,10 @@ func (s *Server) stubSearchHandler(ctx context.Context, args json.RawMessage) (i
 		Query:       req.Query,
 		Results:     []types.SearchResultItem{},
 		Summary:     "[STUB] Search not yet implemented",
-		SourcesUsed:  []string{},
-		Confidence:   0.0,
-		Cached:       false,
-		Warnings:     []string{"Stub implementation"},
+		SourcesUsed: []string{},
+		Confidence:  0.0,
+		Cached:      false,
+		Warnings:    []string{"Stub implementation"},
 	}, nil
 }
 
@@ -388,8 +388,8 @@ func (s *Server) stubValidateHandler(ctx context.Context, args json.RawMessage) 
 	}
 	if req.URL != "" {
 		return map[string]interface{}{
-			"url":     req.URL,
-			"valid":   true,
+			"url":      req.URL,
+			"valid":    true,
 			"warnings": []string{"Stub implementation"},
 		}, nil
 	}
@@ -403,10 +403,10 @@ func (s *Server) stubValidateHandler(ctx context.Context, args json.RawMessage) 
 func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req struct {
-			Query   string                  `json:"query"`
+			Query   string                   `json:"query"`
 			Results []types.SearchResultItem `json:"results"`
-			Goal    string                  `json:"goal"`
-			Style   string                  `json:"style"`
+			Goal    string                   `json:"goal"`
+			Style   string                   `json:"style"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
