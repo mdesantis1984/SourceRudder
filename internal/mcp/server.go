@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -20,6 +21,8 @@ import (
 )
 
 const serverVersion = "1.5.0"
+
+const maxRPCRequestBytes = 1 << 20
 
 const (
 	httpReadHeaderTimeout = 5 * time.Second
@@ -457,6 +460,10 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		http.Error(w, "stream unavailable", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -468,7 +475,9 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	fmt.Fprintf(w, ": ping\n\n")
+	if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -477,7 +486,9 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			fmt.Fprintf(w, ": ping\n\n")
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
@@ -491,9 +502,15 @@ type rpcRequest struct {
 }
 
 func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPCRequestBytes)
 	var req rpcRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(w, status, map[string]interface{}{
 			"jsonrpc": "2.0",
 			"error":   map[string]interface{}{"code": -32700, "message": "parse error"},
 		})

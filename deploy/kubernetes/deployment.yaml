@@ -28,6 +28,11 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: IA_BUSCAR_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ia-buscar
+                  key: auth-key
             - name: SEARXNG_URL
               value: "http://searxng:8080"
             - name: FETCH_TIMEOUT_MS

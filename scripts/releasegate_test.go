@@ -734,6 +734,35 @@ func TestGateSizeExceptionTiedToTrackedReceipt(t *testing.T) {
 	})
 }
 
+func TestGateLocalIndexSizeExceptionSemantics(t *testing.T) {
+	const branch = "feat/local-index-provider"
+	const receiptPath = "docs/release/size-exceptions/local-index-provider.md"
+	cases := []struct {
+		name, receiptBranch, expiration string
+		lines                           int
+		wantPass                        bool
+	}{
+		{"valid", branch, "2999-12-31", 1001, true},
+		{"wrong-branch", "feat/other", "2999-12-31", 1001, false},
+		{"expired", branch, "2000-01-01", 1001, false},
+		{"over-ceiling", branch, "2999-12-31", 2201, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			runGit(t, h.repo, "checkout", "-b", branch)
+			h.commitFile("bulk.go", "package gatemod\n\n"+strings.Repeat("// padding\n", tt.lines), "candidate")
+			candidate := h.headSHA()
+			receipt := "Branch: " + tt.receiptBranch + "\nCommit: " + candidate + "\nApproval Reference: #22\nScope: bounded\nExpiration: " + tt.expiration + "\nForward Reference: #22\n"
+			h.commitFile(receiptPath, receipt, "receipt")
+			exit, _, _ := h.runDefault("RELEASE_GATE_BRANCH="+branch, "RELEASE_GATE_SIZE_EXCEPTION="+branch, "SIZE_EXCEPTIONS_RECEIPT="+receiptPath, "BASE_REF=main")
+			if (exit == 0) != tt.wantPass {
+				t.Fatalf("exit=%d, wantPass=%v", exit, tt.wantPass)
+			}
+		})
+	}
+}
+
 // TestStagedSizeExceptionReceiptMatchesGateParser is the
 // Phase 13.6/15.b alignment RED gate. The release-gate parser at
 // scripts/release-gate.sh:138-145 looks for colon-form lines

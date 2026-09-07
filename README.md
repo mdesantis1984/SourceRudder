@@ -1,6 +1,6 @@
 # IA_Buscar
 
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.26.6+-00ADD8?logo=go)](https://go.dev/)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-FF6B6B)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -231,6 +231,9 @@ Los flags legacy `-auth-key` y `-memory-apikey` siguen disponibles por
 compatibilidad, pero pueden exponer secretos en `argv`, historiales o listados
 de procesos. En despliegues use exclusivamente variables de entorno o un
 secret manager que las inyecte al proceso.
+
+Los manifests esperan `IA_BUSCAR_AUTH_KEY` en el Secret de Kubernetes
+`ia-buscar` (`auth-key`) o en `/etc/ia-buscar/ia-buscar.env` para systemd.
 
 `configs/config.example.yaml` es una referencia para operadores; el binario no
 lee YAML. La fuente de verdad son los flags y variables anteriores.

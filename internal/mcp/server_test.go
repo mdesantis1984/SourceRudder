@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +16,14 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	called bool
+}
+
+func (w *deadlineRecorder) SetWriteDeadline(time.Time) error { w.called = true; return nil }
+func (w *deadlineRecorder) Flush()                           {}
 
 // TestNewServerWiresMemoryClientIdentity is the threat-matrix
 // process-integration proof for the memory client wiring: the same
@@ -69,6 +80,26 @@ func TestHTTPServerHasBoundedTimeouts(t *testing.T) {
 		srv.httpSrv.WriteTimeout != httpWriteTimeout ||
 		srv.httpSrv.IdleTimeout != httpIdleTimeout {
 		t.Fatalf("unexpected HTTP timeouts: %+v", srv.httpSrv)
+	}
+}
+
+func TestHTTPRejectsOversizedRPCRequest(t *testing.T) {
+	srv := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(strings.Repeat(" ", maxRPCRequestBytes+1)))
+	rec := httptest.NewRecorder()
+	srv.handleHTTPPost(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestSSEClearsWriteDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	(&Server{}).handleHTTPGet(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx))
+	if !rec.called {
+		t.Fatal("SSE handler did not clear the HTTP server write deadline")
 	}
 }
 

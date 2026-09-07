@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=ia-buscar
+EnvironmentFile=/etc/ia-buscar/ia-buscar.env
 # Identity check: refuse to start if the on-disk VERSION/IMAGE do
 # not contain the exact values the operator committed in source.
 # `grep -qxF 'expected' /opt/ia-buscar/VERSION` compares the FILE

@@ -40,6 +40,11 @@ import (
 // for callers that use NewFetcherService(int) without a Config.
 const defaultUserAgent = "Mozilla/5.0 (compatible; IA-Buscar/1.0; +https://thiscloud.es)"
 
+const (
+	maxFetchResponseBytes = 4 << 20
+	maxConcurrentFetches  = 8
+)
+
 // Outcome values emitted on FetchResponse.Outcome. MCP clients
 // pattern-match on these strings.
 const (
@@ -72,6 +77,7 @@ type FetcherService struct {
 	cfg       Config
 	extractor *Extractor
 	client    *http.Client
+	slots     chan struct{}
 }
 
 // NewFetcherService builds a fetcher with the timeout in milliseconds.
@@ -110,6 +116,7 @@ func NewFetcherServiceWithConfig(c Config) *FetcherService {
 	return &FetcherService{
 		cfg:       c,
 		extractor: NewExtractor(),
+		slots:     make(chan struct{}, maxConcurrentFetches),
 		client: &http.Client{
 			Timeout: time.Duration(c.TimeoutMs) * time.Millisecond,
 			// Disable automatic redirects: the manual loop below
@@ -441,6 +448,15 @@ func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]
 // goes through. It runs the manual redirect loop, classifies the
 // final response, and applies bounded retry on transient failures.
 func (s *FetcherService) doFetchWithRetries(ctx context.Context, rawURL string, fr *types.FetchResponse, reqOpts ...func(*http.Request)) (*types.FetchResponse, error) {
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	case <-ctx.Done():
+		fr.Outcome = OutcomeTimeout
+		fr.Warnings = append(fr.Warnings, ctx.Err().Error())
+		return fr, ctx.Err()
+	}
+
 	var lastErr error
 	for attempt := 1; attempt <= s.cfg.MaxAttempts; attempt++ {
 		fr.Attempts = attempt
@@ -552,9 +568,10 @@ func (s *FetcherService) manualRedirectFetch(ctx context.Context, rawURL string,
 			fr.Warnings = append(fr.Warnings, err.Error())
 			return err
 		}
+		fr.Status = resp.StatusCode
 
 		// Drain + close so the connection can be reused.
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxFetchResponseBytes+1))
 		closeErr := resp.Body.Close()
 		if readErr != nil {
 			if isTimeoutErr(readErr) {
@@ -568,8 +585,12 @@ func (s *FetcherService) manualRedirectFetch(ctx context.Context, rawURL string,
 		if closeErr != nil {
 			fr.Warnings = append(fr.Warnings, fmt.Sprintf("close response body: %v", closeErr))
 		}
-
-		fr.Status = resp.StatusCode
+		if len(body) > maxFetchResponseBytes {
+			fr.Outcome = OutcomeNonTransientFailure
+			err := fmt.Errorf("response body exceeds %d bytes", maxFetchResponseBytes)
+			fr.Warnings = append(fr.Warnings, err.Error())
+			return err
+		}
 
 		// Redirect handling.
 		if loc := resp.Header.Get("Location"); loc != "" && (resp.StatusCode >= 300 && resp.StatusCode < 400) {

@@ -500,6 +500,23 @@ func TestFetchResponseBlockedTargetURLTextPropagatesWarnings(t *testing.T) {
 	}
 }
 
+func TestFetcherRejectsOversizedResponse(t *testing.T) {
+	withSSRFDisabled(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxFetchResponseBytes+1)))
+	}))
+	defer srv.Close()
+
+	f := NewFetcherServiceWithConfig(Config{TimeoutMs: 5000, MaxAttempts: 1})
+	resp, err := f.Fetch(context.Background(), srv.URL)
+	if err == nil || resp.Outcome != OutcomeNonTransientFailure {
+		t.Fatalf("expected bounded non-transient failure, got response=%+v err=%v", resp, err)
+	}
+	if resp.Status != http.StatusOK || resp.Content != "" {
+		t.Fatalf("oversized response leaked content or status: %+v", resp)
+	}
+}
+
 // contains is a tiny helper to keep the wire-contract assertion
 // self-contained.
 func contains(s, sub string) bool {
