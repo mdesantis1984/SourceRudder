@@ -80,7 +80,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/mcp", nil)
-	req.Header.Set("X-Api-Key", "wrong-key")
+	req.Header.Set("X-Api-Key", "incorrect-x")
 	rec := httptest.NewRecorder()
 	v.Middleware(next).ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -92,7 +92,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 
 	// Same via Authorization.
 	req2 := httptest.NewRequest(http.MethodGet, "http://example.com/mcp", nil)
-	req2.Header.Set("Authorization", "Bearer wrong-key")
+	req2.Header.Set("Authorization", "Bearer incorrect-x")
 	rec2 := httptest.NewRecorder()
 	v.Middleware(next).ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusUnauthorized {

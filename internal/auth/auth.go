@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -14,7 +17,8 @@ import (
 // no key is configured — is the exact bypass the new contract
 // forbids).
 type Validator struct {
-	validKey []byte
+	verificationKey [32]byte
+	validKeyMAC     [32]byte
 }
 
 // NewValidator builds a Validator that accepts a credential whose
@@ -23,7 +27,20 @@ type Validator struct {
 // rejects every request so the middleware never shortcuts to an
 // open door in production deployments.
 func NewValidator(apiKey string) *Validator {
-	return &Validator{validKey: []byte(apiKey)}
+	v := &Validator{}
+	if _, err := rand.Read(v.verificationKey[:]); err != nil {
+		panic("auth: cannot initialize credential verifier")
+	}
+	v.validKeyMAC = v.keyMAC(apiKey)
+	return v
+}
+
+func (v *Validator) keyMAC(key string) [32]byte {
+	mac := hmac.New(sha256.New, v.verificationKey[:])
+	_, _ = mac.Write([]byte(key))
+	var sum [32]byte
+	copy(sum[:], mac.Sum(nil))
+	return sum
 }
 
 // Middleware wraps next so every request must carry a credential
@@ -41,7 +58,8 @@ func (v *Validator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, `{"error":"missing_credentials"}`, http.StatusUnauthorized)
 			return
 		}
-		if subtle.ConstantTimeCompare([]byte(key), v.validKey) != 1 {
+		keyMAC := v.keyMAC(key)
+		if subtle.ConstantTimeCompare(keyMAC[:], v.validKeyMAC[:]) != 1 {
 			http.Error(w, `{"error":"invalid_credentials"}`, http.StatusUnauthorized)
 			return
 		}
