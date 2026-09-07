@@ -2,13 +2,12 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"go/parser"
 	"go/token"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -121,13 +120,7 @@ func TestResolveAuthKeyBlankEnvFailsClosed(t *testing.T) {
 }
 
 // TestResolveAuthKeyValidatorWiring proves the helper output reaches
-// auth.NewValidator correctly. The validator hashes the supplied key
-// and accepts only requests carrying a credential whose hash matches;
-// this test triangulates that the env value actually flows into the
-// validator without any other transformation. We compare the
-// validator's stored hash against the canonical sha256 of the env
-// value: a mismatch means the helper dropped, mutated, or trimmed
-// the key.
+// auth.NewValidator correctly and reaches the protected handler.
 func TestResolveAuthKeyValidatorWiring(t *testing.T) {
 	const envKey = "wiring-secret-abc"
 	t.Setenv(authKeyEnv, envKey)
@@ -138,25 +131,16 @@ func TestResolveAuthKeyValidatorWiring(t *testing.T) {
 	if v == nil {
 		t.Fatal("validator must be non-nil")
 	}
-	stored := validatorStoredHash(t, v)
-	want := sha256Hex(envKey)
-	if stored != want {
-		t.Fatalf("validator stored hash %q; want %q (helper may be mutating the key)", stored, want)
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/mcp", nil)
+	req.Header.Set("X-Api-Key", envKey)
+	rec := httptest.NewRecorder()
+	called := false
+	v.Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !called {
+		t.Fatalf("resolved key did not reach protected handler: status=%d called=%v", rec.Code, called)
 	}
-	// And the negative path: a different key must produce a
-	// different stored hash, otherwise the validator is effectively
-	// no-op.
-	other := sha256Hex("wrong-key")
-	if stored == other {
-		t.Fatal("validator must produce a distinct hash for distinct keys")
-	}
-}
-
-// sha256Hex returns the lowercase hex sha256 of s, matching the
-// encoding auth.NewValidator uses internally.
-func sha256Hex(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
 }
 
 // TestResolveAuthKeyNeverLogged is the documented-diagnostics guard.
@@ -244,23 +228,4 @@ func readMainSource(t *testing.T) string {
 		t.Fatalf("parse main.go: %v", err)
 	}
 	return string(data)
-}
-
-// validatorStoredHash reflects the unexported validKeyHash field
-// off a *auth.Validator. Mirrors the shape used by
-// readFetcherTimeoutMs in main_test.go so the introspection cost is
-// amortized across the package's tests. The field name is part of
-// the auth package's internal contract; bumping it intentionally
-// requires updating both helpers together.
-func validatorStoredHash(t *testing.T, v *auth.Validator) string {
-	t.Helper()
-	const field = "validKeyHash"
-	val := reflect.ValueOf(v).Elem().FieldByName(field)
-	if !val.IsValid() {
-		t.Fatalf("auth.Validator no longer has a %q field; update validatorStoredHash", field)
-	}
-	if val.Kind().String() != "string" {
-		t.Fatalf("auth.Validator.%s is not a string", field)
-	}
-	return val.String()
 }

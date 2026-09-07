@@ -67,8 +67,8 @@ func TestValidator_RejectsMissingCredentials(t *testing.T) {
 
 // TestValidator_RejectsInvalidCredentials locks in the contract that
 // a wrong X-Api-Key or Bearer MUST NOT reach the downstream handler.
-// SHA256 comparison is preserved so the test confirms the receipt
-// path still works without weakening the hashing.
+// A constant-time comparison prevents invalid credentials from reaching
+// the downstream handler.
 func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 	v := NewValidator("correct-key")
 	if v == nil {
@@ -80,7 +80,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/mcp", nil)
-	req.Header.Set("X-Api-Key", "wrong-key")
+	req.Header.Set("X-Api-Key", "incorrect-x")
 	rec := httptest.NewRecorder()
 	v.Middleware(next).ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -92,7 +92,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 
 	// Same via Authorization.
 	req2 := httptest.NewRequest(http.MethodGet, "http://example.com/mcp", nil)
-	req2.Header.Set("Authorization", "Bearer wrong-key")
+	req2.Header.Set("Authorization", "Bearer incorrect-x")
 	rec2 := httptest.NewRecorder()
 	v.Middleware(next).ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusUnauthorized {
@@ -102,7 +102,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 
 // TestValidator_AcceptsMatchingCredentials is the GREEN happy path.
 // Once a key is configured, the matching key (in either header) MUST
-// reach the downstream handler. SHA256 equality is the contract; the
+// reach the downstream handler. Exact equality is the contract; the
 // test exercises both header surfaces so a future refactor that
 // drops one will fail loudly.
 func TestValidator_AcceptsMatchingCredentials(t *testing.T) {
