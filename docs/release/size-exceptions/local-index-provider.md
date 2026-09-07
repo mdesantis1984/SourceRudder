@@ -1,7 +1,7 @@
 # Size Exception Receipt: local-index-provider
 
 Branch: feat/local-index-provider
-Commit: 8e80aebeefc8c7a08ee483fa02f41360b3887692
+Commit: 920a680cd2ea0752dda4e83d102d3bc460d93c4f
 Approval Reference: https://github.com/mdesantis1984/IA_Buscar/issues/22#issuecomment-5575641757
 Scope: One-time PR for the local-index provider, documentation, and public-release security hardening; maximum 2,200 authored changed lines.
 Expiration: 2026-10-07
