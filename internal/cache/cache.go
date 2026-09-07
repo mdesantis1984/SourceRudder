@@ -22,11 +22,11 @@ type Service struct {
 }
 
 type entry struct {
-	key      string
-	value    []byte
-	created  time.Time
-	expires  time.Time
-	sources  []string
+	key     string
+	value   []byte
+	created time.Time
+	expires time.Time
+	sources []string
 }
 
 func NewService(ttlSeconds int) *Service {
@@ -56,7 +56,7 @@ func (s *Service) Get(ctx context.Context, cacheKey string) (*types.CacheEntry, 
 	}, true, nil
 }
 
-func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sources []string) error {
+func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sources []string) {
 	now := time.Now()
 	s.mu.Lock()
 	s.entries[cacheKey] = &entry{
@@ -67,14 +67,12 @@ func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sour
 		sources: sources,
 	}
 	s.mu.Unlock()
-	return nil
 }
 
-func (s *Service) Delete(ctx context.Context, cacheKey string) error {
+func (s *Service) Delete(ctx context.Context, cacheKey string) {
 	s.mu.Lock()
 	delete(s.entries, cacheKey)
 	s.mu.Unlock()
-	return nil
 }
 
 // DeleteIfPresent atomically removes cacheKey and reports whether an
@@ -94,11 +92,10 @@ func (s *Service) DeleteIfPresent(ctx context.Context, cacheKey string) bool {
 	return true
 }
 
-func (s *Service) Clear(ctx context.Context) error {
+func (s *Service) Clear(ctx context.Context) {
 	s.mu.Lock()
 	s.entries = make(map[string]*entry)
 	s.mu.Unlock()
-	return nil
 }
 
 func (s *Service) Keys(ctx context.Context) ([]string, error) {

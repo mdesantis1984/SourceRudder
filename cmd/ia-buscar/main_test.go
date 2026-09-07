@@ -25,8 +25,8 @@ func TestFetchTimeoutMsPropagatesIntoFetcherService(t *testing.T) {
 	const wantTimeout = 12345
 
 	f := fetch.NewFetcherServiceWithConfig(fetch.Config{
-		UserAgent:   "ia-buscar/test",
-		TimeoutMs:   wantTimeout,
+		UserAgent:    "ia-buscar/test",
+		TimeoutMs:    wantTimeout,
 		MaxRedirects: 5,
 		MaxAttempts:  3,
 	})
@@ -140,6 +140,20 @@ func TestFetchEnvVarsDefaultsAppliedWhenUnset(t *testing.T) {
 	parsed, err := strconv.Atoi("12345")
 	if err != nil || parsed != 12345 {
 		t.Fatalf("strconv.Atoi sanity check failed: %v", err)
+	}
+}
+
+func TestLocalIndexPathPrecedence(t *testing.T) {
+	t.Setenv("LOCAL_INDEX_PATH", "/safe/env-index.json")
+	if got := resolveLocalIndexPath(""); got != "/safe/env-index.json" {
+		t.Fatalf("env path=%q", got)
+	}
+	if got := resolveLocalIndexPath(" /safe/flag-index.json "); got != "/safe/flag-index.json" {
+		t.Fatalf("flag path must win and be trimmed, got %q", got)
+	}
+	t.Setenv("LOCAL_INDEX_PATH", "  ")
+	if got := resolveLocalIndexPath(""); got != "" {
+		t.Fatalf("blank path must disable the provider, got %q", got)
 	}
 }
 

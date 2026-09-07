@@ -186,9 +186,7 @@ func TestNoPersistenceSurfaceOnCacheService(t *testing.T) {
 	}
 
 	// Confirm Clear works but does not touch disk.
-	if err := cacheSvc.Clear(context.Background()); err != nil {
-		t.Fatalf("unexpected Clear error: %v", err)
-	}
+	cacheSvc.Clear(context.Background())
 }
 
 // TestStatelessArchitectureNoExternalFiles covers the property that the
@@ -215,9 +213,7 @@ func TestStatelessArchitectureNoExternalFiles(t *testing.T) {
 	if len(keys) != 0 {
 		t.Errorf("expected empty cache, got %d keys", len(keys))
 	}
-	if err := cacheSvc.Clear(context.Background()); err != nil {
-		t.Fatalf("Clear: %v", err)
-	}
+	cacheSvc.Clear(context.Background())
 }
 
 // buildTestServer wires the minimum dependencies needed to exercise the

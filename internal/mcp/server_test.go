@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/auth"
 	"github.com/thiscloud/ia-buscar/internal/cache"
@@ -42,6 +44,31 @@ func TestNewServerWiresMemoryClientIdentity(t *testing.T) {
 	}
 	if srv.history != history {
 		t.Fatalf("Server.history is NOT the same pointer passed to NewServer (got %p, want %p)", srv.history, history)
+	}
+}
+
+func TestHTTPServerHasBoundedTimeouts(t *testing.T) {
+	srv := &Server{
+		transport: "http",
+		httpAddr:  "127.0.0.1:0",
+		met:       observability.New(),
+	}
+	if err := srv.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := srv.Stop(ctx); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	if srv.httpSrv.ReadHeaderTimeout != httpReadHeaderTimeout ||
+		srv.httpSrv.ReadTimeout != httpReadTimeout ||
+		srv.httpSrv.WriteTimeout != httpWriteTimeout ||
+		srv.httpSrv.IdleTimeout != httpIdleTimeout {
+		t.Fatalf("unexpected HTTP timeouts: %+v", srv.httpSrv)
 	}
 }
 

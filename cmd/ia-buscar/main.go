@@ -25,7 +25,7 @@ import (
 var (
 	transport      = flag.String("transport", "stdio", "Transport mode: stdio or http")
 	httpAddr       = flag.String("http-addr", ":8080", "HTTP server address")
-	searxngURL     = flag.String("searxng-url", "http://10.0.0.201:8080", "SearxNG URL")
+	searxngURL     = flag.String("searxng-url", envDefault("SEARXNG_URL", "http://localhost:8888"), "SearXNG URL (env: SEARXNG_URL)")
 	cacheTTL       = flag.Int("cache-ttl", 300, "In-process cache TTL in seconds")
 	fetchTimeoutMs = flag.Int("fetch-timeout-ms", 30000, "Fetch timeout in milliseconds")
 	authKey        = flag.String("auth-key", "", "API key for authentication (optional)")
@@ -35,6 +35,7 @@ var (
 	redditBaseURL   = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", ""), "Deprecated no-op; search_reddit uses SearXNG")
 	memoryURL       = flag.String("memory-url", "", "IA_Recuerdo (memory) base URL; when empty, the integration is disabled and Save is a no-op (env: MEMORY_URL)")
 	memoryAPIKey    = flag.String("memory-apikey", "", "IA_Recuerdo (memory) bearer key; travels as Authorization: Bearer (env: MEMORY_APIKEY)")
+	localIndexPath  = flag.String("local-index-path", "", "Read-only local index corpus path (env: LOCAL_INDEX_PATH)")
 )
 
 // envDefault returns the value of the named environment variable when
@@ -103,11 +104,17 @@ func resolveMemoryConfig(flagURL, flagKey string) (string, string) {
 	return url, key
 }
 
+func resolveLocalIndexPath(flagValue string) string {
+	if path := strings.TrimSpace(flagValue); path != "" {
+		return path
+	}
+	return strings.TrimSpace(envDefault("LOCAL_INDEX_PATH", ""))
+}
+
 // authKeyEnvVar is the environment variable read when the operator
 // does not pass -auth-key on the command line. Promoting the value
 // out of an env var keeps the secret out of argv (ps aux / process
-// listings / shell history) — that is the CT201 fix this helper
-// exists for.
+// listings and shell history.
 const authKeyEnvVar = "IA_BUSCAR_AUTH_KEY"
 
 // resolveAuthKey layers the IA_BUSCAR_AUTH_KEY env var under the
@@ -174,6 +181,13 @@ func main() {
 	cm.Register(connectors.NewYouTubeConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc))
+	if path := resolveLocalIndexPath(*localIndexPath); path != "" {
+		localIndex, err := connectors.NewLocalIndexConnector(path)
+		if err != nil {
+			log.Fatalf("Failed to load local index: %v", err)
+		}
+		cm.Register(localIndex)
+	}
 
 	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history, memClient)
 	var trans mcp.Transport

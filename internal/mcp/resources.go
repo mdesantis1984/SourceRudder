@@ -41,7 +41,7 @@ const agentGuideMIMEType = "text/markdown"
 // maintainer.
 const wireContractGuide = `# Guía para agentes IA — Wire Contract de IA_Buscar
 
-Esta guía describe cómo invocar correctamente las 25 tools MCP registradas por IA_Buscar
+Esta guía describe cómo invocar correctamente las 28 tools MCP registradas por IA_Buscar
 y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer plan de búsqueda.
 
 ## 1. Cinco familias de tools
@@ -59,7 +59,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 - search_web — fallback general. Usa SearxNG y respeta language, timeRange, safeSearch.
 - search_news — artículos recientes. Resuelve con SearxNG (categoría news). El planner resuelve timeRange="week" cuando detecta intent "news".
 - search_doc_oficial — resolves Go and SearXNG through the bounded IA-Buscar authoritative registry. Use filters.library to override query inference; filters.version is requested but not verified. Validated results use strategy="official_doc_registry_search". Unknown, ambiguous, failed, or unvalidated requests retain strategy="official_doc_web_fallback" and general web results.
-- search_local_index — NO redirige a búsqueda web. Mientras no haya un proveedor real de índice local configurado, devuelve strategy="local_index_unavailable", results=[] y un warning local_index_unavailable. No lo confundas con un resultado vacío real: es una señal de "esta tool no está wired todavía".
+- search_local_index — busca en un corpus JSON curado por el operador cuando LOCAL_INDEX_PATH está configurado y devuelve strategy="local_index_lexical". Sin corpus devuelve strategy="local_index_unavailable". Nunca recorre el filesystem, hace requests de red ni redirige a búsqueda web.
 - search_github, search_github_pr, search_github_issue — endpoints de GitHub. search_github_pr y search_github_issue leen filters.state ("open" / "closed") para reducir el resultado.
 - search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_youtube, search_images — conectores dedicados a un proveedor.
 - search_reddit — posts públicos de Reddit indexados por el SearXNG local. Agrega la restricción site:reddit.com, acepta solo URLs de hilos públicos y devuelve strategy="searxng_reddit_index". Un fallo de SearXNG devuelve partial=true con warnings; un resultado 200 vacío es un resultado vacío real.
@@ -84,7 +84,7 @@ timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran
 |------------|--------------------|-------------|
 | query      | string             | El query que recibió el server. |
 | results    | SearchResultItem[] | SIEMPRE un array (nunca null, nunca ausente), aunque esté vacío. Cada elemento es SearchResultItem. |
-| strategy   | string, opcional   | Backend concreto que respondió: "searxng", "searxng_reddit_index", "official_doc_web_fallback", "local_index_unavailable". Te dice si la tool habló con un proveedor real. |
+| strategy   | string, opcional   | Backend concreto que respondió: "searxng", "searxng_reddit_index", "official_doc_registry_search", "official_doc_web_fallback", "local_index_lexical", "local_index_unavailable". Te dice si la tool habló con un proveedor real. |
 | cached     | bool, opcional     | true si la respuesta vino del caché en proceso. |
 | partial    | bool, opcional     | true cuando hubo degradación upstream (timeouts, 5xx, 429). Distingue "el upstream nos dio una respuesta incompleta" de "todo OK". |
 | warnings   | string[], opcional | Lista de advertencias accionables (configuración, intent del planner, etc.). |
@@ -97,6 +97,7 @@ summary, keyFindings, sourcesUsed, confidence siguen presentes para compatibilid
 | Caso                                 | results | strategy                              | partial | errors | Notas |
 |--------------------------------------|---------|---------------------------------------|----------|--------|-------|
 | healthy empty (resultado vacío sano) | []      | "searxng", "searxng_reddit_index", "npm", etc.      | false    | []     | El upstream respondió 200 con cero items. No es degradación. |
+| Índice local sin coincidencias       | []      | "local_index_lexical"                 | false    | []     | El corpus fue cargado pero no hubo coincidencias para todos los términos. |
 | Upstream degradado (timeouts, 5xx)   | []      | nombre del conector                   | true     | [err]  | Hubo un error de transporte o HTTP >= 400 no recuperable. |
 | Unconfigured (local_index)           | []      | "local_index_unavailable" | false    | [tag]  | La tool no habló con ningún proveedor real. |
 | Fallback explícito (doc_oficial)     | [items] | "official_doc_web_fallback"           | false    | []     | Los resultados vienen del fallback web, no de docs oficiales. |
@@ -182,7 +183,7 @@ agent-guide://ia-buscar/wire-contract (este documento) es accesible vía resourc
 
 ## 10. Errores que debes esperar
 
-- "tool not found: <name>" — invocaste una tool que no existe. El server solo expone 25.
+- "tool not found: <name>" — invocaste una tool que no existe. El server solo expone 28.
 - "name is required" — falta el campo name en tools/call.
 - "invalid args: <reason>" — el JSON de arguments no parsea contra el input schema. Revisa enums (timeRange, mode) y obligatorios (query, url, urls).
 
@@ -220,10 +221,11 @@ search_reddit no llama a la API de Reddit: consulta el SearXNG configurado para 
 
 ## 11. Versionado
 
-El contrato SearchResponse y los nombres de tools están congelados en esta rama. Cambios incompatibles requieren bump mayor del servidor y un changelog explícito en el README. Los IDs de estrategia ("searxng_reddit_index", "local_index_unavailable", "official_doc_web_fallback") también son estables — puedes hacer pattern matching sobre ellos.
+El contrato SearchResponse y los nombres de tools están congelados en esta rama. Cambios incompatibles requieren bump mayor del servidor y un changelog explícito en el README. Los IDs de estrategia ("searxng_reddit_index", "local_index_lexical", "local_index_unavailable", "official_doc_registry_search", "official_doc_web_fallback") también son estables — puedes hacer pattern matching sobre ellos.
 
 ## 12. Changelog
 
+- **1.5.0** — search_local_index carga un corpus JSON local, explícito y read-only al iniciar; aplica ranking lexical determinista y devuelve ` + "`" + `local_index_lexical` + "`" + `. Sin LOCAL_INDEX_PATH conserva ` + "`" + `local_index_unavailable` + "`" + `. No hay crawling, requests de red ni manejo de credenciales.
 - **1.4.0 unreleased feature candidate** — search_doc_oficial resolves Go and SearXNG through a bounded local registry, restricts SearXNG execution to approved documentation hosts, validates result provenance, and returns ` + "`" + `official_doc_registry_search` + "`" + `. Unknown, ambiguous, failed, or unvalidated requests retain the typed ` + "`" + `official_doc_web_fallback` + "`" + ` path. No tag, deployment, publication, or release was created.
 - **1.3.2 unreleased bugfix candidate** — search_images retains a valid, distinct thumbnail_src as a labeled indexed preview alongside the selected image and source page when bounded context permits. This does not restore original-image access or change the SearchResponse schema, result URL, ranking, cache, or network behavior.
 - **1.3.1 unreleased bugfix candidate** — search_images validates image URLs, preserves bounded upstream context, forwards SearXNG options, and ranks candidates using conservative whole-word lexical hints before applying maxResults; this does not infer semantic relevance. Partial warnings remain visible and the SearchResponse schema is unchanged. No tag, deployment, publication, or release was created.

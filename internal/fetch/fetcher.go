@@ -69,9 +69,9 @@ type Config struct {
 // NewFetcherServiceWithConfig for production use; NewFetcherService
 // remains for legacy callers and resolves to the default config.
 type FetcherService struct {
-	cfg      Config
+	cfg       Config
 	extractor *Extractor
-	client   *http.Client
+	client    *http.Client
 }
 
 // NewFetcherService builds a fetcher with the timeout in milliseconds.
@@ -108,7 +108,7 @@ func NewFetcherServiceWithConfig(c Config) *FetcherService {
 	dialer := &net.Dialer{Timeout: time.Duration(c.TimeoutMs) * time.Millisecond}
 
 	return &FetcherService{
-		cfg:      c,
+		cfg:       c,
 		extractor: NewExtractor(),
 		client: &http.Client{
 			Timeout: time.Duration(c.TimeoutMs) * time.Millisecond,
@@ -452,7 +452,7 @@ func (s *FetcherService) doFetchWithRetries(ctx context.Context, rawURL string, 
 		default:
 		}
 
-			// Bounded backoff between attempts (skip on first). The
+		// Bounded backoff between attempts (skip on first). The
 		// sleep is cancellable so SIGTERM during a 1.6s exponential
 		// backoff stops the lifecycle immediately instead of waiting
 		// out the full window.
@@ -554,8 +554,20 @@ func (s *FetcherService) manualRedirectFetch(ctx context.Context, rawURL string,
 		}
 
 		// Drain + close so the connection can be reused.
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024))
-		resp.Body.Close()
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024))
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			if isTimeoutErr(readErr) {
+				fr.Outcome = OutcomeTimeout
+			} else {
+				fr.Outcome = OutcomeTransportError
+			}
+			fr.Warnings = append(fr.Warnings, fmt.Sprintf("read response body: %v", readErr))
+			return readErr
+		}
+		if closeErr != nil {
+			fr.Warnings = append(fr.Warnings, fmt.Sprintf("close response body: %v", closeErr))
+		}
 
 		fr.Status = resp.StatusCode
 

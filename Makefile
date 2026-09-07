@@ -1,7 +1,7 @@
 .PHONY: build run test clean deps lint release-gate
 
 BINARY=ia-buscar
-VERSION=1.4.0
+VERSION=1.5.0
 GO=go
 
 build:

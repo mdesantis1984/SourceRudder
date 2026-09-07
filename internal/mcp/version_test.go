@@ -13,7 +13,7 @@ import (
 )
 
 // TestServerVersionIs_1_4_0 verifies that the MCP server advertises version
-// "1.4.0" in BOTH initialize paths (the JSON-RPC
+// "1.5.0" in BOTH initialize paths (the JSON-RPC
 // HTTP handleMCPInitialize and the typed HandleInitialize). A bump in
 // one path but not the other would silently desync MCP clients.
 func TestServerVersionIs_1_4_0(t *testing.T) {
@@ -27,14 +27,14 @@ func TestServerVersionIs_1_4_0(t *testing.T) {
 		t.Fatalf("HandleInitialize: %v", err)
 	}
 	got := versionFromInitialize(resp)
-	if got != "1.4.0" {
-		t.Fatalf("HandleInitialize reports version %q; want \"1.4.0\"", got)
+	if got != "1.5.0" {
+		t.Fatalf("HandleInitialize reports version %q; want \"1.5.0\"", got)
 	}
 
 	httpInit := srv.handleMCPInitialize(1)
 	gotHTTP := versionFromInitialize(httpInit["result"])
-	if gotHTTP != "1.4.0" {
-		t.Fatalf("handleMCPInitialize reports version %q; want \"1.4.0\"", gotHTTP)
+	if gotHTTP != "1.5.0" {
+		t.Fatalf("handleMCPInitialize reports version %q; want \"1.5.0\"", gotHTTP)
 	}
 }
 

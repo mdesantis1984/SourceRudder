@@ -249,7 +249,7 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 		"search_web":          {"searxng", "strategy"},
 		"search_news":         {"searxng"},
 		"search_doc_oficial":  {"official_doc_registry_search", "official_doc_web_fallback", "filters.library", "filters.version"},
-		"search_local_index":  {"local_index_unavailable"},
+		"search_local_index":  {"local_index_lexical", "local_index_unavailable"},
 		"search_reddit":       {"searxng", "searxng_reddit_index"},
 		"search_github":       {"github"},
 		"search_github_pr":    {"github", "filters.state"},
@@ -275,10 +275,8 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 	}
 }
 
-// TestSearchLocalIndexDescriptionAdvertisesUnavailability is the
-// textual complement to TestSearchLocalIndexUnavailableSignal in
-// contract_test.go: the description alone (without invoking the tool)
-// must already tell the agent that the tool is unavailable today.
+// TestSearchLocalIndexDescriptionAdvertisesStrategies is the textual
+// complement to the configured and unavailable MCP contract tests.
 func TestSearchLocalIndexDescriptionAdvertisesUnavailability(t *testing.T) {
 	s := &Server{}
 	s.buildToolsRegistry()
@@ -287,10 +285,10 @@ func TestSearchLocalIndexDescriptionAdvertisesUnavailability(t *testing.T) {
 			continue
 		}
 		lower := strings.ToLower(tool.Description)
-		if !strings.Contains(lower, "local_index_unavailable") {
-			t.Errorf("search_local_index description must advertise local_index_unavailable; got %q", tool.Description)
+		if !strings.Contains(lower, "local_index_lexical") || !strings.Contains(lower, "local_index_unavailable") {
+			t.Errorf("search_local_index description must advertise both strategies; got %q", tool.Description)
 		}
-		if !strings.Contains(lower, "no redirige") {
+		if !strings.Contains(lower, "without web fallback") {
 			t.Errorf("search_local_index description must tell agents it does not route to web; got %q", tool.Description)
 		}
 	}

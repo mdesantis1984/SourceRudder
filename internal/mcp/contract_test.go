@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,10 +163,8 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-// TestSearchLocalIndexUnavailableSignal locks item 3.b: search_local_index
-// must NOT silently route to a generic web search. Until a real local-
-// index provider exists, the tool returns a stable empty result with
-// Strategy=local_index_unavailable and a warning the AI can act on.
+// TestSearchLocalIndexUnavailableSignal proves the disabled-by-default path
+// never silently routes to generic web search.
 func TestSearchLocalIndexUnavailableSignal(t *testing.T) {
 	// Stand up a web connector that should NOT be hit. If the handler
 	// routed to web, this counter would tick.
@@ -216,6 +216,39 @@ func TestSearchLocalIndexUnavailableSignal(t *testing.T) {
 				t.Errorf("tool description should advertise local_index_unavailable, got %q", tool.Description)
 			}
 		}
+	}
+}
+
+func TestSearchLocalIndexConfiguredProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index.json")
+	corpus := `{"version":1,"documents":[{"id":"guide","title":"Local search guide","snippet":"Configure a safe local corpus.","tags":["search"]}]}`
+	if err := os.WriteFile(path, []byte(corpus), 0o600); err != nil {
+		t.Fatalf("write corpus: %v", err)
+	}
+	localIndex, err := connectors.NewLocalIndexConnector(path)
+	if err != nil {
+		t.Fatalf("NewLocalIndexConnector: %v", err)
+	}
+
+	cacheSvc := cache.NewService(300)
+	cm := search.NewConnectorManager(cacheSvc)
+	cm.Register(localIndex)
+	history := cache.NewHistoryService(10)
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), history, memory.NewClient("", ""))
+
+	resp, err := s.callToolByName(context.Background(), "search_local_index", []byte(`{"query":"local search"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Strategy != "local_index_lexical" || len(resp.Results) != 1 {
+		t.Fatalf("unexpected configured response: strategy=%q results=%d", resp.Strategy, len(resp.Results))
+	}
+	if resp.Results[0].CitationID != "local-index:guide" || !containsString(resp.SourcesUsed, "local_index") {
+		t.Fatalf("missing local index provenance: %+v", resp)
+	}
+	entries := history.List(context.Background(), 1, "")
+	if len(entries) != 1 || entries[0].Source != "local_index" {
+		t.Fatalf("configured search was not recorded with local source: %+v", entries)
 	}
 }
 

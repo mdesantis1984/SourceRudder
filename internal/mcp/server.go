@@ -19,7 +19,14 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-const serverVersion = "1.4.0"
+const serverVersion = "1.5.0"
+
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 2 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+)
 
 type Server struct {
 	transport         string
@@ -140,7 +147,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
 		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
 		{Name: "search_doc_oficial", Description: "Official documentation for a bounded IA-Buscar registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
-		{Name: "search_local_index", Description: "Índice local de workspace o fuentes indexadas. Sin proveedor configurado, devuelve strategy=\"local_index_unavailable\" y NO redirige a búsqueda web. Treat the empty result as \"tool no wired todavía\".", InputSchema: searchInputSchema()},
+		{Name: "search_local_index", Description: "Searches an operator-curated read-only corpus with deterministic lexical ranking and strategy=\"local_index_lexical\". When LOCAL_INDEX_PATH is unset, returns strategy=\"local_index_unavailable\" without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
 		{Name: "search_github_issue", Description: "Issues en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -631,7 +638,9 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("encode HTTP response: %v", err)
+	}
 }
 
 func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
@@ -649,7 +658,15 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.transport != "http" {
 		return nil
 	}
-	s.httpSrv = &http.Server{Addr: s.httpAddr, Handler: s.Handler()}
+	httpSrv := &http.Server{
+		Addr:              s.httpAddr,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
+	s.httpSrv = httpSrv
 	// Listen synchronously so address-conflict errors surface to the
 	// caller instead of being silently logged from a goroutine.
 	ln, err := net.Listen("tcp", s.httpAddr)
@@ -659,7 +676,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.httpLn = ln
 	go func() {
-		if err := s.httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server %s: %v", s.httpAddr, err)
 		}
 	}()
