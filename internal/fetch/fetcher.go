@@ -40,6 +40,11 @@ import (
 // for callers that use NewFetcherService(int) without a Config.
 const defaultUserAgent = "Mozilla/5.0 (compatible; IA-Buscar/1.0; +https://thiscloud.es)"
 
+const (
+	maxFetchResponseBytes = 4 << 20
+	maxConcurrentFetches  = 8
+)
+
 // Outcome values emitted on FetchResponse.Outcome. MCP clients
 // pattern-match on these strings.
 const (
@@ -69,9 +74,10 @@ type Config struct {
 // NewFetcherServiceWithConfig for production use; NewFetcherService
 // remains for legacy callers and resolves to the default config.
 type FetcherService struct {
-	cfg      Config
+	cfg       Config
 	extractor *Extractor
-	client   *http.Client
+	client    *http.Client
+	slots     chan struct{}
 }
 
 // NewFetcherService builds a fetcher with the timeout in milliseconds.
@@ -108,8 +114,9 @@ func NewFetcherServiceWithConfig(c Config) *FetcherService {
 	dialer := &net.Dialer{Timeout: time.Duration(c.TimeoutMs) * time.Millisecond}
 
 	return &FetcherService{
-		cfg:      c,
+		cfg:       c,
 		extractor: NewExtractor(),
+		slots:     make(chan struct{}, maxConcurrentFetches),
 		client: &http.Client{
 			Timeout: time.Duration(c.TimeoutMs) * time.Millisecond,
 			// Disable automatic redirects: the manual loop below
@@ -380,57 +387,54 @@ func (s *FetcherService) ValidateURL(ctx context.Context, rawURL string) (bool, 
 func retryableHead() []func(*http.Request) { return nil }
 
 func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]map[string]interface{}, error) {
-	results := make([]map[string]interface{}, 0, len(urls))
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	for _, rawURL := range urls {
-		wg.Add(1)
-		go func(u string) {
-			defer wg.Done()
-
-			// Rate-limit every link check against the upstream. The
-			// wait is cancellable so SIGTERM does not leave the
-			// goroutine wedged on the ticker. On cancellation we
-			// still append a result entry so the caller observes
-			// one record per URL with the cancellation surfaced.
-			result := map[string]interface{}{
-				"url":    u,
-				"valid":  false,
-				"status": 0,
-			}
-			select {
-			case <-ctx.Done():
-				result["error"] = ctx.Err().Error()
-				mu.Lock()
-				results = append(results, result)
-				mu.Unlock()
-				return
-			case <-time.After(rateLimiterInterval):
-			}
-
-			if err := s.isAllowedURL(u); err != nil {
-				result["error"] = err.Error()
-				mu.Lock()
-				results = append(results, result)
-				mu.Unlock()
-				return
-			}
-
-			resp, err := s.doFetchWithRetries(ctx, u, &types.FetchResponse{URL: u})
-			if err == nil && resp.Status < 400 {
-				result["valid"] = true
-			}
-			result["status"] = resp.Status
-			if resp.Outcome != OutcomeSuccess {
-				result["error"] = strings.Join(resp.Warnings, "; ")
-			}
-
-			mu.Lock()
-			results = append(results, result)
-			mu.Unlock()
-		}(rawURL)
+	const maxURLs = 100
+	if len(urls) > maxURLs {
+		return nil, fmt.Errorf("url count exceeds %d", maxURLs)
 	}
+	results := make([]map[string]interface{}, len(urls))
+	type job struct {
+		index int
+		url   string
+	}
+	jobs := make(chan job)
+	pace := time.NewTicker(rateLimiterInterval)
+	defer pace.Stop()
+	var wg sync.WaitGroup
+	workers := maxConcurrentFetches
+	if len(urls) < workers {
+		workers = len(urls)
+	}
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for work := range jobs {
+				result := map[string]interface{}{"url": work.url, "valid": false, "status": 0}
+				select {
+				case <-ctx.Done():
+					result["error"] = ctx.Err().Error()
+				case <-pace.C:
+					if err := s.isAllowedURL(work.url); err != nil {
+						result["error"] = err.Error()
+					} else {
+						resp, err := s.doFetchWithRetries(ctx, work.url, &types.FetchResponse{URL: work.url})
+						if err == nil && resp.Status < 400 {
+							result["valid"] = true
+						}
+						result["status"] = resp.Status
+						if resp.Outcome != OutcomeSuccess {
+							result["error"] = strings.Join(resp.Warnings, "; ")
+						}
+					}
+				}
+				results[work.index] = result
+			}
+		}()
+	}
+	for index, rawURL := range urls {
+		jobs <- job{index: index, url: rawURL}
+	}
+	close(jobs)
 	wg.Wait()
 	return results, nil
 }
@@ -441,6 +445,15 @@ func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]
 // goes through. It runs the manual redirect loop, classifies the
 // final response, and applies bounded retry on transient failures.
 func (s *FetcherService) doFetchWithRetries(ctx context.Context, rawURL string, fr *types.FetchResponse, reqOpts ...func(*http.Request)) (*types.FetchResponse, error) {
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	case <-ctx.Done():
+		fr.Outcome = OutcomeTimeout
+		fr.Warnings = append(fr.Warnings, ctx.Err().Error())
+		return fr, ctx.Err()
+	}
+
 	var lastErr error
 	for attempt := 1; attempt <= s.cfg.MaxAttempts; attempt++ {
 		fr.Attempts = attempt
@@ -452,7 +465,7 @@ func (s *FetcherService) doFetchWithRetries(ctx context.Context, rawURL string, 
 		default:
 		}
 
-			// Bounded backoff between attempts (skip on first). The
+		// Bounded backoff between attempts (skip on first). The
 		// sleep is cancellable so SIGTERM during a 1.6s exponential
 		// backoff stops the lifecycle immediately instead of waiting
 		// out the full window.
@@ -552,12 +565,29 @@ func (s *FetcherService) manualRedirectFetch(ctx context.Context, rawURL string,
 			fr.Warnings = append(fr.Warnings, err.Error())
 			return err
 		}
+		fr.Status = resp.StatusCode
 
 		// Drain + close so the connection can be reused.
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024))
-		resp.Body.Close()
-
-		fr.Status = resp.StatusCode
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxFetchResponseBytes+1))
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			if isTimeoutErr(readErr) {
+				fr.Outcome = OutcomeTimeout
+			} else {
+				fr.Outcome = OutcomeTransportError
+			}
+			fr.Warnings = append(fr.Warnings, fmt.Sprintf("read response body: %v", readErr))
+			return readErr
+		}
+		if closeErr != nil {
+			fr.Warnings = append(fr.Warnings, fmt.Sprintf("close response body: %v", closeErr))
+		}
+		if len(body) > maxFetchResponseBytes {
+			fr.Outcome = OutcomeNonTransientFailure
+			err := fmt.Errorf("response body exceeds %d bytes", maxFetchResponseBytes)
+			fr.Warnings = append(fr.Warnings, err.Error())
+			return err
+		}
 
 		// Redirect handling.
 		if loc := resp.Header.Get("Location"); loc != "" && (resp.StatusCode >= 300 && resp.StatusCode < 400) {

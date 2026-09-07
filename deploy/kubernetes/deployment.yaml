@@ -28,6 +28,11 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: IA_BUSCAR_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ia-buscar
+                  key: auth-key
             - name: SEARXNG_URL
               value: "http://searxng:8080"
             - name: FETCH_TIMEOUT_MS
@@ -39,7 +44,11 @@ spec:
             - name: FETCH_MAX_ATTEMPTS
               value: "3"
             - name: MEMORY_URL
-              value: "http://127.0.0.1:7438"
+              value: ""
+            # Mount an operator-curated corpus and set this path to enable
+            # search_local_index. Empty keeps the provider disabled.
+            - name: LOCAL_INDEX_PATH
+              value: ""
           resources:
             requests:
               memory: "128Mi"

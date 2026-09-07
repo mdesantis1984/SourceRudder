@@ -20,6 +20,10 @@ tmp
 *.db-journal
 coverage.*
 *.log
+.env
+.env.*
+**/*local-index*.json
+!configs/local-index.example.json
 
 # Editors / OS
 .idea

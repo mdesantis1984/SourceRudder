@@ -8,10 +8,17 @@ import (
 	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/connectors"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/pkg/types"
 )
+
+type githubPRSearcher interface {
+	SearchPR(context.Context, *types.SearchRequest) (*types.SearchResponse, error)
+}
+
+type githubIssueSearcher interface {
+	SearchIssue(context.Context, *types.SearchRequest) (*types.SearchResponse, error)
+}
 
 func (s *Server) registerTools() {
 	for i := range s.toolsRegistry {
@@ -168,16 +175,24 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 	}
 }
 
-// makeLocalIndexHandler returns an explicit unavailable signal instead of
-// silently routing to a generic web search. Until a real local-index
-// provider is wired (e.g. a workspace embedder or a downloaded corpus),
-// the tool returns a stable empty result with Strategy =
-// "local_index_unavailable" and a warning the AI can act on.
+// makeLocalIndexHandler uses the explicitly configured read-only corpus when
+// present. Without one it returns an honest unavailable signal and never
+// silently routes to generic web search.
 func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req types.SearchRequest
 		if err := json.Unmarshal(args, &req); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if s.connectorManager != nil {
+			if _, ok := s.connectorManager.GetConnector("local_index"); ok {
+				resp, err := s.connectorManager.Search(ctx, "local_index", &req)
+				if err != nil {
+					return nil, err
+				}
+				s.recordSearch(ctx, "local_index", resp)
+				return normalizeSearchResponse(resp), nil
+			}
 		}
 
 		return normalizeSearchResponse(&types.SearchResponse{
@@ -236,7 +251,7 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 				Errors:  []string{"github connector not available"},
 			}), nil
 		}
-		ghConn, ok := conn.(*connectors.GitHubConnector)
+		ghConn, ok := conn.(githubPRSearcher)
 		if !ok {
 			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,
@@ -272,7 +287,7 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 				Errors:  []string{"github connector not available"},
 			}), nil
 		}
-		ghConn, ok := conn.(*connectors.GitHubConnector)
+		ghConn, ok := conn.(githubIssueSearcher)
 		if !ok {
 			return normalizeSearchResponse(&types.SearchResponse{
 				Query:   req.Query,

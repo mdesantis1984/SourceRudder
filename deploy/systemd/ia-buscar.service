@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=ia-buscar
+EnvironmentFile=/etc/ia-buscar/ia-buscar.env
 # Identity check: refuse to start if the on-disk VERSION/IMAGE do
 # not contain the exact values the operator committed in source.
 # `grep -qxF 'expected' /opt/ia-buscar/VERSION` compares the FILE
@@ -25,8 +26,9 @@ Environment=FETCH_TIMEOUT_MS=30000
 Environment=FETCH_USER_AGENT=ia-buscar/1.2.0 (compatible; +https://thiscloud.es)
 Environment=FETCH_MAX_REDIRECTS=5
 Environment=FETCH_MAX_ATTEMPTS=3
-Environment=MEMORY_URL=http://127.0.0.1:7438
+Environment=MEMORY_URL=
 Environment=MEMORY_APIKEY=
+Environment=LOCAL_INDEX_PATH=
 
 [Install]
 WantedBy=multi-user.target

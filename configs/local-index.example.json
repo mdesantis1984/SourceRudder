@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "getting-started",
+      "title": "Getting started",
+      "url": "https://example.com/docs/getting-started",
+      "snippet": "Install and configure the service.",
+      "author": "Documentation team",
+      "tags": ["setup", "configuration"]
+    },
+    {
+      "id": "operations-runbook",
+      "title": "Operations runbook",
+      "snippet": "Local operational guidance without a public URL.",
+      "tags": ["operations", "runbook"]
+    }
+  ]
+}

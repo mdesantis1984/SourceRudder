@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -19,7 +20,16 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-const serverVersion = "1.4.0"
+const serverVersion = "1.5.0"
+
+const maxRPCRequestBytes = 1 << 20
+
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 2 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+)
 
 type Server struct {
 	transport         string
@@ -140,7 +150,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
 		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
 		{Name: "search_doc_oficial", Description: "Official documentation for a bounded IA-Buscar registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
-		{Name: "search_local_index", Description: "Índice local de workspace o fuentes indexadas. Sin proveedor configurado, devuelve strategy=\"local_index_unavailable\" y NO redirige a búsqueda web. Treat the empty result as \"tool no wired todavía\".", InputSchema: searchInputSchema()},
+		{Name: "search_local_index", Description: "Searches an operator-curated read-only corpus with deterministic lexical ranking and strategy=\"local_index_lexical\". When LOCAL_INDEX_PATH is unset, returns strategy=\"local_index_unavailable\" without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
 		{Name: "search_github_issue", Description: "Issues en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -157,7 +167,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},
 		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
 		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad (no SSRF) de una URL. Devuelve {url, valid, error}.", InputSchema: urlInputSchema()},
-		{Name: "check_link_status", Description: "Validar un lote de URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
+		{Name: "check_link_status", Description: "Validar hasta 100 URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
 		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
@@ -260,7 +270,7 @@ func urlListInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"urls": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Lista de URLs a validar en paralelo (requerido)."},
+			"urls": map[string]interface{}{"type": "array", "maxItems": 100, "items": map[string]interface{}{"type": "string"}, "description": "Lista de hasta 100 URLs a validar en paralelo (requerido)."},
 		},
 		"required": []string{"urls"},
 	}
@@ -450,6 +460,14 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
+	controller := http.NewResponseController(w)
+	writePing := func() error {
+		if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return err
+		}
+		_, err := fmt.Fprint(w, ": ping\n\n")
+		return err
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -461,7 +479,9 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	fmt.Fprintf(w, ": ping\n\n")
+	if err := writePing(); err != nil {
+		return
+	}
 	flusher.Flush()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -470,7 +490,9 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			fmt.Fprintf(w, ": ping\n\n")
+			if err := writePing(); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
@@ -484,9 +506,15 @@ type rpcRequest struct {
 }
 
 func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPCRequestBytes)
 	var req rpcRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(w, status, map[string]interface{}{
 			"jsonrpc": "2.0",
 			"error":   map[string]interface{}{"code": -32700, "message": "parse error"},
 		})
@@ -631,7 +659,9 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("encode HTTP response: %v", err)
+	}
 }
 
 func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
@@ -649,7 +679,15 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.transport != "http" {
 		return nil
 	}
-	s.httpSrv = &http.Server{Addr: s.httpAddr, Handler: s.Handler()}
+	httpSrv := &http.Server{
+		Addr:              s.httpAddr,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
+	s.httpSrv = httpSrv
 	// Listen synchronously so address-conflict errors surface to the
 	// caller instead of being silently logged from a goroutine.
 	ln, err := net.Listen("tcp", s.httpAddr)
@@ -659,7 +697,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.httpLn = ln
 	go func() {
-		if err := s.httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server %s: %v", s.httpAddr, err)
 		}
 	}()

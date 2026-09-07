@@ -41,6 +41,12 @@ build/
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Operator-owned local index corpora
+/configs/local-index*.json
+!/configs/local-index.example.json
 
 # Vendor
 vendor/

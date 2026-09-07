@@ -6,30 +6,30 @@ import (
 )
 
 type SearchRequest struct {
-	Query       string            `json:"query"`
-	Sources     []string          `json:"sources,omitempty"`
-	MaxResults  int               `json:"maxResults,omitempty"`
-	Language    string            `json:"language,omitempty"`
-	SafeSearch  bool              `json:"safeSearch,omitempty"`
-	TimeRange   string            `json:"timeRange,omitempty"`
-	Format      string            `json:"format,omitempty"`
-	CachePolicy string            `json:"cachePolicy,omitempty"`
-	DeepResearch bool             `json:"deepResearch,omitempty"`
-	Filters     map[string]string `json:"filters,omitempty"`
+	Query        string            `json:"query"`
+	Sources      []string          `json:"sources,omitempty"`
+	MaxResults   int               `json:"maxResults,omitempty"`
+	Language     string            `json:"language,omitempty"`
+	SafeSearch   bool              `json:"safeSearch,omitempty"`
+	TimeRange    string            `json:"timeRange,omitempty"`
+	Format       string            `json:"format,omitempty"`
+	CachePolicy  string            `json:"cachePolicy,omitempty"`
+	DeepResearch bool              `json:"deepResearch,omitempty"`
+	Filters      map[string]string `json:"filters,omitempty"`
 }
 
 type SearchResultItem struct {
-	Title       string    `json:"title"`
-	URL         string    `json:"url"`
-	Snippet     string    `json:"snippet,omitempty"`
-	Source      string    `json:"source"`
-	Type        string    `json:"type,omitempty"`
-	Score       float64   `json:"score,omitempty"`
-	PublishedAt *time.Time `json:"publishedAt,omitempty"`
-	Author      string    `json:"author,omitempty"`
-	Tags        []string  `json:"tags,omitempty"`
-	CitationID  string    `json:"citationId,omitempty"`
-	CanonicalURL string   `json:"canonicalUrl,omitempty"`
+	Title        string     `json:"title"`
+	URL          string     `json:"url"`
+	Snippet      string     `json:"snippet,omitempty"`
+	Source       string     `json:"source"`
+	Type         string     `json:"type,omitempty"`
+	Score        float64    `json:"score,omitempty"`
+	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
+	Author       string     `json:"author,omitempty"`
+	Tags         []string   `json:"tags,omitempty"`
+	CitationID   string     `json:"citationId,omitempty"`
+	CanonicalURL string     `json:"canonicalUrl,omitempty"`
 }
 
 // SearchResponse is the stable wire contract returned by every MCP search
@@ -37,7 +37,7 @@ type SearchResultItem struct {
 // or omitted, even when empty, so downstream AI agents can iterate over it
 // without nil checks. Strategy, when non-empty, names the concrete backend
 // that produced the response (e.g. "reddit", "searxng", "official_doc_web_fallback",
-// "local_index_unavailable"); it lets the AI distinguish a genuine empty
+// "local_index_lexical", "local_index_unavailable"); it lets the AI distinguish a genuine empty
 // result from a tool that is not actually wired.
 type SearchResponse struct {
 	Query       string             `json:"query"`
@@ -54,11 +54,11 @@ type SearchResponse struct {
 }
 
 type FetchResponse struct {
-	URL       string            `json:"url"`
-	Title     string            `json:"title,omitempty"`
-	Content   string            `json:"content,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-	Warnings  []string          `json:"warnings,omitempty"`
+	URL      string            `json:"url"`
+	Title    string            `json:"title,omitempty"`
+	Content  string            `json:"content,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+	Warnings []string          `json:"warnings,omitempty"`
 
 	// Outcome names the final classification of the fetch. Allowed
 	// values (Phase 6 wire contract): "success", "blocked-target",
@@ -88,9 +88,9 @@ type SearchConnector interface {
 }
 
 type CacheEntry struct {
-	CacheKey   string    `json:"cacheKey"`
-	CreatedAt  time.Time `json:"createdAt"`
-	ExpiresAt  time.Time `json:"expiresAt"`
-	Payload    []byte    `json:"payload,omitempty"`
-	SourceSet  []string  `json:"sourceSet,omitempty"`
+	CacheKey  string    `json:"cacheKey"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Payload   []byte    `json:"payload,omitempty"`
+	SourceSet []string  `json:"sourceSet,omitempty"`
 }

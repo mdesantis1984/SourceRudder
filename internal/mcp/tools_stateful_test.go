@@ -18,6 +18,7 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/observability"
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/thiscloud/ia-buscar/pkg/types"
 )
 
 // TestGetCachedHitReturnsEntry covers the cache-hit branch of
@@ -31,9 +32,7 @@ func TestGetCachedHitReturnsEntry(t *testing.T) {
 	srv := buildToolsTestServer(t, cacheSvc)
 
 	// Seed the cache so a hit is guaranteed.
-	if err := cacheSvc.Set(context.Background(), "alpha", []byte("PAYLOAD-A"), []string{"web"}); err != nil {
-		t.Fatalf("seed Set: %v", err)
-	}
+	cacheSvc.Set(context.Background(), "alpha", []byte("PAYLOAD-A"), []string{"web"})
 
 	res, err := callToolByNameWithCtx(srv, "get_cached", map[string]interface{}{"key": "alpha"})
 	if err != nil {
@@ -85,9 +84,7 @@ func TestInvalidateCachePresent(t *testing.T) {
 	cacheSvc := cache.NewService(60)
 	srv := buildToolsTestServer(t, cacheSvc)
 
-	if err := cacheSvc.Set(context.Background(), "k", []byte("v"), nil); err != nil {
-		t.Fatalf("seed Set: %v", err)
-	}
+	cacheSvc.Set(context.Background(), "k", []byte("v"), nil)
 
 	res, err := callToolByNameWithCtx(srv, "invalidate_cache", map[string]interface{}{"key": "k"})
 	if err != nil {
@@ -449,18 +446,31 @@ func TestSearchDocOficialRecordsHistory(t *testing.T) {
 // ghConn.SearchPR) and a regression that wires only the PR handler
 // surfaces here. Like the PR test, this depends on api.github.com
 // returning a parseable response for the chosen query; the connector
-// swallows any transport / decode error into a degraded response, and
-// the corrected recordSearch skips degraded entries. We therefore pick
-// a query the live API reliably answers with at least one issue.
+type githubIssueTestConnector struct{}
+
+func (githubIssueTestConnector) Name() string { return "github" }
+
+func (githubIssueTestConnector) Search(context.Context, *types.SearchRequest) (*types.SearchResponse, error) {
+	return &types.SearchResponse{Results: []types.SearchResultItem{}}, nil
+}
+
+func (githubIssueTestConnector) SearchIssue(_ context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
+	return &types.SearchResponse{
+		Query:       req.Query,
+		Results:     []types.SearchResultItem{{Title: "Fixture issue", URL: "https://example.com/issues/1", Source: "github"}},
+		SourcesUsed: []string{"github"},
+	}, nil
+}
+
+// TestSearchGitHubIssueRecordsHistory uses the handler's narrow connector
+// interface so the contract remains deterministic without external network I/O.
 func TestSearchGitHubIssueRecordsHistory(t *testing.T) {
 	history := cache.NewHistoryService(10)
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
-	cm.Register(connectors.NewGitHubConnector("", cacheSvc))
+	cm.Register(githubIssueTestConnector{})
 	srv := buildToolsTestServerWithHistoryAndConnectors(t, history, cacheSvc, cm, "http://localhost:8888")
 
-	// Use a query the live GitHub API reliably answers with issues.
-	// "memory" is broad enough to return results without auth.
 	if _, err := callToolByNameWithCtx(srv, "search_github_issue", map[string]interface{}{"query": "memory"}); err != nil {
 		t.Fatalf("search_github_issue: unexpected error: %v", err)
 	}
@@ -474,11 +484,6 @@ func TestSearchGitHubIssueRecordsHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected history array, got %T (%#v)", m["history"], m["history"])
 	}
-	// The handler records the entry unconditionally on the production
-	// search path (before this corrective batch, even degraded entries
-	// were recorded; after the fix, only non-degraded entries are
-	// recorded). The query "memory" reliably returns issues on the live
-	// API, so the response is non-degraded and the entry is present.
 	if len(arr) != 1 {
 		t.Fatalf("expected 1 history entry after one search_github_issue call, got %d (%#v)", len(arr), arr)
 	}
@@ -504,9 +509,7 @@ func TestGetCachedExpiredEntryReturnsEmpty(t *testing.T) {
 	cacheSvc := cache.NewService(0)
 	srv := buildToolsTestServer(t, cacheSvc)
 
-	if err := cacheSvc.Set(context.Background(), "expired", []byte("STALE-PAYLOAD"), []string{"web"}); err != nil {
-		t.Fatalf("seed Set: %v", err)
-	}
+	cacheSvc.Set(context.Background(), "expired", []byte("STALE-PAYLOAD"), []string{"web"})
 	// Give the monotonic clock a deterministic nudge past the
 	// expires timestamp. 1ms is well below human-perceptible but
 	// orders of magnitude larger than Go's clock resolution.

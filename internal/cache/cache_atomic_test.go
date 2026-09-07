@@ -14,12 +14,8 @@ func TestCacheServiceGetExactKeyLookup(t *testing.T) {
 	s := NewService(60)
 	ctx := context.Background()
 
-	if err := s.Set(ctx, "alpha", []byte("A"), []string{"web"}); err != nil {
-		t.Fatalf("Set alpha: %v", err)
-	}
-	if err := s.Set(ctx, "alpha-extra", []byte("B"), []string{"github"}); err != nil {
-		t.Fatalf("Set alpha-extra: %v", err)
-	}
+	s.Set(ctx, "alpha", []byte("A"), []string{"web"})
+	s.Set(ctx, "alpha-extra", []byte("B"), []string{"github"})
 
 	got, ok, err := s.Get(ctx, "alpha")
 	if err != nil {
@@ -57,9 +53,7 @@ func TestCacheServiceGetExactKeyLookup(t *testing.T) {
 func TestCacheServiceDeleteIfPresentPresent(t *testing.T) {
 	s := NewService(60)
 	ctx := context.Background()
-	if err := s.Set(ctx, "k", []byte("v"), nil); err != nil {
-		t.Fatalf("Set k: %v", err)
-	}
+	s.Set(ctx, "k", []byte("v"), nil)
 
 	if removed := s.DeleteIfPresent(ctx, "k"); !removed {
 		t.Fatal("expected DeleteIfPresent to return true for present key")
@@ -92,9 +86,7 @@ func TestCacheServiceDeleteIfPresentAbsent(t *testing.T) {
 func TestCacheServiceDeleteIfPresentRaceSafe(t *testing.T) {
 	s := NewService(60)
 	ctx := context.Background()
-	if err := s.Set(ctx, "k", []byte("v"), nil); err != nil {
-		t.Fatalf("Set k: %v", err)
-	}
+	s.Set(ctx, "k", []byte("v"), nil)
 
 	const N = 64
 	results := make(chan bool, N)

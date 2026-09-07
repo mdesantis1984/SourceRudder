@@ -125,7 +125,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 # ---- structured log helpers ----------------------------------------------
 #
@@ -513,10 +513,28 @@ if (( TOTAL > 1000 )); then
   if [[ -n "$missing_field" ]]; then
     fail "size-exception receipt missing required field(s):$missing_field (see $RECEIPT_FILE)"
   fi
+  if [[ "$RECEIPT_FILE" == "${SIZE_EXCEPTIONS_DIR}/local-index-provider.md" ]]; then
+    (( TOTAL <= 2200 )) || fail "local-index size exception exceeds approved ceiling TOTAL=$TOTAL (> 2200)"
+    grep -qxF "Branch: $CURRENT_BRANCH" "$RECEIPT_FILE" || fail "size-exception receipt branch does not match $CURRENT_BRANCH"
+    candidate_head="$(git rev-parse HEAD)"
+    if (( $(git rev-list --parents -n 1 HEAD | wc -w) == 3 )); then
+      candidate_head="$(git rev-parse HEAD^2)"
+    fi
+    expected_commit="$(git rev-parse "${candidate_head}^")"
+    grep -qxF "Commit: $expected_commit" "$RECEIPT_FILE" || fail "size-exception receipt commit does not match candidate parent $expected_commit"
+    expiration="$(awk -F': ' '$1 == "Expiration" {print $2; exit}' "$RECEIPT_FILE")"
+    normalized_expiration="$(date -u -d "$expiration" +%F 2>/dev/null || true)"
+    [[ "$normalized_expiration" == "$expiration" ]] || fail "size-exception receipt expiration is not a valid ISO-8601 date"
+    [[ "$expiration" < "$(date -u +%F)" ]] && fail "size-exception receipt expired on $expiration"
+  fi
   log "SIZE_EXCEPTION_RECEIPT=$RECEIPT_FILE validated"
 else
   log "SIZE_EXCEPTION=inactive total=$TOTAL (<= 1000, no carve-out required)"
 fi
+
+# Authorization metadata belongs only to this gate invocation. Do not leak it
+# into nested test harnesses or other child processes.
+unset RELEASE_GATE_SIZE_EXCEPTION SIZE_EXCEPTIONS_RECEIPT
 
 # ---- 4. Go checks --------------------------------------------------------
 

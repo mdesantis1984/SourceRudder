@@ -1,7 +1,12 @@
 package mcp
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/thiscloud/ia-buscar/internal/auth"
 	"github.com/thiscloud/ia-buscar/internal/cache"
@@ -11,6 +16,17 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/search"
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
+}
+
+func (w *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	w.deadline = deadline
+	return nil
+}
+func (w *deadlineRecorder) Flush() {}
 
 // TestNewServerWiresMemoryClientIdentity is the threat-matrix
 // process-integration proof for the memory client wiring: the same
@@ -42,6 +58,51 @@ func TestNewServerWiresMemoryClientIdentity(t *testing.T) {
 	}
 	if srv.history != history {
 		t.Fatalf("Server.history is NOT the same pointer passed to NewServer (got %p, want %p)", srv.history, history)
+	}
+}
+
+func TestHTTPServerHasBoundedTimeouts(t *testing.T) {
+	srv := &Server{
+		transport: "http",
+		httpAddr:  "127.0.0.1:0",
+		met:       observability.New(),
+	}
+	if err := srv.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := srv.Stop(ctx); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	if srv.httpSrv.ReadHeaderTimeout != httpReadHeaderTimeout ||
+		srv.httpSrv.ReadTimeout != httpReadTimeout ||
+		srv.httpSrv.WriteTimeout != httpWriteTimeout ||
+		srv.httpSrv.IdleTimeout != httpIdleTimeout {
+		t.Fatalf("unexpected HTTP timeouts: %+v", srv.httpSrv)
+	}
+}
+
+func TestHTTPRejectsOversizedRPCRequest(t *testing.T) {
+	srv := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(strings.Repeat(" ", maxRPCRequestBytes+1)))
+	rec := httptest.NewRecorder()
+	srv.handleHTTPPost(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestSSEBoundsHeartbeatWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	(&Server{}).handleHTTPGet(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx))
+	if !rec.deadline.After(time.Now()) || rec.deadline.After(time.Now().Add(6*time.Second)) {
+		t.Fatalf("SSE heartbeat write deadline is not bounded: %v", rec.deadline)
 	}
 }
 

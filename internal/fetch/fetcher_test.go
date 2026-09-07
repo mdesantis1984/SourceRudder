@@ -243,6 +243,29 @@ func TestCheckLinkStatusCancellable(t *testing.T) {
 		t.Fatalf("CheckLinkStatus honored the disabled rate-limiter queue: took %v", elapsed)
 	}
 }
+
+func TestCheckLinkStatusBoundsBatchAndPreservesOrder(t *testing.T) {
+	f := NewFetcherService(5000)
+	if _, err := f.CheckLinkStatus(context.Background(), make([]string, 101)); err == nil {
+		t.Fatal("expected oversized URL batch to be rejected")
+	}
+
+	urls := []string{"http://localhost/first", "ftp://example.com/second"}
+	start := time.Now()
+	results, err := f.CheckLinkStatus(context.Background(), urls)
+	if err != nil {
+		t.Fatalf("CheckLinkStatus: %v", err)
+	}
+	for i := range urls {
+		if results[i]["url"] != urls[i] {
+			t.Fatalf("result %d lost input order: %#v", i, results[i])
+		}
+	}
+	if time.Since(start) < 2*rateLimiterInterval {
+		t.Fatal("link checks were not globally paced")
+	}
+}
+
 func TestFetcherPinsDialToApprovedIP(t *testing.T) {
 	// Hook the resolver to map synthetic host -> 127.0.0.1.
 	prev := resolveAndValidateFn

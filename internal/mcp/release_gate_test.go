@@ -148,12 +148,12 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 // as a process guard for the compiled binary's view of the
 // contract:
 //
-//   1. Status: pass                        (exact line)
-//   2. Candidate Commit: <full 40-char SHA> (two-context contract)
-//   3. Scope: <text mentioning current branch>
-//   4. Verified Commands:                  (section; every entry
-//      ends in `: PASS`)
-//   5. Unresolved Blocker Policy:          (header; value free-form)
+//  1. Status: pass                        (exact line)
+//  2. Candidate Commit: <full 40-char SHA> (two-context contract)
+//  3. Scope: <text mentioning current branch>
+//  4. Verified Commands:                  (section; every entry
+//     ends in `: PASS`)
+//  5. Unresolved Blocker Policy:          (header; value free-form)
 //
 // GREEN-on-first-run by construction for the local context:
 // the staged receipt's Candidate Commit equals HEAD~1 of the
@@ -1830,7 +1830,7 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 // The release-gate workflow at .github/workflows/release-gate.yml
 // MUST activate RELEASE_GATE_SIZE_EXCEPTION via a branch-exact
 // expression that yields the literal branch name ONLY when
-// github.head_ref equals `feature/close-fetch-resilience-release-gates-exception`
+// github.head_ref equals `feat/local-index-provider`
 // and the empty string '' otherwise. Before R6-NEW-001 the
 // workflow sourced the env from ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} —
 // a repo variable that must be set by a maintainer with admin
@@ -1873,17 +1873,17 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 //     does NOT match because the env key must be `RELEASE_GATE_SIZE_EXCEPTION:`
 //     at column-aligned indentation.
 //   - `\${{` — GitHub Actions expression start.
-//   - `\s*github\.head_ref\s*==\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")`
+//   - `\s*github\.head_ref\s*==\s*(?:'|")feat/local-index-provider(?:'|")`
 //     — equality comparison against the canonical branch
 //     literal, single- or double-quoted (exactly one quote
 //     on each side). A wrong branch literal does NOT match.
-//   - `\s*&&\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")`
+//   - `\s*&&\s*(?:'|")feat/local-index-provider(?:'|")`
 //     — the value-side branch literal. The branch name MUST
 //     appear in BOTH positions; if the equality literal and
 //     the value literal disagree the regex does not match.
 //     This is the deliberate structural guard that makes
 //     broadening the carve-out a two-edit change.
-//   - `\s*\|\|\s*(?:''|"")` — empty-string fallback in the
+//   - `\s*\|\|\s*(?:”|"")` — empty-string fallback in the
 //     fail-closed position. A regression that drops the
 //     fallback evaluates to the literal string `'false'` for
 //     non-matching branches, which the bash validator would
@@ -1898,8 +1898,8 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 // R6-NEW-001.
 var releaseGateSizeExceptionEnvRegex = regexp.MustCompile(
 	`(?m)^\s*RELEASE_GATE_SIZE_EXCEPTION:\s*\${{\s*` +
-		`github\.head_ref\s*==\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")\s*` +
-		`&&\s*(?:'|")feature/close-fetch-resilience-release-gates-exception(?:'|")\s*` +
+		`github\.head_ref\s*==\s*(?:'|")feat/local-index-provider(?:'|")\s*` +
+		`&&\s*(?:'|")feat/local-index-provider(?:'|")\s*` +
 		`\|\|\s*(?:''|"")\s*` +
 		`}}\s*$`)
 
@@ -1927,7 +1927,7 @@ func TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly(t *testing.T) {
 				seen = append(seen, line)
 			}
 		}
-		t.Fatalf("release-gate.yml does not carry the branch-exact RELEASE_GATE_SIZE_EXCEPTION expression matched by:\n%s\n\nThe env: section lines actually present:\n%s\n\nR6-NEW-001 contract:\n  - The env MUST be set via ${{ github.head_ref == 'feature/close-fetch-resilience-release-gates-exception' && 'feature/close-fetch-resilience-release-gates-exception' || '' }} so the carve-out activates for this branch only, without depending on a repo variable.\n  - The previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} form MUST be removed because the public repo has not set the variable (`gh variable list` returns empty) and the empty-env reach triggers scripts/release-gate.sh:496 fail-closed.", releaseGateSizeExceptionEnvRegex.String(), strings.Join(seen, "\n"))
+		t.Fatalf("release-gate.yml does not carry the branch-exact RELEASE_GATE_SIZE_EXCEPTION expression matched by:\n%s\n\nThe env: section lines actually present:\n%s\n\nR6-NEW-001 contract:\n  - The env MUST be set via ${{ github.head_ref == 'feat/local-index-provider' && 'feat/local-index-provider' || '' }} so the carve-out activates for this branch only, without depending on a repo variable.\n  - The previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} form MUST be removed because the public repo has not set the variable (`gh variable list` returns empty) and the empty-env reach triggers scripts/release-gate.sh:496 fail-closed.", releaseGateSizeExceptionEnvRegex.String(), strings.Join(seen, "\n"))
 	}
 
 	if strings.Contains(body, "vars.RELEASE_GATE_SIZE_EXCEPTION") {
@@ -1948,7 +1948,7 @@ func TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly(t *testing.T) {
 // The subtests form the control surface the production test
 // relies on. (R6-NEW-001)
 func TestReleaseGateSizeExceptionEnvRegexContract(t *testing.T) {
-	const branch = "feature/close-fetch-resilience-release-gates-exception"
+	const branch = "feat/local-index-provider"
 
 	cases := []struct {
 		name      string
