@@ -67,8 +67,8 @@ func TestValidator_RejectsMissingCredentials(t *testing.T) {
 
 // TestValidator_RejectsInvalidCredentials locks in the contract that
 // a wrong X-Api-Key or Bearer MUST NOT reach the downstream handler.
-// SHA256 comparison is preserved so the test confirms the receipt
-// path still works without weakening the hashing.
+// A constant-time comparison prevents invalid credentials from reaching
+// the downstream handler.
 func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 	v := NewValidator("correct-key")
 	if v == nil {
@@ -102,7 +102,7 @@ func TestValidator_RejectsInvalidCredentials(t *testing.T) {
 
 // TestValidator_AcceptsMatchingCredentials is the GREEN happy path.
 // Once a key is configured, the matching key (in either header) MUST
-// reach the downstream handler. SHA256 equality is the contract; the
+// reach the downstream handler. Exact equality is the contract; the
 // test exercises both header surfaces so a future refactor that
 // drops one will fail loudly.
 func TestValidator_AcceptsMatchingCredentials(t *testing.T) {

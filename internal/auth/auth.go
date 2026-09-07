@@ -1,40 +1,34 @@
 package auth
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
 
 // Validator rejects requests that do not present a credential whose
-// SHA256 hash matches the one configured at construction time. The
+// value matches the one configured at construction time. The
 // validator is never nil so the middleware always enforces the gate;
 // configuring an empty key at boot produces a validator that rejects
 // every request (the alternative — silently allowing all traffic when
 // no key is configured — is the exact bypass the new contract
 // forbids).
 type Validator struct {
-	validKeyHash string
+	validKey []byte
 }
 
 // NewValidator builds a Validator that accepts a credential whose
-// SHA256 hash matches the SHA256 of the supplied apiKey. The returned
-// value is always non-nil: an empty apiKey produces a validator that
+// value matches the supplied apiKey. The returned value is always
+// non-nil: an empty apiKey produces a validator that
 // rejects every request so the middleware never shortcuts to an
 // open door in production deployments.
 func NewValidator(apiKey string) *Validator {
-	hash := sha256.Sum256([]byte(apiKey))
-	return &Validator{
-		validKeyHash: hex.EncodeToString(hash[:]),
-	}
+	return &Validator{validKey: []byte(apiKey)}
 }
 
 // Middleware wraps next so every request must carry a credential
-// whose SHA256 matches the configured hash. Missing or empty
-// credentials are rejected with 401; requests with a wrong
-// credential are also rejected. The hash is constant-time compared
-// via hex string equality of the precomputed digest.
+// matching the configured key. Missing, empty, or wrong credentials
+// are rejected with 401. Matching uses a constant-time byte comparison.
 func (v *Validator) Middleware(next http.Handler) http.Handler {
 	if v == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,9 +41,7 @@ func (v *Validator) Middleware(next http.Handler) http.Handler {
 			http.Error(w, `{"error":"missing_credentials"}`, http.StatusUnauthorized)
 			return
 		}
-		hash := sha256.Sum256([]byte(key))
-		keyHash := hex.EncodeToString(hash[:])
-		if keyHash != v.validKeyHash {
+		if subtle.ConstantTimeCompare([]byte(key), v.validKey) != 1 {
 			http.Error(w, `{"error":"invalid_credentials"}`, http.StatusUnauthorized)
 			return
 		}
