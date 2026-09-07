@@ -518,6 +518,10 @@ else
   log "SIZE_EXCEPTION=inactive total=$TOTAL (<= 1000, no carve-out required)"
 fi
 
+# Authorization metadata belongs only to this gate invocation. Do not leak it
+# into nested test harnesses or other child processes.
+unset RELEASE_GATE_SIZE_EXCEPTION SIZE_EXCEPTIONS_RECEIPT
+
 # ---- 4. Go checks --------------------------------------------------------
 
 log "RUN go build"
