@@ -160,7 +160,9 @@ func main() {
 
 	cm := search.NewConnectorManager(cacheSvc)
 	planner := search.NewPlanner()
-	cm.Register(connectors.NewWebConnector(*searxngURL, cacheSvc))
+	webConnector := connectors.NewWebConnector(*searxngURL, cacheSvc)
+	cm.Register(webConnector)
+	cm.Register(connectors.NewOfficialDocsConnector(webConnector))
 	cm.Register(connectors.NewGitHubConnector("", cacheSvc))
 	cm.Register(connectors.NewStackOverflowConnector(cacheSvc))
 	cm.Register(connectors.NewNPMConnector(cacheSvc))

@@ -399,14 +399,16 @@ func TestSearchDocOficialRecordsHistory(t *testing.T) {
 	searxng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"results":[{"title":"t","url":"https://example.com/x","content":"c"}],"unresponsive_engines":[]}`))
+		_, _ = w.Write([]byte(`{"results":[{"title":"t","url":"https://go.dev/doc/","content":"c"}],"unresponsive_engines":[]}`))
 	}))
 	defer searxng.Close()
 
 	history := cache.NewHistoryService(10)
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
-	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
+	webConnector := connectors.NewWebConnector(searxng.URL, cacheSvc)
+	cm.Register(webConnector)
+	cm.Register(connectors.NewOfficialDocsConnector(webConnector))
 	srv := buildToolsTestServerWithHistoryAndConnectors(t, history, cacheSvc, cm, searxng.URL)
 
 	if _, err := callToolByNameWithCtx(srv, "search_doc_oficial", map[string]interface{}{"query": "go documentation"}); err != nil {
@@ -429,12 +431,8 @@ func TestSearchDocOficialRecordsHistory(t *testing.T) {
 	if entry["query"] != "go documentation" {
 		t.Fatalf("expected recorded query=go documentation, got %#v", entry["query"])
 	}
-	// search_doc_oficial falls back to the web connector today; the
-	// handler records the connector name that actually answered (web),
-	// not the tool name. This is the same convention as the simple
-	// search_* handlers and the GitHub handlers.
-	if entry["source"] != "web" {
-		t.Fatalf("expected recorded source=web (fallback connector), got %#v", entry["source"])
+	if entry["source"] != "official_docs" {
+		t.Fatalf("expected recorded source=official_docs, got %#v", entry["source"])
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 	"github.com/thiscloud/ia-buscar/internal/synthesis"
 )
 
-const serverVersion = "1.3.2"
+const serverVersion = "1.4.0"
 
 type Server struct {
 	transport         string
@@ -139,7 +139,7 @@ func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
 		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
-		{Name: "search_doc_oficial", Description: "Documentación oficial de productos, frameworks o servicios. NO consulta un índice curado: hoy hace fallback explícito a búsqueda web y devuelve strategy=\"official_doc_web_fallback\" con un warning. No generes contenido como si fuera un índice curado.", InputSchema: searchInputSchema()},
+		{Name: "search_doc_oficial", Description: "Official documentation for a bounded IA-Buscar registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
 		{Name: "search_local_index", Description: "Índice local de workspace o fuentes indexadas. Sin proveedor configurado, devuelve strategy=\"local_index_unavailable\" y NO redirige a búsqueda web. Treat the empty result as \"tool no wired todavía\".", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -202,6 +202,20 @@ func githubFiltersInputSchema() map[string]interface{} {
 				"enum":        []string{"open", "closed"},
 				"description": "Estado del PR o issue (solo search_github_pr / search_github_issue)",
 			},
+		},
+	}
+	return schema
+}
+
+func officialDocsInputSchema() map[string]interface{} {
+	schema := searchInputSchema()
+	props := schema["properties"].(map[string]interface{})
+	props["filters"] = map[string]interface{}{
+		"type":        "object",
+		"description": "Official-documentation registry selectors.",
+		"properties": map[string]interface{}{
+			"library": map[string]interface{}{"type": "string", "description": "Registered library ID or alias. Takes precedence over query inference."},
+			"version": map[string]interface{}{"type": "string", "description": "Requested version. It is not verified unless returned provenance explicitly identifies it."},
 		},
 	}
 	return schema

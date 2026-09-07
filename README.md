@@ -179,6 +179,14 @@ de la request actual.
 
 ## Changelog
 
+### 1.4.0 — unreleased feature candidate
+- **Authoritative official documentation**: `search_doc_oficial` resolves Go
+  and SearXNG through a bounded local registry, restricts SearXNG execution to
+  approved documentation hosts, validates result provenance, and returns
+  `strategy="official_doc_registry_search"`. Unknown, ambiguous, failed, or
+  unvalidated requests retain the typed `official_doc_web_fallback` path. No
+  tag, deployment, publication, or release was created.
+
 ### 1.3.2 — unreleased bugfix candidate
 - **Indexed image previews**: `search_images` retains a valid, distinct
   `thumbnail_src` as a labeled indexed preview alongside the selected image and

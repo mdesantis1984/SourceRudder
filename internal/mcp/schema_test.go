@@ -248,7 +248,7 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 	want := map[string][]string{
 		"search_web":          {"searxng", "strategy"},
 		"search_news":         {"searxng"},
-		"search_doc_oficial":  {"official_doc_web_fallback"},
+		"search_doc_oficial":  {"official_doc_registry_search", "official_doc_web_fallback", "filters.library", "filters.version"},
 		"search_local_index":  {"local_index_unavailable"},
 		"search_reddit":       {"searxng", "searxng_reddit_index"},
 		"search_github":       {"github"},
@@ -296,10 +296,8 @@ func TestSearchLocalIndexDescriptionAdvertisesUnavailability(t *testing.T) {
 	}
 }
 
-// TestSearchDocOficialDescriptionAdvertisesFallback is the textual
-// complement to TestSearchDocOficialStrategySignal in
-// contract_test.go: the description alone (without invoking the tool)
-// must already tell the agent that the tool falls back to web search.
+// TestSearchDocOficialDescriptionAdvertisesStrategies is the textual
+// complement to TestSearchDocOficialStrategySignal in contract_test.go.
 func TestSearchDocOficialDescriptionAdvertisesFallback(t *testing.T) {
 	s := &Server{}
 	s.buildToolsRegistry()
@@ -310,6 +308,9 @@ func TestSearchDocOficialDescriptionAdvertisesFallback(t *testing.T) {
 		lower := strings.ToLower(tool.Description)
 		if !strings.Contains(lower, "official_doc_web_fallback") {
 			t.Errorf("search_doc_oficial description must advertise official_doc_web_fallback; got %q", tool.Description)
+		}
+		if !strings.Contains(lower, "official_doc_registry_search") {
+			t.Errorf("search_doc_oficial description must advertise official_doc_registry_search; got %q", tool.Description)
 		}
 		if !strings.Contains(lower, "fallback") {
 			t.Errorf("search_doc_oficial description must mention the word 'fallback'; got %q", tool.Description)
