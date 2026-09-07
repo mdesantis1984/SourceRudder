@@ -745,6 +745,7 @@ func TestGateLocalIndexSizeExceptionSemantics(t *testing.T) {
 		{"valid", branch, "2999-12-31", 1001, true},
 		{"wrong-branch", "feat/other", "2999-12-31", 1001, false},
 		{"expired", branch, "2000-01-01", 1001, false},
+		{"invalid-date", branch, "2999-99-99", 1001, false},
 		{"over-ceiling", branch, "2999-12-31", 2201, false},
 	}
 	for _, tt := range cases {

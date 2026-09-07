@@ -523,7 +523,8 @@ if (( TOTAL > 1000 )); then
     expected_commit="$(git rev-parse "${candidate_head}^")"
     grep -qxF "Commit: $expected_commit" "$RECEIPT_FILE" || fail "size-exception receipt commit does not match candidate parent $expected_commit"
     expiration="$(awk -F': ' '$1 == "Expiration" {print $2; exit}' "$RECEIPT_FILE")"
-    [[ "$expiration" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "size-exception receipt expiration is not ISO-8601"
+    normalized_expiration="$(date -u -d "$expiration" +%F 2>/dev/null || true)"
+    [[ "$normalized_expiration" == "$expiration" ]] || fail "size-exception receipt expiration is not a valid ISO-8601 date"
     [[ "$expiration" < "$(date -u +%F)" ]] && fail "size-exception receipt expired on $expiration"
   fi
   log "SIZE_EXCEPTION_RECEIPT=$RECEIPT_FILE validated"

@@ -19,11 +19,14 @@ import (
 
 type deadlineRecorder struct {
 	*httptest.ResponseRecorder
-	called bool
+	deadline time.Time
 }
 
-func (w *deadlineRecorder) SetWriteDeadline(time.Time) error { w.called = true; return nil }
-func (w *deadlineRecorder) Flush()                           {}
+func (w *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	w.deadline = deadline
+	return nil
+}
+func (w *deadlineRecorder) Flush() {}
 
 // TestNewServerWiresMemoryClientIdentity is the threat-matrix
 // process-integration proof for the memory client wiring: the same
@@ -93,13 +96,13 @@ func TestHTTPRejectsOversizedRPCRequest(t *testing.T) {
 	}
 }
 
-func TestSSEClearsWriteDeadline(t *testing.T) {
+func TestSSEBoundsHeartbeatWrite(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	(&Server{}).handleHTTPGet(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx))
-	if !rec.called {
-		t.Fatal("SSE handler did not clear the HTTP server write deadline")
+	if !rec.deadline.After(time.Now()) || rec.deadline.After(time.Now().Add(6*time.Second)) {
+		t.Fatalf("SSE heartbeat write deadline is not bounded: %v", rec.deadline)
 	}
 }
 

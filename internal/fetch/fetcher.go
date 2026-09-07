@@ -387,57 +387,52 @@ func (s *FetcherService) ValidateURL(ctx context.Context, rawURL string) (bool, 
 func retryableHead() []func(*http.Request) { return nil }
 
 func (s *FetcherService) CheckLinkStatus(ctx context.Context, urls []string) ([]map[string]interface{}, error) {
-	results := make([]map[string]interface{}, 0, len(urls))
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	for _, rawURL := range urls {
-		wg.Add(1)
-		go func(u string) {
-			defer wg.Done()
-
-			// Rate-limit every link check against the upstream. The
-			// wait is cancellable so SIGTERM does not leave the
-			// goroutine wedged on the ticker. On cancellation we
-			// still append a result entry so the caller observes
-			// one record per URL with the cancellation surfaced.
-			result := map[string]interface{}{
-				"url":    u,
-				"valid":  false,
-				"status": 0,
-			}
-			select {
-			case <-ctx.Done():
-				result["error"] = ctx.Err().Error()
-				mu.Lock()
-				results = append(results, result)
-				mu.Unlock()
-				return
-			case <-time.After(rateLimiterInterval):
-			}
-
-			if err := s.isAllowedURL(u); err != nil {
-				result["error"] = err.Error()
-				mu.Lock()
-				results = append(results, result)
-				mu.Unlock()
-				return
-			}
-
-			resp, err := s.doFetchWithRetries(ctx, u, &types.FetchResponse{URL: u})
-			if err == nil && resp.Status < 400 {
-				result["valid"] = true
-			}
-			result["status"] = resp.Status
-			if resp.Outcome != OutcomeSuccess {
-				result["error"] = strings.Join(resp.Warnings, "; ")
-			}
-
-			mu.Lock()
-			results = append(results, result)
-			mu.Unlock()
-		}(rawURL)
+	const maxURLs = 100
+	if len(urls) > maxURLs {
+		return nil, fmt.Errorf("url count exceeds %d", maxURLs)
 	}
+	results := make([]map[string]interface{}, len(urls))
+	type job struct {
+		index int
+		url   string
+	}
+	jobs := make(chan job)
+	var wg sync.WaitGroup
+	workers := maxConcurrentFetches
+	if len(urls) < workers {
+		workers = len(urls)
+	}
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for work := range jobs {
+				result := map[string]interface{}{"url": work.url, "valid": false, "status": 0}
+				select {
+				case <-ctx.Done():
+					result["error"] = ctx.Err().Error()
+				case <-time.After(rateLimiterInterval):
+					if err := s.isAllowedURL(work.url); err != nil {
+						result["error"] = err.Error()
+					} else {
+						resp, err := s.doFetchWithRetries(ctx, work.url, &types.FetchResponse{URL: work.url})
+						if err == nil && resp.Status < 400 {
+							result["valid"] = true
+						}
+						result["status"] = resp.Status
+						if resp.Outcome != OutcomeSuccess {
+							result["error"] = strings.Join(resp.Warnings, "; ")
+						}
+					}
+				}
+				results[work.index] = result
+			}
+		}()
+	}
+	for index, rawURL := range urls {
+		jobs <- job{index: index, url: rawURL}
+	}
+	close(jobs)
 	wg.Wait()
 	return results, nil
 }

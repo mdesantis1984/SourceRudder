@@ -460,9 +460,13 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
-	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		http.Error(w, "stream unavailable", http.StatusInternalServerError)
-		return
+	controller := http.NewResponseController(w)
+	writePing := func() error {
+		if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return err
+		}
+		_, err := fmt.Fprint(w, ": ping\n\n")
+		return err
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -475,7 +479,7 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+	if err := writePing(); err != nil {
 		return
 	}
 	flusher.Flush()
@@ -486,7 +490,7 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+			if err := writePing(); err != nil {
 				return
 			}
 			flusher.Flush()
