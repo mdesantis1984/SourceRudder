@@ -15,11 +15,40 @@ defecto y nunca recorre el sistema de archivos ni usa la web como fallback.
 
 ## Inicio rápido
 
-### Requisitos
+### Docker Compose recomendado
 
-- Go 1.26.6 o posterior dentro de la misma línea compatible.
-- SearXNG para las herramientas que dependen de metabúsqueda.
-- Una clave local para proteger `/mcp` y `/metrics` cuando se usa HTTP.
+Requisitos: Git, Docker y Docker Compose v2. El stack levanta IA_Buscar y una
+instancia local de SearXNG; ambos puertos se publican sólo en `127.0.0.1`.
+
+```bash
+git clone https://github.com/mdesantis1984/IA_Buscar.git
+cd IA_Buscar
+cp .env.example .env
+```
+
+Complete `IA_BUSCAR_AUTH_KEY` y `SEARXNG_SECRET` en `.env` con dos valores
+independientes. Puede generar cada uno con `openssl rand -hex 32`. Luego inicie
+y verifique el servicio:
+
+```bash
+docker compose up --build -d
+curl -fsS http://127.0.0.1:8080/healthz
+```
+
+La respuesta esperada es `{"status":"ok"}`. El endpoint MCP queda en
+`http://127.0.0.1:8080/mcp`; consulte la
+[guía de clientes MCP](docs/mcp-clients.md) para conectarlo a Claude Desktop,
+Cursor, Visual Studio Code u OpenCode.
+
+```bash
+docker compose logs -f ia-buscar
+docker compose down
+```
+
+### Instalación nativa
+
+Requisitos: Go 1.26.6 o posterior, SearXNG y una clave local para proteger
+`/mcp` y `/metrics` cuando se usa HTTP.
 
 ### Compilar y probar
 
@@ -314,7 +343,8 @@ go build ./...
 git diff --check
 ```
 
-El stack de QA aislado se administra con:
+El stack QA se usa para pruebas del repositorio y no sustituye al
+[`compose.yaml`](compose.yaml) del inicio rápido:
 
 ```bash
 make qa-build
@@ -323,8 +353,10 @@ make qa-smoke
 make qa-down
 ```
 
-La red de QA es interna y usa una credencial de desarrollo generada localmente.
-`.env.qa` está ignorado por Git y nunca debe contener credenciales de producción.
+Por compatibilidad con el Docker daemon del entorno QA, ese stack publica el
+puerto `8080` en las interfaces del host y no usa una red `internal`. Ejecútelo
+sólo en una máquina de desarrollo protegida. `.env.qa` está ignorado por Git y
+nunca debe contener credenciales de producción.
 
 ## Versionado
 

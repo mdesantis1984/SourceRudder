@@ -1,0 +1,39 @@
+name: ia-buscar
+
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}"
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - ./deploy/docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  ia-buscar:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    image: ia-buscar:local
+    restart: unless-stopped
+    environment:
+      IA_BUSCAR_AUTH_KEY: "${IA_BUSCAR_AUTH_KEY:?Set IA_BUSCAR_AUTH_KEY in .env}"
+      SEARXNG_URL: http://searxng:8080
+      MEMORY_URL: "${MEMORY_URL:-}"
+      MEMORY_APIKEY: "${MEMORY_APIKEY:-}"
+    ports:
+      - "127.0.0.1:${IA_BUSCAR_PORT:-8080}:8080"
+    command: ["-transport", "http", "-http-addr", ":8080"]
+    depends_on:
+      searxng:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL
