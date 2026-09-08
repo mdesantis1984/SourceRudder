@@ -61,6 +61,8 @@ try:
   d=json.loads(sys.stdin.read()); r=d.get("results",[]); c=d.get("cached",False)
   print(len(r), str(c).lower())
 except Exception: print("-1 unknown")')
+# Intentional split of the two fixed fields emitted above.
+# shellcheck disable=SC2086
 set -- $S_RES
 [ "$1" = "0" ] || fail "search_web results=$1 expected 0"
 # Local QA SearxNG has no engines → all engines are "unresponsive"
@@ -72,11 +74,11 @@ set -- $S_RES
 # with no engines).
 log "search_web empty-results (cache field ${2:-absent}) OK"
 
-# Memory canary (127.0.0.1:7438) -----------------------------------------
-# qa-net is `internal: true` (host cannot reach canary) AND the live
-# binary has `-memory-url ""` (internal/memory/client.go:51-53
-# short-circuits Save). Structural + behavioral guarantee.
-log "memory canary structural check passed (qa-net internal, -memory-url empty)"
+# Memory integration ------------------------------------------------------
+# The live binary has `-memory-url ""`; internal/memory/client.go
+# short-circuits Save before any request. The QA bridge is intentionally
+# not internal because this host's docker-proxy cannot publish through it.
+log "memory integration disabled (-memory-url empty)"
 
 log "all smoke probes passed"
 exit 0
