@@ -67,6 +67,7 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 	resp := &types.SearchResponse{
 		Query:       req.Query,
 		Results:     results,
+		Strategy:    "searxng",
 		SourcesUsed: []string{"searxng"},
 		Cached:      false,
 	}
