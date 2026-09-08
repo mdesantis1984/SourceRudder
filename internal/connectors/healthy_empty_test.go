@@ -86,3 +86,26 @@ func TestHealthyEmptyPreservation(t *testing.T) {
 		}
 	})
 }
+
+func TestWebConnectorPreservesStrategyAcrossCache(t *testing.T) {
+	searxng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[],"unresponsive_engines":[]}`))
+	}))
+	defer searxng.Close()
+
+	connector := NewWebConnector(searxng.URL, cache.NewService(300))
+	request := &types.SearchRequest{Query: "strategy-contract"}
+	for attempt := 1; attempt <= 2; attempt++ {
+		response, err := connector.Search(context.Background(), request)
+		if err != nil {
+			t.Fatalf("attempt %d: unexpected error: %v", attempt, err)
+		}
+		if response.Strategy != "searxng" {
+			t.Fatalf("attempt %d: Strategy=%q, want searxng", attempt, response.Strategy)
+		}
+		if response.Cached != (attempt == 2) {
+			t.Fatalf("attempt %d: Cached=%t", attempt, response.Cached)
+		}
+	}
+}

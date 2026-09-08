@@ -520,6 +520,15 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	resp, isNotification := s.handleRPCRequest(r.Context(), req)
+	if isNotification {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleRPCRequest(ctx context.Context, req rpcRequest) (interface{}, bool) {
 	isNotification := req.ID == nil
 	var resp interface{}
 	switch req.Method {
@@ -528,7 +537,7 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 	case "tools/list", "mcp.tools.list":
 		resp = s.handleMCPToolsList(req.ID)
 	case "tools/call", "mcp.tools.call":
-		resp = s.handleMCPToolsCall(r.Context(), req.ID, req.Params)
+		resp = s.handleMCPToolsCall(ctx, req.ID, req.Params)
 	case "resources/list", "mcp.resources.list":
 		resp = s.handleMCPResourcesList(req.ID, req.Params)
 	case "resources/read", "mcp.resources.read":
@@ -544,12 +553,7 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if isNotification {
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	code := http.StatusOK
-	writeJSON(w, code, resp)
+	return resp, isNotification
 }
 
 func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {

@@ -199,6 +199,13 @@ func main() {
 	default:
 		log.Fatalf("Unknown transport mode: %s", *transport)
 	}
+	if *transport == "stdio" {
+		log.Printf("IA_Buscar running with %s transport", trans.Name())
+		if err := trans.Start(ctx); err != nil {
+			log.Fatalf("Failed to start transport: %v", err)
+		}
+		return
+	}
 	if err := trans.Start(ctx); err != nil {
 		log.Fatalf("Failed to start transport: %v", err)
 	}
