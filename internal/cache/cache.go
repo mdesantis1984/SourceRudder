@@ -1,8 +1,8 @@
-// Package cache provides a bounded, in-process TTL cache used by connectors
-// as an ephemeral performance optimization. The cache lives in process memory
-// only: there is no persistence, no exported history surface, and no MCP
-// tooling that can read or invalidate it. When the process exits, the cache
-// disappears with it.
+// Package cache provides in-process storage for ephemeral search state.
+// Service stores TTL-governed connector results, and HistoryService retains a
+// bounded recent-search buffer. MCP tools expose selected cache lookup,
+// invalidation, and history listing operations. Neither facility persists to
+// disk, so all state disappears when the process exits.
 package cache
 
 import (
