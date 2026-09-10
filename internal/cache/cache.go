@@ -39,26 +39,32 @@ func NewService(ttlSeconds int) *Service {
 func (s *Service) Get(ctx context.Context, cacheKey string) (*types.CacheEntry, bool, error) {
 	s.mu.RLock()
 	e, ok := s.entries[cacheKey]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.RUnlock()
 		return nil, false, nil
 	}
-	if time.Now().After(e.expires) {
-		s.Delete(ctx, cacheKey)
+	if now := time.Now(); !now.Before(e.expires) {
+		s.mu.RUnlock()
+		s.mu.Lock()
+		s.deleteExpiredLocked(time.Now())
+		s.mu.Unlock()
 		return nil, false, nil
 	}
-	return &types.CacheEntry{
+	result := &types.CacheEntry{
 		CacheKey:  e.key,
 		CreatedAt: e.created,
 		ExpiresAt: e.expires,
 		Payload:   e.value,
 		SourceSet: e.sources,
-	}, true, nil
+	}
+	s.mu.RUnlock()
+	return result, true, nil
 }
 
 func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sources []string) {
 	now := time.Now()
 	s.mu.Lock()
+	s.deleteExpiredLocked(now)
 	s.entries[cacheKey] = &entry{
 		key:     cacheKey,
 		value:   payload,
@@ -99,13 +105,23 @@ func (s *Service) Clear(ctx context.Context) {
 }
 
 func (s *Service) Keys(ctx context.Context) ([]string, error) {
-	s.mu.RLock()
+	s.mu.Lock()
+	s.deleteExpiredLocked(time.Now())
 	keys := make([]string, 0, len(s.entries))
 	for k := range s.entries {
 		keys = append(keys, k)
 	}
-	s.mu.RUnlock()
+	s.mu.Unlock()
 	return keys, nil
+}
+
+// deleteExpiredLocked removes expired entries while the caller holds s.mu.
+func (s *Service) deleteExpiredLocked(now time.Time) {
+	for key, item := range s.entries {
+		if !now.Before(item.expires) {
+			delete(s.entries, key)
+		}
+	}
 }
 
 func GenerateCacheKey(query string, sources []string, timeRange string) string {
