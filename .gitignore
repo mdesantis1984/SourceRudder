@@ -11,6 +11,8 @@ ia-buscar-*
 *.out
 coverage.out
 coverage.html
+__pycache__/
+*.py[cod]
 
 # Go workspace
 go.work
