@@ -2,7 +2,7 @@
 
 Closes #N
 
-## PR type
+## Type
 
 Select exactly one:
 
@@ -10,40 +10,53 @@ Select exactly one:
 - [ ] Feature
 - [ ] Documentation
 - [ ] Refactor
-- [ ] Maintenance/tooling
+- [ ] Test
+- [ ] Maintenance
 - [ ] Breaking change
 
-## Summary
+## Outcome
+
+Describe the observable behavior after this PR and why the change is needed.
+
+## Scope
+
+Included:
 
 -
 
-## Changes
+Excluded:
 
-| File | Change |
-|------|--------|
-| `path/to/file` | Description of the change |
+-
 
-## Test plan
+## Verification
 
-- [ ] Tests or validation run: `<command>`
-- [ ] Affected behavior verified
+List only commands that were actually executed.
 
-## Contributor checklist
+```text
+command: result
+```
 
-- [ ] Linked an approved issue with `Closes #N`.
-- [ ] Selected exactly one PR type.
-- [ ] Kept the change focused and within the review budget.
-- [ ] Updated documentation when behavior changed.
-- [ ] Used a conventional commit.
-- [ ] Did not add AI attribution or a `Co-Authored-By` trailer.
+## Risk and rollback
 
-## Chain Context (optional)
+- Risk:
+- Rollback boundary:
+- Data or configuration impact:
 
-- Chain: `<name>`
-- Position: `<n>/<total>`
-- Base: `<branch or PR>`
-- Depends on: `<PR or none>`
-- Follow-up: `<PR or none>`
-- Budget: `<=1000 changed lines` (or explain exception)
-- Scope: Includes `<...>`; excludes `<...>`
-- Rollback boundary: `<what can be reverted independently>`
+## Checklist
+
+- [ ] The PR closes an approved issue, or the exception is explained.
+- [ ] The change is focused and within the 1000-line release-gate budget.
+- [ ] Tests cover the affected behavior.
+- [ ] Documentation matches the current code and configuration.
+- [ ] Commits follow Conventional Commits and contain no AI attribution.
+- [ ] No secrets, credentials, local state, or generated evidence are included.
+
+## Chain context
+
+Complete only for a stacked change.
+
+- Chain:
+- Position:
+- Base:
+- Depends on:
+- Follow-up:
