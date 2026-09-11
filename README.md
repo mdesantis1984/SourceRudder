@@ -200,13 +200,19 @@ production credentials in it.
 - **Extend it:** read [Contributing](CONTRIBUTING.md) and propose a connector or
   contract improvement through an approved issue.
 
+## Community recognition
+
+[![Special recognition for Gentleman Programming](docs/assets/brand/gentleman-programming-recognition.svg)](ACKNOWLEDGEMENTS.md#community-recognition)
+
+SourceRudder recognizes the teaching and community behind [Gentleman Programming](https://gentlemanprogramming.com/#install). The linked acknowledgements include its official GitHub and Alan Buscaglia's LinkedIn profile without implying endorsement or affiliation.
+
 ## Documentation
 
 [Migration to 2.0](MIGRATION-TO-2.0.md) · [Changelog](CHANGELOG.md) ·
 [Architecture](docs/architecture.md) · [Development](docs/development.md) ·
 [Deployment](docs/deployment.md) · [Configuration](docs/configuration.md) ·
 [Operations](docs/operations.md) · [MCP clients](docs/mcp-clients.md) ·
-[Security](SECURITY.md) · [Acknowledgements](ACKNOWLEDGEMENTS.md)
+[Brand assets](docs/brand.md) · [Security](SECURITY.md) · [Acknowledgements](ACKNOWLEDGEMENTS.md)
 
 ## License and release status
 
