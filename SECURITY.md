@@ -15,7 +15,11 @@ Forks, modified deployments, and unpinned snapshots are outside automatic suppor
 
 Do not disclose exploitable vulnerabilities in issues, discussions, pull requests, or other public channels.
 
-Submit reports through the private [SourceRudder GitHub Security Advisory](https://github.com/mdesantis1984/SourceRudder/security/advisories/new). Do not disclose the vulnerability in an issue, discussion, pull request, or other public channel.
+While this repository is private, send reports directly to a maintainer through
+the private collaboration channel used to grant repository access. Do not
+disclose the vulnerability in an issue, discussion, pull request, or other
+shared channel. Before public access is enabled, maintainers must configure
+GitHub private vulnerability reporting and replace this interim route.
 
 Include the affected version, commit, or image; safe reproduction steps; observed impact; redacted logs; and known mitigations. Do not include secrets. Response priority depends on impact, exploitability, and the availability of a safe mitigation.
 
