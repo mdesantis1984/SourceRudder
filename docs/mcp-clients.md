@@ -1,36 +1,29 @@
-# Conectar un cliente MCP
+# MCP clients
 
-IA_Buscar admite dos formas de conexión: HTTP para el stack de Docker Compose y
-`stdio` para ejecutar el binario como proceso local. Elija una sola opción por
-cliente.
+[English](mcp-clients.md) | [Español](mcp-clients.es.md)
 
-## Docker Compose por HTTP
+Connect each client to SourceRudder through either HTTP or `stdio`, not both for the same server entry. A successful connection exposes 28 tools and the guide resource `agent-guide://sourcerudder/wire-contract`.
 
-Inicie el stack desde la raíz del repositorio siguiendo el
-[inicio rápido](../README.md#docker-compose-recomendado). El endpoint MCP queda
-disponible en `http://127.0.0.1:8080/mcp` y exige el token
-`IA_BUSCAR_AUTH_KEY` guardado en `.env`.
+## HTTP with Compose
 
-Antes de abrir un cliente gráfico, exponga el mismo token en el entorno desde el
-que se inicia el cliente:
+Start the stack, then make `SOURCERUDDER_AUTH_KEY` available to the desktop client process:
 
 ```bash
-export IA_BUSCAR_AUTH_KEY='<value-from-.env>'
+export SOURCERUDDER_AUTH_KEY='<value-from-.env>'
 ```
+
+The default MCP URL is `http://127.0.0.1:8080/mcp`.
 
 ### Cursor
 
-Guarde esta configuración en `.cursor/mcp.json` para el proyecto o en
-`~/.cursor/mcp.json` para todos los proyectos:
+Save in `.cursor/mcp.json` or `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "ia-buscar": {
+    "sourcerudder": {
       "url": "http://127.0.0.1:8080/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:IA_BUSCAR_AUTH_KEY}"
-      }
+      "headers": { "Authorization": "Bearer ${env:SOURCERUDDER_AUTH_KEY}" }
     }
   }
 }
@@ -38,56 +31,39 @@ Guarde esta configuración en `.cursor/mcp.json` para el proyecto o en
 
 ### OpenCode
 
-Agregue el servidor a `opencode.json`:
+Add to `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "ia-buscar": {
+    "sourcerudder": {
       "type": "remote",
       "url": "http://127.0.0.1:8080/mcp",
       "oauth": false,
-      "headers": {
-        "Authorization": "Bearer {env:IA_BUSCAR_AUTH_KEY}"
-      },
+      "headers": { "Authorization": "Bearer {env:SOURCERUDDER_AUTH_KEY}" },
       "enabled": true
     }
   }
 }
 ```
 
-Compruebe la conexión con `opencode mcp list`.
+Verify with `opencode mcp list`.
 
-## Binario local por stdio
+## Local stdio
 
-Compile el binario y mantenga SearXNG disponible. Si ya inició Docker Compose,
-SearXNG está expuesto sólo en loopback mediante `http://127.0.0.1:8888`.
+Use an absolute path to `sourcerudder` and ensure SearXNG is reachable, commonly at `http://127.0.0.1:8888`. HTTP Bearer authentication does not apply because the client owns the process.
 
-```bash
-go build -o bin/ia-buscar ./cmd/ia-buscar
-```
+### Claude Desktop and Cursor
 
-Use una ruta absoluta al binario. La autenticación Bearer no se aplica a
-`stdio` porque el cliente crea y controla directamente el proceso.
-
-### Claude Desktop y Cursor
-
-Claude Desktop utiliza `claude_desktop_config.json`; Cursor utiliza
-`.cursor/mcp.json` o `~/.cursor/mcp.json`. En ambos casos, la entrada del
-servidor tiene esta forma:
+In `claude_desktop_config.json` or `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "ia-buscar": {
-      "command": "/ABSOLUTE/PATH/IA_Buscar/bin/ia-buscar",
-      "args": [
-        "-transport",
-        "stdio",
-        "-searxng-url",
-        "http://127.0.0.1:8888"
-      ]
+    "sourcerudder": {
+      "command": "/ABSOLUTE/PATH/sourcerudder",
+      "args": ["-transport", "stdio", "-searxng-url", "http://127.0.0.1:8888"]
     }
   }
 }
@@ -95,20 +71,15 @@ servidor tiene esta forma:
 
 ### Visual Studio Code
 
-Guarde esta configuración en `.vscode/mcp.json`:
+Save in `.vscode/mcp.json`:
 
 ```json
 {
   "servers": {
-    "iaBuscar": {
+    "sourcerudder": {
       "type": "stdio",
-      "command": "/ABSOLUTE/PATH/IA_Buscar/bin/ia-buscar",
-      "args": [
-        "-transport",
-        "stdio",
-        "-searxng-url",
-        "http://127.0.0.1:8888"
-      ]
+      "command": "/ABSOLUTE/PATH/sourcerudder",
+      "args": ["-transport", "stdio", "-searxng-url", "http://127.0.0.1:8888"]
     }
   }
 }
@@ -116,53 +87,36 @@ Guarde esta configuración en `.vscode/mcp.json`:
 
 ### OpenCode
 
-Agregue el proceso local a `opencode.json`:
-
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "ia-buscar": {
+    "sourcerudder": {
       "type": "local",
-      "command": [
-        "/ABSOLUTE/PATH/IA_Buscar/bin/ia-buscar",
-        "-transport",
-        "stdio",
-        "-searxng-url",
-        "http://127.0.0.1:8888"
-      ],
+      "command": ["/ABSOLUTE/PATH/sourcerudder", "-transport", "stdio", "-searxng-url", "http://127.0.0.1:8888"],
       "enabled": true
     }
   }
 }
 ```
 
-## Verificación
+## Verify the wire contract
 
-Reinicie el cliente después de modificar su configuración. Una conexión válida
-debe mostrar 28 herramientas y el recurso
-`agent-guide://ia-buscar/wire-contract`.
-
-Para verificar el endpoint HTTP sin un cliente:
+Restart the client after changing configuration. For HTTP, use the following JSON-RPC request:
 
 ```bash
-set -a
-. ./.env
-set +a
 curl -fsS \
   -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer ${IA_BUSCAR_AUTH_KEY}" \
+  -H "Authorization: Bearer ${SOURCERUDDER_AUTH_KEY}" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   http://127.0.0.1:8080/mcp
 ```
 
-Un `401` indica que el token del cliente no coincide con `.env`. Si el cliente
-no descubre herramientas, confirme que la URL termina en `/mcp` y revise sus
-logs MCP. Una búsqueda puede devolver resultados vacíos o `partial:true` cuando
-los proveedores públicos de SearXNG están degradados; eso no implica que la
-conexión MCP haya fallado.
+The 28 tool names are `search_web`, `search_news`, `search_doc_oficial`, `search_local_index`, `search_github`, `search_github_pr`, `search_github_issue`, `search_stackoverflow`, `search_npm`, `search_nuget`, `search_pypi`, `search_docker_hub`, `search_academic`, `search_reddit`, `search_youtube`, `search_images`, `fetch_url`, `fetch_and_extract`, `extract_structured`, `validate_url`, `check_link_status`, `summarize_results`, `deep_research`, `compare_sources`, `get_cached`, `invalidate_cache`, `get_search_history`, and `get_current_date`.
 
-## Referencias de clientes
+Keep the returned JSON shape, connector names, and strategy IDs intact. In particular, `search_doc_oficial` returns `official_doc_registry_search` or `official_doc_web_fallback`; the optional local index returns `local_index_lexical` or `local_index_unavailable`; and Reddit uses `searxng_reddit_index`. A `401` means the HTTP credential does not match. Empty or `partial:true` search results can indicate provider degradation rather than an MCP connection failure.
+
+## Client references
 
 - [Cursor MCP](https://cursor.com/docs/mcp)
 - [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/)

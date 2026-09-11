@@ -80,7 +80,7 @@ def search(case, token, deadline, phase):
 
 
 def compose(args, env, timeout=None):
-    return subprocess.run(["docker", "compose", "-f", str(COMPOSE), "--project-name", "ia-buscar-quality", *args], cwd=ROOT, env=env, check=True, timeout=timeout, text=True, capture_output=True)
+    return subprocess.run(["docker", "compose", "-f", str(COMPOSE), "--project-name", "sourcerudder-quality", *args], cwd=ROOT, env=env, check=True, timeout=timeout, text=True, capture_output=True)
 
 
 def safe_error(error, token):
@@ -133,11 +133,11 @@ def engine_inventory(env):
 
 
 def ensure_fresh_resources():
-    filters = ["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=ia-buscar-quality"]
+    filters = ["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=sourcerudder-quality"]
     containers = subprocess.check_output(filters, text=True).split()
-    networks = subprocess.check_output(["docker", "network", "ls", "-q", "--filter", "name=^ia-buscar-quality-net$"], text=True).split()
+    networks = subprocess.check_output(["docker", "network", "ls", "-q", "--filter", "name=^sourcerudder-quality-net$"], text=True).split()
     if containers or networks:
-        raise RuntimeError("refusing pre-existing ia-buscar-quality resources")
+        raise RuntimeError("refusing pre-existing sourcerudder-quality resources")
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 18080))
 
@@ -157,7 +157,7 @@ def run(output, warm_tool="search_web"):
     validate_manifest(MANIFEST)
     run_id, token, deadline = uuid.uuid4().hex, secrets.token_urlsafe(32), time.monotonic() + GLOBAL_DEADLINE
     env, owns_resources = os.environ.copy(), False
-    env["IA_BUSCAR_QUALITY_AUTH_KEY"] = token
+    env["SOURCERUDDER_QUALITY_AUTH_KEY"] = token
     evidence = {"run_id": run_id, "started_at_utc": utc_now(), "endpoint": ENDPOINT, "image": SEARXNG_IMAGE,
                 "source_commit": source_revision(), "source_identity": source_identity(), "manifest": MANIFEST,
                 "warm_tool": warm_tool, "calls": [],
@@ -203,7 +203,7 @@ def main():
     if args.command == "manifest":
         print(json.dumps(MANIFEST, indent=2))
         return 0
-    output = args.output or Path(tempfile.mkdtemp(prefix="ia-buscar-quality-")) / "baseline.json"
+    output = args.output or Path(tempfile.mkdtemp(prefix="sourcerudder-quality-")) / "baseline.json"
     return run(output, args.warm_tool)
 
 

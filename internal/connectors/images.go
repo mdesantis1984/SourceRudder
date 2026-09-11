@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type ImagesConnector struct {

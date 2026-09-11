@@ -1,4 +1,4 @@
-module github.com/thiscloud/ia-buscar
+module github.com/mdesantis1984/SourceRudder
 
 go 1.26.6
 

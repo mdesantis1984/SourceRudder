@@ -11,16 +11,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/thiscloud/ia-buscar/internal/auth"
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/auth"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
-const serverVersion = "1.5.0"
+const (
+	serverName    = "sourcerudder"
+	serverVersion = "2.0.0"
+)
 
 const maxRPCRequestBytes = 1 << 20
 
@@ -71,7 +74,7 @@ type Tool struct {
 
 // NewServer wires an MCP server. met MUST be the same *observability.Metrics
 // instance that main wires into observability.SetDefault so the counters
-// connectors increment (e.g. ia_buscar_search_degraded_total) are the
+// connectors increment (e.g. sourcerudder_search_degraded_total) are the
 // same ones the /metrics endpoint serves. Passing nil is a programming
 // error: the Server has no metrics surface, /metrics will panic on
 // scrape, and a future regression could re-introduce the production
@@ -149,7 +152,7 @@ func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
 		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
-		{Name: "search_doc_oficial", Description: "Official documentation for a bounded IA-Buscar registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
+		{Name: "search_doc_oficial", Description: "Official documentation for the bounded SourceRudder registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
 		{Name: "search_local_index", Description: "Searches an operator-curated read-only corpus with deterministic lexical ranking and strategy=\"local_index_lexical\". When LOCAL_INDEX_PATH is unset, returns strategy=\"local_index_unavailable\" without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -384,7 +387,7 @@ func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (
 	return map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"serverInfo": map[string]interface{}{
-			"name":    "ia-buscar",
+			"name":    serverName,
 			"version": serverVersion,
 		},
 		"capabilities": map[string]interface{}{
@@ -562,7 +565,7 @@ func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {
 		"id":      id,
 		"result": map[string]interface{}{
 			"protocolVersion": "2024-11-05",
-			"serverInfo":      map[string]interface{}{"name": "ia-buscar", "version": serverVersion},
+			"serverInfo":      map[string]interface{}{"name": serverName, "version": serverVersion},
 			"capabilities": map[string]interface{}{
 				"tools":     map[string]interface{}{"listChanged": false},
 				"resources": map[string]interface{}{"listChanged": false, "subscribe": false},

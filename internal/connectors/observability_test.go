@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 // TestSearxNGConnectorsEmitDegradationMetric covers item 4: every
 // SearxNG-backed connector that sees an unresponsive engine response
-// must increment the ia_buscar_search_degraded_total counter with the
+// must increment the sourcerudder_search_degraded_total counter with the
 // right source label. The test installs an httptest server that
 // returns the canonical SearxNG degraded shape and asserts the metric
 // ticked — proving the observability hook is wired in production
@@ -159,8 +159,8 @@ func metricValue(t *testing.T, h interface {
 	}
 
 	prefixes := []string{
-		"ia_buscar_search_degraded_total{source=\"" + source + "\",kind=\"" + kind + "\"}",
-		"ia_buscar_search_degraded_total{kind=\"" + kind + "\",source=\"" + source + "\"}",
+		"sourcerudder_search_degraded_total{source=\"" + source + "\",kind=\"" + kind + "\"}",
+		"sourcerudder_search_degraded_total{kind=\"" + kind + "\",source=\"" + source + "\"}",
 	}
 	for _, line := range strings.Split(string(body), "\n") {
 		for _, prefix := range prefixes {

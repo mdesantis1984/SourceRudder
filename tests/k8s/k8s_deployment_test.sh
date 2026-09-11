@@ -6,7 +6,7 @@
 # root. Exits 0 only if every assertion passes; otherwise prints the
 # failing assertion(s) and exits non-zero.
 #
-# Background: the application listens on `:8080` (see cmd/ia-buscar/main.go
+# Background: the application listens on `:8080` (see cmd/sourcerudder/main.go
 # `-http-addr` flag default, the Dockerfile `EXPOSE 8080`, and the systemd
 # unit's `-http-addr :8080`). The previous deployment manifest declared
 # `containerPort: 5000` plus matching probe ports and Service targetPort,
@@ -67,7 +67,7 @@ assert_grep() {
     record_fail "$label: file missing ($file)"
     return 1
   fi
-  if grep -qE "$pattern" "$file"; then
+  if grep -qE -- "$pattern" "$file"; then
     return 0
   fi
   record_fail "$label: pattern not found ($pattern) in $file"
@@ -82,7 +82,7 @@ assert_not_grep() {
     record_fail "$label: file missing ($file)"
     return 1
   fi
-  if grep -qE "$pattern" "$file"; then
+  if grep -qE -- "$pattern" "$file"; then
     record_fail "$label: forbidden pattern present ($pattern) in $file"
     return 1
   fi
@@ -112,7 +112,7 @@ yaml_scalar_after() {
 # with. Pull it from the runtime surface so a future regression in
 # either direction trips this test before reaching CI.
 #
-# The value is extracted from cmd/ia-buscar/main.go's `-http-addr`
+# The value is extracted from cmd/sourcerudder/main.go's `-http-addr`
 # flag default (a single `flag.String("http-addr", ":<port>", …)`
 # line) rather than hard-coded, so a future regression that changes
 # the binary's default without updating the manifest (or vice
@@ -120,7 +120,7 @@ yaml_scalar_after() {
 # to the flag declaration's shape so a coincidental match in a
 # comment or a different flag is impossible.
 app_listen_port() {
-  local main_go="$REPO_ROOT/cmd/ia-buscar/main.go"
+  local main_go="$REPO_ROOT/cmd/sourcerudder/main.go"
   if [[ ! -f "$main_go" ]]; then
     printf 'K8S_PORT_DERIVATION_FAILED: main.go not found at %s\n' "$main_go" >&2
     return 1
@@ -160,7 +160,7 @@ test_liveness_probe_port_matches_app_listen() {
   # livenessProbe.httpGet.port is the port Kubernetes polls to decide
   # whether to restart the pod. If it does not match the binary's
   # listen address, the probe fails and the pod is killed on every
-  # startup. The /healthz handler in cmd/ia-buscar binds to the
+  # startup. The /healthz handler in cmd/sourcerudder binds to the
   # same port the binary listens on.
   local actual
   # Take the line that follows the `livenessProbe:` header and
@@ -236,7 +236,7 @@ test_healthz_path_is_configured() {
 
 test_app_listen_port_derives_from_main_go() {
   # The helper that supplies the expected port MUST derive its
-  # value from cmd/ia-buscar/main.go's `-http-addr` flag default
+  # value from cmd/sourcerudder/main.go's `-http-addr` flag default
   # rather than embed a literal. A regression that re-introduces
   # a hard-coded port (e.g. a future contributor copy-pastes
   # `printf '8080'` back into app_listen_port) is caught here
@@ -245,7 +245,7 @@ test_app_listen_port_derives_from_main_go() {
   # in main.go.
   local actual
   if ! actual="$(app_listen_port)"; then
-    record_fail "app_listen_port helper failed to derive a port from cmd/ia-buscar/main.go"
+    record_fail "app_listen_port helper failed to derive a port from cmd/sourcerudder/main.go"
     return 1
   fi
   # The output MUST be a positive integer; empty output means
@@ -262,7 +262,7 @@ test_app_listen_port_derives_from_main_go() {
   # declares. A regression that flips the default in main.go
   # without updating the helper trips this assertion.
   local main_port
-  main_port="$(grep -oE 'flag\.String\("http-addr", ":[0-9]+"' "$REPO_ROOT/cmd/ia-buscar/main.go" \
+  main_port="$(grep -oE 'flag\.String\("http-addr", ":[0-9]+"' "$REPO_ROOT/cmd/sourcerudder/main.go" \
     | grep -oE ':[0-9]+' \
     | head -n 1 \
     | tr -d ':')"
@@ -454,12 +454,12 @@ test_probe_timing_bounds_detects_period_regression() {
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ia-buscar-regression
+  name: sourcerudder-regression
 spec:
   template:
     spec:
       containers:
-        - name: ia-buscar
+        - name: sourcerudder
           livenessProbe:
             httpGet:
               path: /healthz
@@ -494,6 +494,34 @@ YAML
   fi
 }
 
+test_searxng_dependency_is_explicit() {
+  assert_grep "$MANIFEST" 'name:[[:space:]]+SEARXNG_URL' "SEARXNG_URL env" || return 1
+  assert_grep "$MANIFEST" 'configMapKeyRef:' "SEARXNG_URL ConfigMap reference" || return 1
+  assert_grep "$MANIFEST" 'key:[[:space:]]+searxng-url' "SEARXNG URL key" || return 1
+  assert_not_grep "$MANIFEST" 'value:[[:space:]]*.*http://searxng:8080' "implicit SearXNG Service" || return 1
+}
+
+test_pod_drops_ambient_credentials_and_privileges() {
+  for pattern in \
+    'automountServiceAccountToken:[[:space:]]+false' \
+    'runAsNonRoot:[[:space:]]+true' \
+    'allowPrivilegeEscalation:[[:space:]]+false' \
+    'readOnlyRootFilesystem:[[:space:]]+true' \
+    'type:[[:space:]]+RuntimeDefault' \
+    'drop:' \
+    '-[[:space:]]+ALL'; do
+    assert_grep "$MANIFEST" "$pattern" "pod hardening: $pattern" || return 1
+  done
+}
+
+test_manifest_declares_release_namespace() {
+  assert_grep "$MANIFEST" 'kind:[[:space:]]+Namespace' "Namespace resource" || return 1
+  if [[ "$(grep -cE 'namespace:[[:space:]]+sourcerudder' "$MANIFEST")" -lt 2 ]]; then
+    record_fail "Deployment and Service must both target namespace sourcerudder"
+    return 1
+  fi
+}
+
 # ---- Driver ----------------------------------------------------------------
 
 main() {
@@ -512,6 +540,9 @@ main() {
   run_test test_liveness_probe_timing_bounds
   run_test test_readiness_probe_timing_bounds
   run_test test_probe_timing_bounds_detects_period_regression
+  run_test test_searxng_dependency_is_explicit
+  run_test test_pod_drops_ambient_credentials_and_privileges
+  run_test test_manifest_declares_release_namespace
 
   printf '\n%d passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"
   if [ "$FAIL_COUNT" -gt 0 ]; then

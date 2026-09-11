@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/connectors"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/connectors"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
 func newRedditTestServer(t *testing.T, upstream http.Handler) *Server {

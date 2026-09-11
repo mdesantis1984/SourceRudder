@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/internal/auth"
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/connectors"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/auth"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/connectors"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
 // buildResourcesTestServer stands up a Server with the minimum wiring
@@ -34,11 +34,14 @@ func buildResourcesTestServer(t *testing.T) *Server {
 
 // TestResourcesListAdvertisesAgentGuide locks the discoverability
 // contract: resources/list must return exactly one entry whose URI
-// matches the documented stable URI agent-guide://ia-buscar/wire-contract.
+// matches the documented stable URI agent-guide://sourcerudder/wire-contract.
 // Real MCP clients iterate the list to decide what to fetch, so the
 // URI must be stable and advertised through the wire boundary.
 func TestResourcesListAdvertisesAgentGuide(t *testing.T) {
 	s := buildResourcesTestServer(t)
+	if AgentGuideURI != "agent-guide://sourcerudder/wire-contract" {
+		t.Fatalf("AgentGuideURI = %q; want SourceRudder 2.0 URI", AgentGuideURI)
+	}
 
 	res, err := s.HandleResourcesList(context.Background(), nil)
 	if err != nil {
@@ -58,8 +61,8 @@ func TestResourcesListAdvertisesAgentGuide(t *testing.T) {
 	if got := raw[0]["uri"]; got != AgentGuideURI {
 		t.Errorf("expected URI %q, got %v", AgentGuideURI, got)
 	}
-	if name, _ := raw[0]["name"].(string); !strings.Contains(name, "ia-buscar") {
-		t.Errorf("expected name to mention ia-buscar, got %q", name)
+	if name, _ := raw[0]["name"].(string); !strings.Contains(name, "sourcerudder") {
+		t.Errorf("expected name to mention sourcerudder, got %q", name)
 	}
 	if mt, _ := raw[0]["mimeType"].(string); mt != agentGuideMIMEType {
 		t.Errorf("expected mimeType %q, got %q", agentGuideMIMEType, mt)
@@ -106,7 +109,7 @@ func TestResourcesReadReturnsGuide(t *testing.T) {
 func TestResourcesReadUnknownURIRejected(t *testing.T) {
 	s := buildResourcesTestServer(t)
 
-	_, err := s.HandleResourcesRead(context.Background(), json.RawMessage(`{"uri":"agent-guide://ia-buscar/does-not-exist"}`))
+	_, err := s.HandleResourcesRead(context.Background(), json.RawMessage(`{"uri":"agent-guide://sourcerudder/does-not-exist"}`))
 	if err == nil {
 		t.Fatalf("expected error for unknown URI, got nil")
 	}
@@ -317,7 +320,7 @@ func TestResourcesListAndReadThroughHTTPBoundary(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      3,
 		"method":  "resources/read",
-		"params":  map[string]interface{}{"uri": "agent-guide://ia-buscar/does-not-exist"},
+		"params":  map[string]interface{}{"uri": "agent-guide://sourcerudder/does-not-exist"},
 	})
 	resp3, err := postWithKey(srv.URL+"/mcp", "application/json", badPayload, "test-key-resources")
 	if err != nil {

@@ -1,5 +1,5 @@
 // Package memory implements the IA_Recuerdo client used to ship
-// observations from IA_Buscar to the external memory service.
+// observations from SourceRudder to the external memory service.
 //
 // The integration is optional: a Client built with an empty baseURL
 // short-circuits every Save call to nil WITHOUT issuing any HTTP

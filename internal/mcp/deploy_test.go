@@ -14,7 +14,7 @@ import (
 // drops one var (or uses the wrong separator) surfaces here before
 // it reaches production.
 func TestSystemdUnitExposesMemoryEnvVars(t *testing.T) {
-	data, err := os.ReadFile("../../deploy/systemd/ia-buscar.service")
+	data, err := os.ReadFile("../../deploy/systemd/sourcerudder.service")
 	if err != nil {
 		t.Fatalf("ReadFile systemd unit: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestSystemdUnitExposesMemoryEnvVars(t *testing.T) {
 }
 
 // TestKubernetesManifestExposesMemoryURL is the RED gate for the
-// kubernetes deployment manifest: the ia-buscar container MUST
+// kubernetes deployment manifest: the sourcerudder container MUST
 // expose MEMORY_URL under env: so the deployment can ship a
 // memory integration without editing the pod spec at runtime.
 func TestKubernetesManifestExposesMemoryURL(t *testing.T) {

@@ -35,7 +35,7 @@ var forbiddenDeployCommands = []string{
 // restored contract on the working branch, and the apply phase MUST
 // NOT have triggered a production deploy step. The truthful
 // runtime/process guard is to scan the runtime surface
-// (cmd/ia-buscar/main.go, the compiled binary, and the Makefile
+// (cmd/sourcerudder/main.go, the compiled binary, and the Makefile
 // default targets) for the exact commands that would mutate
 // production. If any are present, the test FAILS.
 //
@@ -47,18 +47,18 @@ var forbiddenDeployCommands = []string{
 // exception is documented per the user's instruction so a future
 // reviewer does not mistake it for a missing RED proof.
 func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
-	// Guard 1: cmd/ia-buscar/main.go source. Forbidden deploy
+	// Guard 1: cmd/sourcerudder/main.go source. Forbidden deploy
 	// commands must not appear in the runtime entry point. The grep
 	// is exact-string based so a coincidental match inside a comment
 	// is impossible.
-	mainPath := filepath.Join("..", "..", "cmd", "ia-buscar", "main.go")
+	mainPath := filepath.Join("..", "..", "cmd", "sourcerudder", "main.go")
 	mainSrc, err := os.ReadFile(mainPath)
 	if err != nil {
 		t.Fatalf("ReadFile %s: %v", mainPath, err)
 	}
 	for _, cmd := range forbiddenDeployCommands {
 		if strings.Contains(string(mainSrc), cmd) {
-			t.Errorf("cmd/ia-buscar/main.go contains forbidden production-deploy command %q — this change MUST NOT trigger a production rollout. Full source follows:\n%s", cmd, string(mainSrc))
+			t.Errorf("cmd/sourcerudder/main.go contains forbidden production-deploy command %q — this change MUST NOT trigger a production rollout. Full source follows:\n%s", cmd, string(mainSrc))
 		}
 	}
 
@@ -67,15 +67,15 @@ func TestRuntimeSurfaceDoesNotInvokeProductionDeploy(t *testing.T) {
 	// the binary we still want the test to catch it, but if it ends
 	// up in the binary the runtime guard fires. We build into a temp
 	// dir so the test is hermetic. The build must run from the repo
-	// root because `go build ./cmd/ia-buscar` is resolved against the
+	// root because `go build ./cmd/sourcerudder` is resolved against the
 	// current working directory; tests run inside `internal/mcp/`.
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("filepath.Abs repoRoot: %v", err)
 	}
 	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "ia-buscar")
-	build := exec.Command("go", "build", "-o", binPath, "./cmd/ia-buscar")
+	binPath := filepath.Join(binDir, "sourcerudder")
+	build := exec.Command("go", "build", "-o", binPath, "./cmd/sourcerudder")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, string(out))

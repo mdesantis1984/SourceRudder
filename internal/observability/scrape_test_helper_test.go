@@ -36,7 +36,7 @@ func findMetricLine(body, labels string) string {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.Contains(line, labels) && strings.Contains(line, "ia_buscar_search_degraded_total") {
+		if strings.Contains(line, labels) && strings.Contains(line, "sourcerudder_search_degraded_total") {
 			return line
 		}
 	}

@@ -1,37 +1,41 @@
 # deploy/qa/docker-compose.yml
-# Local Docker Compose v2 QA stack for ia-buscar. Additive only — does
+# Local Docker Compose v2 QA stack for SourceRudder. Additive only — does
 # NOT touch deploy/docker/, deploy/kubernetes/, deploy/systemd/ or any
-# production binary. Project name is fixed to `ia-buscar-qa` so all
+# production binary. Project name is fixed to `sourcerudder-qa` so all
 # cleanup is scoped to this stack.
 
-name: ia-buscar-qa
+name: sourcerudder-qa
 
-# Internal bridge: no host routes, no internet. The ia-buscar container
+# Internal bridge: no host routes, no internet. The SourceRudder container
 # can only reach the in-stack searxng service on this network. Any
 # attempt to reach 10.0.0.0/8 (production SearxNG) or 127.0.0.1:7438
 # (production IA_Recuerdo) fails at the network layer.
-# `internal: true` is INTENTIONALLY OMITTED: the userland-proxy on
-# this host's dockerd cannot forward from a `127.0.0.1:`-bound
-# publish through an internal-only bridge (the docker-proxy binary
-# fails to bind, and iptables DNAT is silently rejected). The
-# production-route isolation contract is enforced by the host firewall
-# (the QA stack has no route to 10.0.0.0/8 by default because the
-# default internal bridge range 172.19.0.0/16 does not overlap
-# production networks).
+# The internal bridge prevents either service from reaching host or
+# production networks. Only the loopback-published app port is exposed.
 networks:
   qa-net:
     driver: bridge
+    internal: true
 
 services:
   searxng:
-    image: searxng/searxng:latest
-    container_name: ia-buscar-qa-searxng
+    image: docker.io/searxng/searxng:2026.9.3-a1144dda3@sha256:0b8a200aaa0ec63e6595e18816c19f12d0b9d38326b9fc4123fc1fa80a438776
+    container_name: sourcerudder-qa-searxng
     restart: "no"
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - qa-net
-    # SearxNG must be reachable from the ia-buscar container on
+    # SearxNG must be reachable from the SourceRudder container on
     # 0.0.0.0:8080. The `internal: true` bridge means the host cannot
-    # reach searxng directly — only the published port on ia-buscar
+    # reach searxng directly — only the published port on SourceRudder
     # is exposed.
     expose:
       - "8080"
@@ -44,7 +48,7 @@ services:
       retries: 12
       start_period: 10s
 
-  ia-buscar:
+  sourcerudder:
     # Build the same image the production deploy/docker/Dockerfile
     # produces, with --build so the QA stack always runs the current
     # source. `context: ../..` resolves to the repo root when compose
@@ -54,14 +58,23 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: ia-buscar:qa-local
-    container_name: ia-buscar-qa-app
+    image: sourcerudder:qa-local
+    container_name: sourcerudder-qa-app
     restart: "no"
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - qa-net
     # QA_AUTH_KEY is derived by qa-up.sh from $AUTH_KEY or .env.qa
     # (dev-only). The key is provisioned through the
-    # IA_BUSCAR_AUTH_KEY env var (not via -auth-key argv) so the
+    # SOURCERUDDER_AUTH_KEY env var (not via -auth-key argv) so the
     # secret never appears in `ps aux` output, process listings, or
     # compose command history. QA_AUTH_KEY is intentionally NOT
     # injected into the container alongside the mapped value (that
@@ -69,14 +82,16 @@ services:
     # substitution defaults to "" so the live auth.Validator rejects
     # every /mcp request when QA_AUTH_KEY is unset — fail-closed.
     environment:
-      - IA_BUSCAR_AUTH_KEY=${QA_AUTH_KEY:-}
-    # Local-only port binding. Use 0.0.0.0:8080 so docker-proxy can
-    # actually listen (the `127.0.0.1:` prefix on a fresh docker-proxy
-    # managed by this daemon variant is unreliable). The qa-net internal
-    # bridge + the production-route isolation contract is enforced by
-    # the network itself, not the host-port binding.
+      - SOURCERUDDER_AUTH_KEY=${QA_AUTH_KEY:-}
+    # Local-only port binding prevents LAN exposure during QA.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/sourcerudder-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     command:
       - "-transport"
       - "http"
@@ -85,13 +100,13 @@ services:
       - "-searxng-url"
       - "http://searxng:8080"
       # IA_Recuerdo integration is disabled by passing -memory-url "".
-      # Live binary (cmd/ia-buscar/main.go:33) defaults to "" already;
+      # Live binary (cmd/sourcerudder/main.go:33) defaults to "" already;
       # passing it explicitly makes the contract behavioral
       # (internal/memory/client.go:51-53 short-circuits Save) rather
       # than structural.
       - "-memory-url"
       - ""
-      # MCP auth is enabled via the IA_BUSCAR_AUTH_KEY env var (set
+      # MCP auth is enabled via the SOURCERUDDER_AUTH_KEY env var (set
       # in the `environment:` block above). The -auth-key argv form
       # remains supported as an explicit override for ad-hoc local
       # debugging, but the QA stack uses the env path so the secret
@@ -101,3 +116,6 @@ services:
     depends_on:
       searxng:
         condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL

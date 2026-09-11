@@ -16,6 +16,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze Go
+    # CodeQL for private repositories requires GitHub Code Security licensing.
+    # The other CI security scans remain active while the repository is private.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

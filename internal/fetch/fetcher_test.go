@@ -32,7 +32,7 @@ func withSSRFDisabled(t *testing.T) {
 // prior production header.
 func TestFetcherAppliesConfiguredUserAgent(t *testing.T) {
 	withSSRFDisabled(t)
-	const customUA = "ia-buscar/test-ua/42"
+	const customUA = "sourcerudder/test-ua/42"
 
 	got := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func TestFetcherOutcomeSuccessOn2xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.Fetch(context.Background(), srv.URL)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
@@ -88,7 +88,7 @@ func TestFetcherOutcomeSuccessOn2xx(t *testing.T) {
 // The fetcher MUST refuse to dial a private/loopback IP. The spec
 // classifies this as Outcome="blocked-target".
 func TestFetcherBlockedTargetOnPrivateIP(t *testing.T) {
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.Fetch(context.Background(), "http://127.0.0.1:8080/secret")
 	if err == nil {
 		t.Fatal("expected error from private-IP fetch")
@@ -113,8 +113,8 @@ func TestFetcherNewDefaultPreservedForLegacyCaller(t *testing.T) {
 	if f.cfg.UserAgent == "" {
 		t.Fatal("NewFetcherService must apply a non-empty default User-Agent")
 	}
-	if !strings.Contains(f.cfg.UserAgent, "IA-Buscar") && !strings.Contains(f.cfg.UserAgent, "ia-buscar") {
-		t.Fatalf("default User-Agent must reference IA-Buscar identity, got %q", f.cfg.UserAgent)
+	if !strings.Contains(f.cfg.UserAgent, "SourceRudder") {
+		t.Fatalf("default User-Agent must reference SourceRudder identity, got %q", f.cfg.UserAgent)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestFetcherMaxRedirectsHonored(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxRedirects: 3,
 	})
@@ -167,7 +167,7 @@ func TestFetcherRetryCancellable(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  4,
 		BaseBackoff:  200 * time.Millisecond,
@@ -215,7 +215,7 @@ func TestCheckLinkStatusCancellable(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  1,
 		BaseBackoff:  50 * time.Millisecond,
@@ -302,7 +302,7 @@ func TestFetcherPinsDialToApprovedIP(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	url := "http://example.test:" + strconv.Itoa(dialPort) + "/pin"
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.Fetch(context.Background(), url)
 	if err != nil {
 		t.Fatalf("Fetch: %v (Outcome=%s Warnings=%v)", err, resp.Outcome, resp.Warnings)

@@ -1,5 +1,5 @@
 # .dockerignore
-# Excludes local-only state and stale build artifacts from the ia-buscar
+# Excludes local-only state and stale build artifacts from the sourcerudder
 # image build context. Keeps the QA image small and prevents accidental
 # copy-in of host services config.
 

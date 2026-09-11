@@ -16,5 +16,5 @@ memory:
   api_key: ""
 
 security:
-  # Set IA_BUSCAR_AUTH_KEY in the process environment for HTTP transport.
-  auth_key_env: IA_BUSCAR_AUTH_KEY
+  # Set SOURCERUDDER_AUTH_KEY in the process environment for HTTP transport.
+  auth_key_env: SOURCERUDDER_AUTH_KEY

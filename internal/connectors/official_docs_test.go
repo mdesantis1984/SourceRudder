@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type officialDocsBackendStub struct {

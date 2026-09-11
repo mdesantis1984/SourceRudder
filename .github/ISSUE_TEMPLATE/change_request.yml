@@ -1,0 +1,50 @@
+name: Change request
+description: Propose a feature, refactor, documentation change, or maintenance task.
+title: "[Change]: "
+labels:
+  - "status:needs-review"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the problem before proposing implementation. Approved issues are the authority for pull requests.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or operational problem and provide evidence that it exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable success without prescribing unnecessary implementation details.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: State what is included and explicitly excluded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Explain how the outcome can be tested or reviewed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and rollback
+      description: Identify compatibility, security, data, or operational risks and the rollback boundary.
+    validations:
+      required: true

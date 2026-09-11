@@ -1,20 +1,22 @@
 package scripts_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// renderSystemdUnit reads deploy/systemd/ia-buscar.service from the
+// renderSystemdUnit reads deploy/systemd/sourcerudder.service from the
 // worktree root, substitutes @VERSION@/@IMAGE@ with the supplied sample
 // values, and returns the rendered unit as a string. The function is
 // shared by the systemd identity tests so each case exercises the same
 // substitution path operators run through `make release-image`.
 func renderSystemdUnit(t *testing.T, version, image string) string {
 	t.Helper()
-	unit, err := os.ReadFile(filepath.Join("..", "deploy", "systemd", "ia-buscar.service"))
+	unit, err := os.ReadFile(filepath.Join("..", "deploy", "systemd", "sourcerudder.service"))
 	if err != nil {
 		t.Fatalf("read systemd unit: %v", err)
 	}
@@ -45,23 +47,23 @@ func extractExecStartPre(t *testing.T, rendered string) []string {
 // TestSystemdIdentityValidationComparesContentsNotPaths is the
 // Phase 14.2 RED gate. The previous shape was
 //
-//	cmp -s /opt/ia-buscar/VERSION @VERSION@
-//	cmp -s /opt/ia-buscar/IMAGE   @IMAGE@
+//	cmp -s /opt/sourcerudder/VERSION @VERSION@
+//	cmp -s /opt/sourcerudder/IMAGE   @IMAGE@
 //
 // After substitution the @-tokens become PATH operands, so the
-// command tries to `cmp /opt/ia-buscar/VERSION c0c852f`. The second
+// command tries to `cmp /opt/sourcerudder/VERSION c0c852f`. The second
 // operand is treated as a file path, not as the literal expected
 // content; the comparison is meaningless. The fix: the rendered
 // ExecStartPre MUST verify the on-disk file CONTAINS the expected
-// content (e.g. via `grep -qxF 'expected' /opt/ia-buscar/VERSION`),
+// content (e.g. via `grep -qxF 'expected' /opt/sourcerudder/VERSION`),
 // not that some file at the path `expected` matches the on-disk
 // file. The test asserts the rendered command uses content-matching
 // for BOTH the VERSION file and the IMAGE file, and that the
 // literal expected value appears INSIDE the command (proving the
 // substitution is treated as content, not as a path operand).
 func TestSystemdIdentityValidationComparesContentsNotPaths(t *testing.T) {
-	const sampleVersion = "c0c852fdeadbeef1234567890abcdef000000000"
-	const sampleImage = "ghcr.io/thiscloud/ia-buscar:c0c852fdeadbeef1234567890abcdef000000000"
+	const sampleVersion = "2.0.0"
+	const sampleImage = "ghcr.io/mdesantis1984/sourcerudder:2.0.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 	rendered := renderSystemdUnit(t, sampleVersion, sampleImage)
 	pre := extractExecStartPre(t, rendered)
@@ -134,13 +136,13 @@ func TestSystemdIdentityValidationRejectsMismatchedContent(t *testing.T) {
 	}
 
 	// Rewrite the rendered commands so they reference our temp
-	// files instead of /opt/ia-buscar. The shape must still be a
+	// files instead of /opt/sourcerudder. The shape must still be a
 	// content-matching command — otherwise the test would silently
 	// pass on a cmp-based version that errors out for the wrong
 	// reason.
 	for i, line := range pre {
-		line = strings.ReplaceAll(line, "/opt/ia-buscar/VERSION", versionFile)
-		line = strings.ReplaceAll(line, "/opt/ia-buscar/IMAGE", imageFile)
+		line = strings.ReplaceAll(line, "/opt/sourcerudder/VERSION", versionFile)
+		line = strings.ReplaceAll(line, "/opt/sourcerudder/IMAGE", imageFile)
 		pre[i] = line
 	}
 
@@ -178,16 +180,28 @@ func TestSystemdIdentityValidationAcceptsMatchingContent(t *testing.T) {
 	dir := t.TempDir()
 	versionFile := filepath.Join(dir, "VERSION")
 	imageFile := filepath.Join(dir, "IMAGE")
+	binaryFile := filepath.Join(dir, "sourcerudder")
+	checksumFile := filepath.Join(dir, "BINARY_SHA256")
 	if err := os.WriteFile(versionFile, []byte(sampleVersion+"\n"), 0o644); err != nil {
 		t.Fatalf("write VERSION: %v", err)
 	}
 	if err := os.WriteFile(imageFile, []byte(sampleImage+"\n"), 0o644); err != nil {
 		t.Fatalf("write IMAGE: %v", err)
 	}
+	binary := []byte("verified sourcerudder binary")
+	if err := os.WriteFile(binaryFile, binary, 0o755); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+	checksum := fmt.Sprintf("%x  %s\n", sha256.Sum256(binary), binaryFile)
+	if err := os.WriteFile(checksumFile, []byte(checksum), 0o644); err != nil {
+		t.Fatalf("write BINARY_SHA256: %v", err)
+	}
 
 	for i, line := range pre {
-		line = strings.ReplaceAll(line, "/opt/ia-buscar/VERSION", versionFile)
-		line = strings.ReplaceAll(line, "/opt/ia-buscar/IMAGE", imageFile)
+		line = strings.ReplaceAll(line, "/opt/sourcerudder/VERSION", versionFile)
+		line = strings.ReplaceAll(line, "/opt/sourcerudder/IMAGE", imageFile)
+		line = strings.ReplaceAll(line, "/etc/sourcerudder/release/BINARY_SHA256", checksumFile)
+		line = strings.ReplaceAll(line, "/opt/sourcerudder/bin/sourcerudder", binaryFile)
 		pre[i] = line
 	}
 
@@ -198,6 +212,53 @@ func TestSystemdIdentityValidationAcceptsMatchingContent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected ExecStartPre to SUCCEED when on-disk contents match; got err=%v\ncmd: %s\noutput: %s", err, line, out)
 		}
+	}
+}
+
+func TestSystemdUnitBoundsResourcesAndPrivileges(t *testing.T) {
+	rendered := renderSystemdUnit(t, "2.0.0", "example.invalid/image@sha256:digest")
+	for _, directive := range []string{
+		"MemoryMax=512M",
+		"MemorySwapMax=512M",
+		"CPUQuota=50%",
+		"TasksMax=128",
+		"NoNewPrivileges=true",
+		"ProtectSystem=strict",
+		"ProtectHome=true",
+		"ReadOnlyPaths=/opt/sourcerudder /etc/sourcerudder/release",
+		"CapabilityBoundingSet=",
+	} {
+		if !strings.Contains(rendered, directive) {
+			t.Errorf("systemd unit missing hardening directive %q", directive)
+		}
+	}
+}
+
+func TestSystemdUnitVerifiesBinaryChecksum(t *testing.T) {
+	rendered := renderSystemdUnit(t, "2.0.0", "example.invalid/image@sha256:digest")
+	if !strings.Contains(rendered, "sha256sum -c /etc/sourcerudder/release/BINARY_SHA256") {
+		t.Fatal("systemd unit must verify the installed binary against BINARY_SHA256")
+	}
+}
+
+func TestSystemdUnitRejectsBinaryChecksumMismatch(t *testing.T) {
+	rendered := renderSystemdUnit(t, "2.0.0", "example.invalid/image@sha256:digest")
+	pre := extractExecStartPre(t, rendered)
+	checksumCommand := pre[len(pre)-1]
+	dir := t.TempDir()
+	binaryFile := filepath.Join(dir, "sourcerudder")
+	checksumFile := filepath.Join(dir, "BINARY_SHA256")
+	if err := os.WriteFile(binaryFile, []byte("modified binary"), 0o755); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+	if err := os.WriteFile(checksumFile, []byte(strings.Repeat("0", 64)+"  "+binaryFile+"\n"), 0o644); err != nil {
+		t.Fatalf("write checksum: %v", err)
+	}
+	checksumCommand = strings.ReplaceAll(checksumCommand, "/etc/sourcerudder/release/BINARY_SHA256", checksumFile)
+	checksumCommand = strings.ReplaceAll(checksumCommand, "/opt/sourcerudder/bin/sourcerudder", binaryFile)
+	cmd := newShellCmd(t, extractShellCmd(checksumCommand))
+	if output, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("checksum guard accepted modified binary; output=%s", output)
 	}
 }
 

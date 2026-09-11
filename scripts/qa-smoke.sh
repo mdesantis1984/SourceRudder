@@ -4,7 +4,7 @@
 #   search_web 200 + results:[] + cached:false  |  0 packets to 7438.
 #
 # Auth: the compose service injects QA_AUTH_KEY into the container as
-# IA_BUSCAR_AUTH_KEY (env path, not argv — see CT201 fix), so every
+# SOURCERUDDER_AUTH_KEY (env path, not argv — see CT201 fix), so every
 # /mcp POST MUST send a matching Authorization header. qa-up.sh
 # exports QA_AUTH_KEY from $AUTH_KEY, .env.qa (dev-only), or "" (fail
 # closed). The smoke sources the same env so the header and the

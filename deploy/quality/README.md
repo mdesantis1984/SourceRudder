@@ -1,4 +1,8 @@
-# Local live-search baseline
+[English](README.md) | [Español](README.es.md)
+
+# SourceRudder 2.0 local live-search baseline
+
+SourceRudder 2.0 is **unreleased**. This isolated quality workflow collects reviewable live-search evidence; it is not a production deployment or an automatic relevance grade.
 
 Inspect the fixed nine-case manifest before any live run:
 
@@ -9,18 +13,18 @@ python3 scripts/quality/live_baseline.py manifest
 Run the isolated baseline and write evidence outside the repository:
 
 ```bash
-python3 scripts/quality/live_baseline.py run --output /tmp/ia-buscar-quality/baseline.json
+python3 scripts/quality/live_baseline.py run --output /tmp/sourcerudder-quality/baseline.json
 ```
 
 To warm the first manifest case for a specific tool while retaining all 27
 initial calls, pass `--warm-tool`; the default remains `search_web`:
 
 ```bash
-python3 scripts/quality/live_baseline.py run --warm-tool search_reddit --output /tmp/ia-buscar-quality/reddit.json
+python3 scripts/quality/live_baseline.py run --warm-tool search_reddit --output /tmp/sourcerudder-quality/reddit.json
 ```
 
 The runner generates an in-memory local auth token, refuses pre-existing
-`ia-buscar-quality` resources, then starts and removes only that project. It
+`sourcerudder-quality` resources, then starts and removes only that project. It
 never grades relevance automatically: URLs are preserved and only snippets are
 bounded. Partial responses are evidence, not automatic failures.
 

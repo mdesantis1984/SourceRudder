@@ -1,44 +1,65 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sourcerudder
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ia-buscar
+  name: sourcerudder
+  namespace: sourcerudder
   labels:
-    app: ia-buscar
+    app: sourcerudder
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ia-buscar
+      app: sourcerudder
   template:
     metadata:
       labels:
-        app: ia-buscar
+        app: sourcerudder
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
-        - name: ia-buscar
-          # Immutable tag: every release ships a unique image reference.
+        - name: sourcerudder
+          # Immutable digest: every release ships an exact image manifest.
           # The literal `<IMAGE>` placeholder is replaced by the
           # `make release-image` target which appends the current
-          # commit SHA. Operators MUST NOT substitute `:latest`,
-          # `:1.2.0`, or any other mutable tag here — the gate
-          # script validates the image is pinned to `git rev-parse HEAD`
-          # for every released commit.
+          # release tag and digest. Operators MUST NOT substitute a tag
+          # without `@sha256:...`; the release gate rejects mutable images.
           image: <IMAGE>
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8080
           env:
-            - name: IA_BUSCAR_AUTH_KEY
+            - name: SOURCERUDDER_AUTH_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ia-buscar
+                  name: sourcerudder
                   key: auth-key
             - name: SEARXNG_URL
-              value: "http://searxng:8080"
+              valueFrom:
+                configMapKeyRef:
+                  name: sourcerudder
+                  key: searxng-url
             - name: FETCH_TIMEOUT_MS
               value: "30000"
             - name: FETCH_USER_AGENT
-              value: "ia-buscar/1.2.0 (compatible; +https://thiscloud.es)"
+              value: "SourceRudder/2.0.0"
             - name: FETCH_MAX_REDIRECTS
               value: "5"
             - name: FETCH_MAX_ATTEMPTS
@@ -72,11 +93,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ia-buscar
+  name: sourcerudder
+  namespace: sourcerudder
 spec:
   type: ClusterIP
   ports:
     - port: 8080
       targetPort: 8080
   selector:
-    app: ia-buscar
+    app: sourcerudder

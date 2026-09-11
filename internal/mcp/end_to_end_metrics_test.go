@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/internal/auth"
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/connectors"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/auth"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/connectors"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
 // TestDegradedSearXNGExposesMetricOverHTTP is the end-to-end regression
@@ -27,10 +27,10 @@ import (
 // MCP server), stands the actual Server.Handler() up on an ephemeral
 // port via httptest.NewServer, drives a degraded SearXNG response
 // through the real JSON-RPC /mcp endpoint, and proves the
-// ia_buscar_search_degraded_total counter is visible at /metrics.
+// sourcerudder_search_degraded_total counter is visible at /metrics.
 //
 // Before the fix this test would scrape /metrics after the tool call
-// and find no ia_buscar_search_degraded_total sample, because the
+// and find no sourcerudder_search_degraded_total sample, because the
 // connector would have incremented a separate Metrics instance from
 // the one the Server.Handler() exposed.
 func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
@@ -38,7 +38,7 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 
 	// 1. SearXNG mock returns the canonical degraded body: 200 OK with
 	// empty results and a non-empty unresponsive_engines array. The
-	// WebConnector is the only consumer of this body in IA_Buscar's
+	// WebConnector is the only consumer of this body in SourceRudder's
 	// registry, so we know exactly which counter the test must tick.
 	searxng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -78,7 +78,7 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	// regression where a leftover default leaks across tests and
 	// gives a false-positive pass.
 	preBody := scrapeHTTP(t, srv.URL+"/metrics")
-	if counterValue(preBody, "ia_buscar_search_degraded_total", "web", "unresponsive_engines") != 0 {
+	if counterValue(preBody, "sourcerudder_search_degraded_total", "web", "unresponsive_engines") != 0 {
 		t.Fatalf("expected degraded counter to start at 0, scrape body:\n%s", preBody)
 	}
 
@@ -132,11 +132,11 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	// the one /metrics serves (the exact production bug), this
 	// assertion would fail with got=0.
 	body := scrapeHTTP(t, srv.URL+"/metrics")
-	if !strings.Contains(body, "ia_buscar_search_degraded_total") {
-		t.Fatalf("expected ia_buscar_search_degraded_total in /metrics body, got:\n%s", body)
+	if !strings.Contains(body, "sourcerudder_search_degraded_total") {
+		t.Fatalf("expected sourcerudder_search_degraded_total in /metrics body, got:\n%s", body)
 	}
-	if got := counterValue(body, "ia_buscar_search_degraded_total", "web", "unresponsive_engines"); got < 1 {
-		t.Fatalf("expected ia_buscar_search_degraded_total{web,unresponsive_engines} >= 1, got %d, body:\n%s", got, body)
+	if got := counterValue(body, "sourcerudder_search_degraded_total", "web", "unresponsive_engines"); got < 1 {
+		t.Fatalf("expected sourcerudder_search_degraded_total{web,unresponsive_engines} >= 1, got %d, body:\n%s", got, body)
 	}
 }
 

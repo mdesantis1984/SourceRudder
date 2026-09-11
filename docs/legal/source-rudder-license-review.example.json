@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "status": "pending",
+  "release_version": "2.0.0",
+  "license_spdx": "LicenseRef-SourceRudder-Commercial-Attribution-1.0",
+  "license_sha256": "replace-with-the-final-license-sha256",
+  "approval_reference": "replace-with-an-immutable-review-reference",
+  "reviewer_name": "replace-with-reviewer-name",
+  "reviewer_qualification": "replace-with-professional-qualification",
+  "reviewer_identifier": "replace-with-professional-registration-or-organization-id",
+  "professional_reference": "replace-with-the-professional-opinion-or-engagement-reference",
+  "review_scope": "SourceRudder Commercial Attribution License 1.0",
+  "reviewed_at": "YYYY-MM-DD"
+}

@@ -6,7 +6,7 @@ import (
 )
 
 // TestRecordSearchDegradedIncrementsCounter locks in the contract that
-// the new ia_buscar_search_degraded_total counter increments whenever a
+// the new sourcerudder_search_degraded_total counter increments whenever a
 // connector surfaces upstream degradation. The exact label values are
 // part of the public observability surface, so a future regression that
 // renames them would break dashboards.
@@ -19,7 +19,7 @@ func TestRecordSearchDegradedIncrementsCounter(t *testing.T) {
 	m.RecordSearchDegraded("reddit", "rate_limited")
 	m.RecordSearchDegraded("reddit", "unconfigured")
 
-	body := scrapeCounter(t, m.Handler(), "ia_buscar_search_degraded_total")
+	body := scrapeCounter(t, m.Handler(), "sourcerudder_search_degraded_total")
 
 	expectations := []struct {
 		labels string
@@ -57,7 +57,7 @@ func TestRecordSearchDegradedDefaultsUnknownLabels(t *testing.T) {
 	m.RecordSearchDegraded("", "")
 	m.RecordSearchDegraded("only-source", "")
 
-	body := scrapeCounter(t, m.Handler(), "ia_buscar_search_degraded_total")
+	body := scrapeCounter(t, m.Handler(), "sourcerudder_search_degraded_total")
 	if !strings.Contains(body, `source="unknown"`) {
 		t.Errorf("expected source=\"unknown\" label fallback, got:\n%s", body)
 	}

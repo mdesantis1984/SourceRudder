@@ -1,4 +1,4 @@
-// Package fetch implements the IA_Buscar URL fetch engine. It is the
+// Package fetch implements the SourceRudder URL fetch engine. It is the
 // single seam for outbound HTTP across all MCP tools (Fetch,
 // FetchAndExtract, ExtractStructured, ValidateURL, CheckLinkStatus)
 // and is responsible for:
@@ -33,12 +33,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
-// Default User-Agent. Prior production baseline; preserved verbatim
-// for callers that use NewFetcherService(int) without a Config.
-const defaultUserAgent = "Mozilla/5.0 (compatible; IA-Buscar/1.0; +https://thiscloud.es)"
+// Default User-Agent used by callers that do not provide a Config.
+const defaultUserAgent = "SourceRudder/2.0.0"
 
 const (
 	maxFetchResponseBytes = 4 << 20

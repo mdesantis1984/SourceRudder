@@ -1,0 +1,59 @@
+name: PR policy
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions:
+  issues: read
+  pull-requests: read
+
+jobs:
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            const issueMatch = body.match(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/i);
+
+            if (!issueMatch) {
+              core.setFailed('PR body must contain Closes #N, Fixes #N, or Resolves #N.');
+              return;
+            }
+
+            const issueNumber = Number(issueMatch[1]);
+            const {data: issue} = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            });
+
+            if (issue.pull_request) {
+              core.setFailed(`#${issueNumber} is a pull request, not an approved issue.`);
+            }
+
+            const issueLabels = issue.labels.map(label => typeof label === 'string' ? label : label.name);
+            if (!issueLabels.includes('status:approved')) {
+              core.setFailed(`#${issueNumber} must have the status:approved label.`);
+            }
+
+            const typeLabels = pr.labels
+              .map(label => label.name)
+              .filter(name => name.startsWith('type:'));
+            if (typeLabels.length !== 1) {
+              core.setFailed(`PR must have exactly one type:* label; found ${typeLabels.length}.`);
+            }
+
+            const branchPattern = /^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)\/[a-z0-9._-]+$/;
+            if (!branchPattern.test(pr.head.ref)) {
+              core.setFailed(`Branch ${pr.head.ref} does not follow type/description naming.`);
+            }
+
+            const titlePattern = /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9._-]+\))?!?: .+/;
+            if (!titlePattern.test(pr.title)) {
+              core.setFailed('PR title must follow Conventional Commits.');
+            }

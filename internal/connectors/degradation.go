@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type searxngUnresponsiveError struct {
@@ -60,7 +60,7 @@ func recordSearxngError(source string, results []types.SearchResultItem, err err
 
 // recordDegraded is the single seam every connector uses to surface an
 // upstream degradation. It does three things atomically:
-//  1. Increments ia_buscar_search_degraded_total{source, kind}.
+//  1. Increments sourcerudder_search_degraded_total{source, kind}.
 //  2. Marks resp.Partial = true so the AI can tell the result was
 //     incomplete without parsing Warnings.
 //  3. Appends err.Error() to resp.Warnings without clobbering any

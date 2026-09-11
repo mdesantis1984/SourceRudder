@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type Extractor struct{}

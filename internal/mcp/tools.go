@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type githubPRSearcher interface {
@@ -202,7 +202,7 @@ func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.Raw
 			SourcesUsed: []string{},
 			Partial:     false,
 			Warnings: []string{
-				"local_index_unavailable: no local-index provider is configured for IA_Buscar; this tool does not fall back to web search",
+				"local_index_unavailable: no local-index provider is configured for SourceRudder; this tool does not fall back to web search",
 			},
 			Errors: []string{
 				"local_index_unavailable",

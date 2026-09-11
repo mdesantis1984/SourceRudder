@@ -3,17 +3,17 @@
 # scoped cleanup on failure. Refuses ANY argv (Threat A).
 #
 # Auth: live auth.Validator (internal/auth/auth.go:38-58) rejects
-# every /mcp request when IA_BUSCAR_AUTH_KEY is set but no matching
+# every /mcp request when SOURCERUDDER_AUTH_KEY is set but no matching
 # credential is presented. QA_AUTH_KEY source precedence:
 #   1. $AUTH_KEY (operator override, dev-only)
 #   2. .env.qa (dev-only; gitignored)  3. "" (fail-closed)
-# The key is then injected into the container as IA_BUSCAR_AUTH_KEY
+# The key is then injected into the container as SOURCERUDDER_AUTH_KEY
 # (env path, NOT -auth-key argv) so the secret never appears in
-# `ps aux` — see CT201 fix in cmd/ia-buscar/main.go.
+# `ps aux` — see CT201 fix in cmd/sourcerudder/main.go.
 set -u
 set -o pipefail
 
-PROJECT="ia-buscar-qa"
+PROJECT="sourcerudder-qa"
 COMPOSE_FILE="deploy/qa/docker-compose.yml"
 
 if [ "$#" -ne 0 ]; then

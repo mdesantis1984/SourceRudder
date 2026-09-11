@@ -67,14 +67,14 @@ func New() *Metrics {
 	m.registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	m.httpRequests = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "ia_buscar_http_requests_total",
+			Name: "sourcerudder_http_requests_total",
 			Help: "Total HTTP requests",
 		},
 		[]string{"method", "path", "status"},
 	)
 	m.searchLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "ia_buscar_search_latency_seconds",
+			Name:    "sourcerudder_search_latency_seconds",
 			Help:    "Search latency",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -82,7 +82,7 @@ func New() *Metrics {
 	)
 	m.searchDegraded = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "ia_buscar_search_degraded_total",
+			Name: "sourcerudder_search_degraded_total",
 			Help: "Number of search responses that surfaced an upstream degradation (e.g. SearxNG engines not responding, Reddit 429/5xx). The 'kind' label names the failure mode.",
 		},
 		[]string{"source", "kind"},
@@ -149,13 +149,13 @@ func (m *Metrics) RecordHTTPRequest(method, path, status string) {
 	m.httpRequests.WithLabelValues(method, path, status).Inc()
 }
 
-// RecordSearchDegraded increments ia_buscar_search_degraded_total whenever a
+// RecordSearchDegraded increments sourcerudder_search_degraded_total whenever a
 // connector returns a response that signals upstream degradation (SearxNG
 // engines not responding, Reddit 429/5xx, etc.). The 'source' label is the
 // connector name; the 'kind' label is a stable, lowercase, snake_case tag
 // naming the failure mode (e.g. "unresponsive_engines", "rate_limited",
 // "transport", "upstream_http_5xx"). This metric is for observability
-// only — IA_Buscar does not attempt to repair external engines.
+// only — SourceRudder does not attempt to repair external engines.
 func (m *Metrics) RecordSearchDegraded(source, kind string) {
 	if source == "" {
 		source = "unknown"

@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/mcp"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/mcp"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
 // TestFetchTimeoutMsPropagatesIntoFetcherService is the Phase 6.4
@@ -25,7 +25,7 @@ func TestFetchTimeoutMsPropagatesIntoFetcherService(t *testing.T) {
 	const wantTimeout = 12345
 
 	f := fetch.NewFetcherServiceWithConfig(fetch.Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    wantTimeout,
 		MaxRedirects: 5,
 		MaxAttempts:  3,
@@ -73,14 +73,14 @@ func readFetcherTimeoutMs(t *testing.T, f *fetch.FetcherService) int {
 // "no flag override"). The flag-provided timeout wins when both are
 // set so the operator's CLI override always takes precedence.
 func TestFetchEnvVarsWireIntoFetcherService(t *testing.T) {
-	t.Setenv("FETCH_USER_AGENT", "ia-buscar/env-ua/42")
+	t.Setenv("FETCH_USER_AGENT", "sourcerudder/env-ua/42")
 	t.Setenv("FETCH_TIMEOUT_MS", "12345")
 	t.Setenv("FETCH_MAX_REDIRECTS", "7")
 	t.Setenv("FETCH_MAX_ATTEMPTS", "9")
 
 	cfg := buildFetchConfig(0) // flag=0: env vars drive the config
-	if cfg.UserAgent != "ia-buscar/env-ua/42" {
-		t.Fatalf("UserAgent: got %q, want ia-buscar/env-ua/42", cfg.UserAgent)
+	if cfg.UserAgent != "sourcerudder/env-ua/42" {
+		t.Fatalf("UserAgent: got %q, want sourcerudder/env-ua/42", cfg.UserAgent)
 	}
 	if cfg.TimeoutMs != 12345 {
 		t.Fatalf("TimeoutMs: got %d, want 12345", cfg.TimeoutMs)

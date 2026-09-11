@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 type PyPIConnector struct {
@@ -156,7 +156,7 @@ func (c *PyPIConnector) searchByPrefix(ctx context.Context, query string, maxRes
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/html")
-	req.Header.Set("User-Agent", "ia-buscar/1.0")
+	req.Header.Set("User-Agent", "SourceRudder/2.0.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

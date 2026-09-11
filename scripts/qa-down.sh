@@ -5,7 +5,7 @@
 set -u
 set -o pipefail
 
-PROJECT="ia-buscar-qa"
+PROJECT="sourcerudder-qa"
 COMPOSE_FILE="deploy/qa/docker-compose.yml"
 
 # Same argv discipline as qa-up.sh.

@@ -27,10 +27,27 @@ jobs:
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
       - name: Build
-        run: go build -o bin/ia-buscar ./cmd/ia-buscar
+        run: go build -o bin/sourcerudder ./cmd/sourcerudder
       - name: Vet
         run: go vet ./...
       - name: Test
         run: go test -v -race ./...
       - name: Quality runner tests
         run: python3 -m unittest discover -s scripts/quality -p 'test_*.py' -v
+      - name: Deployment contract tests
+        run: |
+          bash tests/k8s/k8s_deployment_test.sh
+          bash tests/qa/qa_scripts_test.sh
+          bash tests/release/release_assets_test.sh
+          bash tests/release/release_readiness_test.sh
+      - name: Compose validation
+        env:
+          SOURCERUDDER_AUTH_KEY: ci-compose-validation
+          SEARXNG_SECRET: ci-compose-validation
+          SOURCERUDDER_QUALITY_AUTH_KEY: ci-compose-validation
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f deploy/qa/docker-compose.yml config --quiet
+          docker compose -f deploy/quality/docker-compose.yml config --quiet
+      - name: Release identity checks
+        run: bash scripts/release-readiness.sh --identity-only

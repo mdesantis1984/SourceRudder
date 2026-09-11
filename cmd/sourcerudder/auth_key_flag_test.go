@@ -11,18 +11,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thiscloud/ia-buscar/internal/auth"
+	"github.com/mdesantis1984/SourceRudder/internal/auth"
 )
 
 // authKeyEnv is the env var name the binary reads when -auth-key is
 // empty. Declared in production main.go; redeclared here so the tests
 // stay self-contained and do not need an exported symbol just to read
 // a constant.
-const authKeyEnv = "IA_BUSCAR_AUTH_KEY"
+const authKeyEnv = "SOURCERUDDER_AUTH_KEY"
 
 // TestResolveAuthKeyEnvFallback covers the RED gate for the CT201
 // argv-leak fix: when the operator does NOT pass -auth-key, the API
-// key MUST come from the IA_BUSCAR_AUTH_KEY env var. This is the
+// key MUST come from the SOURCERUDDER_AUTH_KEY env var. This is the
 // primary path operators are expected to use so the secret never
 // reaches argv (and therefore ps aux / process listings / shell
 // history).
@@ -209,7 +209,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 	return buf
 }
 
-// readMainSource loads cmd/ia-buscar/main.go relative to the working
+// readMainSource loads cmd/sourcerudder/main.go relative to the working
 // directory and returns its contents. The file is parsed (and parsing
 // errors surfaced) so the test fails fast if the production file is
 // ever removed.

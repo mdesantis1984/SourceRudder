@@ -1,9 +1,18 @@
-name: ia-buscar
+name: sourcerudder
 
 services:
   searxng:
-    image: docker.io/searxng/searxng:latest
-    restart: unless-stopped
+    image: docker.io/searxng/searxng:2026.9.3-a1144dda3@sha256:0b8a200aaa0ec63e6595e18816c19f12d0b9d38326b9fc4123fc1fa80a438776
+    restart: "no"
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       SEARXNG_SECRET: "${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}"
     ports:
@@ -17,19 +26,28 @@ services:
       retries: 12
       start_period: 10s
 
-  ia-buscar:
+  sourcerudder:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
-    image: ia-buscar:local
-    restart: unless-stopped
+    image: sourcerudder:local
+    restart: "no"
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
-      IA_BUSCAR_AUTH_KEY: "${IA_BUSCAR_AUTH_KEY:?Set IA_BUSCAR_AUTH_KEY in .env}"
+      SOURCERUDDER_AUTH_KEY: "${SOURCERUDDER_AUTH_KEY:?Set SOURCERUDDER_AUTH_KEY in .env}"
       SEARXNG_URL: http://searxng:8080
       MEMORY_URL: "${MEMORY_URL:-}"
       MEMORY_APIKEY: "${MEMORY_APIKEY:-}"
     ports:
-      - "127.0.0.1:${IA_BUSCAR_PORT:-8080}:8080"
+      - "127.0.0.1:${SOURCERUDDER_PORT:-8080}:8080"
     command: ["-transport", "http", "-http-addr", ":8080"]
     depends_on:
       searxng:

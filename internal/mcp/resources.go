@@ -23,14 +23,14 @@ type Resource struct {
 // stable: clients may cache it across requests. Do not rename the URI
 // without an explicit version bump and changelog entry, since AI
 // agents hardcode it into their tool catalogues.
-const AgentGuideURI = "agent-guide://ia-buscar/wire-contract"
+const AgentGuideURI = "agent-guide://sourcerudder/wire-contract"
 
 // agentGuideMIMEType is text/markdown so MCP clients can render it as
 // documentation rather than trying to execute it.
 const agentGuideMIMEType = "text/markdown"
 
 // wireContractGuide is the static Spanish guide that teaches AI agents
-// how to call IA_Buscar's tools and how to read the responses. The
+// how to call SourceRudder's tools and how to read the responses. The
 // content is intentionally hand-curated: every tool and field mentioned
 // here must exist in this Server's registry today, or the behavioural
 // tests in resources_test.go will fail.
@@ -39,9 +39,9 @@ const agentGuideMIMEType = "text/markdown"
 // string is the only place where the guide is allowed to be Spanish,
 // because the audience is the agent operator, not the codebase
 // maintainer.
-const wireContractGuide = `# Guía para agentes IA — Wire Contract de IA_Buscar
+const wireContractGuide = `# Guía para agentes IA — Wire Contract de SourceRudder
 
-Esta guía describe cómo invocar correctamente las 28 tools MCP registradas por IA_Buscar
+Esta guía describe cómo invocar correctamente las 28 tools MCP registradas por SourceRudder
 y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer plan de búsqueda.
 
 ## 1. Cinco familias de tools
@@ -58,7 +58,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 
 - search_web — fallback general. Usa SearxNG y respeta language, timeRange, safeSearch.
 - search_news — artículos recientes. Resuelve con SearxNG (categoría news). El planner resuelve timeRange="week" cuando detecta intent "news".
-- search_doc_oficial — resolves Go and SearXNG through the bounded IA-Buscar authoritative registry. Use filters.library to override query inference; filters.version is requested but not verified. Validated results use strategy="official_doc_registry_search". Unknown, ambiguous, failed, or unvalidated requests retain strategy="official_doc_web_fallback" and general web results.
+- search_doc_oficial — resolves Go and SearXNG through the bounded SourceRudder authoritative registry. Use filters.library to override query inference; filters.version is requested but not verified. Validated results use strategy="official_doc_registry_search". Unknown, ambiguous, failed, or unvalidated requests retain strategy="official_doc_web_fallback" and general web results.
 - search_local_index — busca en un corpus JSON curado por el operador cuando LOCAL_INDEX_PATH está configurado y devuelve strategy="local_index_lexical". Sin corpus devuelve strategy="local_index_unavailable". Nunca recorre el filesystem, hace requests de red ni redirige a búsqueda web.
 - search_github, search_github_pr, search_github_issue — endpoints de GitHub. search_github_pr y search_github_issue leen filters.state ("open" / "closed") para reducir el resultado.
 - search_stackoverflow, search_npm, search_nuget, search_pypi, search_docker_hub, search_academic, search_youtube, search_images — conectores dedicados a un proveedor.
@@ -179,7 +179,7 @@ get_current_date() → ` + "`" + `{date, time, timezone, timestamp}` + "`" + `. 
 
 ## 9. Recursos para discoverability
 
-agent-guide://ia-buscar/wire-contract (este documento) es accesible vía resources/read para que tu agente pueda releer la guía sin tener que memorizarla. Si tu MCP client soporta resources/list, lo verás anunciado automáticamente en initialize.
+agent-guide://sourcerudder/wire-contract (este documento) es accesible vía resources/read para que tu agente pueda releer la guía sin tener que memorizarla. Si tu MCP client soporta resources/list, lo verás anunciado automáticamente en initialize.
 
 ## 10. Errores que debes esperar
 
@@ -208,7 +208,7 @@ Los tools fetch, fetch_and_extract, extract_structured, validate_url y check_lin
 Configuración expuesta al operador:
 
 - --fetch-timeout-ms (default 30000) — timeout del ciclo completo. También leíble vía env var FETCH_TIMEOUT_MS; el flag CLI gana cuando ambos están configurados.
-- Variable de entorno FETCH_USER_AGENT (default: Mozilla compatible con IA-Buscar/1.2).
+- Variable de entorno FETCH_USER_AGENT (default: SourceRudder/2.0.0).
 - FETCH_MAX_REDIRECTS (default 5).
 - FETCH_MAX_ATTEMPTS (default 3).
 - Backoff: exponencial con jitter determinístico, base 200ms.
@@ -225,6 +225,7 @@ El contrato SearchResponse y los nombres de tools están congelados en esta rama
 
 ## 12. Changelog
 
+- **2.0.0** — el servidor adopta la identidad SourceRudder, el URI ` + "`" + `agent-guide://sourcerudder/wire-contract` + "`" + ` y el módulo ` + "`" + `github.com/mdesantis1984/SourceRudder` + "`" + `. Los nombres de tools, campos JSON, conectores e IDs de estrategia permanecen estables.
 - **1.5.0** — search_local_index carga un corpus JSON local, explícito y read-only al iniciar; aplica ranking lexical determinista y devuelve ` + "`" + `local_index_lexical` + "`" + `. Sin LOCAL_INDEX_PATH conserva ` + "`" + `local_index_unavailable` + "`" + `. No hay crawling, requests de red ni manejo de credenciales.
 - **1.4.0 unreleased feature candidate** — search_doc_oficial resolves Go and SearXNG through a bounded local registry, restricts SearXNG execution to approved documentation hosts, validates result provenance, and returns ` + "`" + `official_doc_registry_search` + "`" + `. Unknown, ambiguous, failed, or unvalidated requests retain the typed ` + "`" + `official_doc_web_fallback` + "`" + ` path. No tag, deployment, publication, or release was created.
 - **1.3.2 unreleased bugfix candidate** — search_images retains a valid, distinct thumbnail_src as a labeled indexed preview alongside the selected image and source page when bounded context permits. This does not restore original-image access or change the SearchResponse schema, result URL, ranking, cache, or network behavior.
@@ -241,7 +242,7 @@ func (s *Server) buildResourcesRegistry() {
 	s.resourcesRegistry = []Resource{
 		{
 			URI:         AgentGuideURI,
-			Name:        "ia-buscar-wire-contract",
+			Name:        "sourcerudder-wire-contract",
 			Description: "Guía en español para agentes IA: cuándo usar cada tool, cómo leer SearchResponse, cómo distinguir healthy empty de degradado y unconfigured, shapes de fetch/validación/síntesis/tiempo.",
 			MimeType:    agentGuideMIMEType,
 			Text:        wireContractGuide,

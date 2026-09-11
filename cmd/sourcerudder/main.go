@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/internal/auth"
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/connectors"
-	"github.com/thiscloud/ia-buscar/internal/fetch"
-	"github.com/thiscloud/ia-buscar/internal/mcp"
-	"github.com/thiscloud/ia-buscar/internal/memory"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/internal/search"
-	"github.com/thiscloud/ia-buscar/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/auth"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/connectors"
+	"github.com/mdesantis1984/SourceRudder/internal/fetch"
+	"github.com/mdesantis1984/SourceRudder/internal/mcp"
+	"github.com/mdesantis1984/SourceRudder/internal/memory"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 )
 
 var (
@@ -42,7 +42,7 @@ var (
 // it is set and non-empty, otherwise the fallback. It lets operators
 // configure the Reddit connector through environment variables without
 // changing the command line, following the same env-flag convention
-// used elsewhere in IA_Buscar's existing flags.
+// used elsewhere in SourceRudder's existing flags.
 func envDefault(name, fallback string) string {
 	if v, ok := os.LookupEnv(name); ok && v != "" {
 		return v
@@ -72,14 +72,14 @@ func envInt(name string, fallback int) int {
 // flag values win when both are set so an operator's CLI override
 // always takes precedence. The defaults match the values already
 // documented in deploy/kubernetes/deployment.yaml and
-// deploy/systemd/ia-buscar.service so a misconfigured pod still boots.
+// deploy/systemd/sourcerudder.service so a misconfigured pod still boots.
 func buildFetchConfig(flagTimeoutMs int) fetch.Config {
 	timeoutMs := envInt("FETCH_TIMEOUT_MS", 30000)
 	if flagTimeoutMs > 0 {
 		timeoutMs = flagTimeoutMs
 	}
 	return fetch.Config{
-		UserAgent:    envDefault("FETCH_USER_AGENT", "ia-buscar/1.2 (anonymous-only)"),
+		UserAgent:    envDefault("FETCH_USER_AGENT", "SourceRudder/2.0.0 (anonymous-only)"),
 		TimeoutMs:    timeoutMs,
 		MaxRedirects: envInt("FETCH_MAX_REDIRECTS", 5),
 		MaxAttempts:  envInt("FETCH_MAX_ATTEMPTS", 3),
@@ -115,9 +115,9 @@ func resolveLocalIndexPath(flagValue string) string {
 // does not pass -auth-key on the command line. Promoting the value
 // out of an env var keeps the secret out of argv (ps aux / process
 // listings and shell history.
-const authKeyEnvVar = "IA_BUSCAR_AUTH_KEY"
+const authKeyEnvVar = "SOURCERUDDER_AUTH_KEY"
 
-// resolveAuthKey layers the IA_BUSCAR_AUTH_KEY env var under the
+// resolveAuthKey layers the SOURCERUDDER_AUTH_KEY env var under the
 // explicit -auth-key flag value. The explicit flag wins when both
 // are set so an operator's CLI override is never silently dropped.
 //
@@ -146,7 +146,7 @@ func resolveAuthKey(flagValue string) string {
 func main() {
 	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("=== IA_Buscar Starting ===")
+	log.Println("=== SourceRudder Starting ===")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cacheSvc := cache.NewService(*cacheTTL)
@@ -158,7 +158,7 @@ func main() {
 	// independent registries would silently drop every counter on the floor.
 	met := observability.New()
 	observability.SetDefault(met)
-	observability.InitTracing("ia-buscar")
+	observability.InitTracing("sourcerudder")
 	authValidator := auth.NewValidator(resolveAuthKey(*authKey))
 
 	memURL, memKey := resolveMemoryConfig(*memoryURL, *memoryAPIKey)
@@ -200,7 +200,7 @@ func main() {
 		log.Fatalf("Unknown transport mode: %s", *transport)
 	}
 	if *transport == "stdio" {
-		log.Printf("IA_Buscar running with %s transport", trans.Name())
+		log.Printf("SourceRudder running with %s transport", trans.Name())
 		if err := trans.Start(ctx); err != nil {
 			log.Fatalf("Failed to start transport: %v", err)
 		}
@@ -209,7 +209,7 @@ func main() {
 	if err := trans.Start(ctx); err != nil {
 		log.Fatalf("Failed to start transport: %v", err)
 	}
-	log.Printf("IA_Buscar running with %s transport", trans.Name())
+	log.Printf("SourceRudder running with %s transport", trans.Name())
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -219,5 +219,5 @@ func main() {
 	if err := trans.Stop(shutdownCtx); err != nil {
 		log.Printf("Transport shutdown error: %v", err)
 	}
-	log.Println("=== IA_Buscar Stopped ===")
+	log.Println("=== SourceRudder Stopped ===")
 }

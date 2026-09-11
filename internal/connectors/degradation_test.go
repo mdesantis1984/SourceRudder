@@ -10,9 +10,9 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/thiscloud/ia-buscar/internal/cache"
-	"github.com/thiscloud/ia-buscar/internal/observability"
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 // makeSearxngServer returns an httptest server that responds with the
@@ -127,7 +127,7 @@ func TestNewsConnectorBodyWithin50ms(t *testing.T) {
 
 // TestRecordDegradedIncrementsMetricAndSetsPartial is the Phase 3.3
 // RED gate. The helper must do THREE things atomically:
-//  1. increment ia_buscar_search_degraded_total{source, kind}
+//  1. increment sourcerudder_search_degraded_total{source, kind}
 //  2. set resp.Partial = true
 //  3. append err.Error() to resp.Warnings
 func TestRecordDegradedIncrementsMetricAndSetsPartial(t *testing.T) {
@@ -146,7 +146,7 @@ func TestRecordDegradedIncrementsMetricAndSetsPartial(t *testing.T) {
 
 	got := readDegradedCounter(t, m, "web", "unresponsive_engines")
 	if got != 1 {
-		t.Fatalf("expected ia_buscar_search_degraded_total{web,unresponsive_engines}=1, got %v", got)
+		t.Fatalf("expected sourcerudder_search_degraded_total{web,unresponsive_engines}=1, got %v", got)
 	}
 }
 
@@ -209,7 +209,7 @@ func readDegradedCounter(t *testing.T, m *observability.Metrics, source, kind st
 		t.Fatalf("gather: %v", err)
 	}
 	for _, mf := range mfs {
-		if mf.GetName() != "ia_buscar_search_degraded_total" {
+		if mf.GetName() != "sourcerudder_search_degraded_total" {
 			continue
 		}
 		for _, mv := range mf.Metric {

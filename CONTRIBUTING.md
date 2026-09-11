@@ -1,88 +1,86 @@
-# Contribuir a IA_Buscar
+[English](CONTRIBUTING.md) | [Español](CONTRIBUTING.es.md)
 
-Gracias por mejorar el proyecto. Los cambios deben ser pequeños, verificables y trazables a un problema concreto.
+# Contributing to SourceRudder
 
-## Antes de programar
+Contributions should be small, verifiable, and tied to a concrete issue. For local development and QA details, see the [development guide](docs/development.md).
 
-1. Busca si ya existe un issue para el problema.
-2. Abre o solicita un issue antes de una implementación relevante.
-3. Acuerda el alcance, el comportamiento observable y los criterios de aceptación.
-4. Para una vulnerabilidad, usa el flujo privado de [SECURITY.md](SECURITY.md).
+## Before coding
 
-Los arreglos triviales de texto pueden exceptuarse del issue previo cuando un maintainer lo indique.
+1. Check for an existing issue; open or request one for significant work.
+2. Agree on scope, observable behavior, and acceptance criteria.
+3. Report vulnerabilities privately through the process in [SECURITY.md](SECURITY.md).
 
-## Preparar el entorno
+Maintainers may exempt trivial text corrections from the issue-first rule.
+
+## Set up
 
 ```bash
-git clone https://github.com/mdesantis1984/IA_Buscar.git
-cd IA_Buscar
+git clone https://github.com/mdesantis1984/SourceRudder.git
+cd SourceRudder
 go mod download
 go test ./...
 ```
 
-El proyecto y CI usan Go `1.26.6`. Docker Compose v2 y Python 3 son necesarios para los entornos de QA y calidad.
+SourceRudder 2.0 uses Go `1.26.6`. Docker Compose v2 and Python 3 are required for the QA and quality suites.
 
-## Trabajar en una rama
+## Verify your change
 
-Usa un nombre que exprese tipo y alcance:
-
-```text
-feat/local-index-ranking
-fix/http-auth-header
-docs/client-setup
-test/fetch-redirects
-```
-
-No mezcles refactors, formato masivo ni cambios no relacionados. El release gate aplica un presupuesto de 1000 líneas agregadas y eliminadas contra el merge-base. Si el cambio necesita más, divídelo en unidades revisables antes de abrir el PR.
-
-## Verificar el cambio
-
-Ejecuta como mínimo:
+Run the smallest relevant check while iterating, then the full set before requesting review:
 
 ```bash
+# Focused Go test
+go test ./internal/auth -run TestValidator
+
+# Full Go checks
 go build ./...
 go vet ./...
 go test ./...
 go test -race ./...
+
+# Python quality tests
 python3 -m unittest discover -s scripts/quality -p 'test_*.py' -v
+
+# Validate the QA Compose definition without starting containers
+docker compose -f deploy/qa/docker-compose.yml config --quiet
 ```
 
-Usa las suites Docker solo cuando el alcance las necesite. [La guía de desarrollo](docs/development.md) explica QA local, baseline vivo y release gate.
+Run the standalone Kubernetes-manifest and QA shell tests when the affected scope requires them:
 
-## Commits
+```bash
+bash tests/k8s/k8s_deployment_test.sh
+bash tests/qa/qa_scripts_test.sh
+```
 
-Usa Conventional Commits:
+When a change affects the local QA stack, also run its scoped lifecycle:
+
+```bash
+make qa-up
+make qa-smoke
+make qa-down
+```
+
+The QA scripts only manage the `sourcerudder-qa` project. They are local verification, not a production rollout.
+
+## Branches, commits, and pull requests
+
+Use descriptive branches such as `feat/local-index-ranking` or `fix/http-auth-header`. Keep each commit a reviewable work unit: include its tests and documentation, and do not mix unrelated refactors or bulk formatting.
+
+Use Conventional Commits:
 
 ```text
 feat(search): add provider filter
 fix(auth): reject empty bearer tokens
 docs(clients): clarify remote headers
-test(fetch): cover blocked redirects
 ```
 
-- Un commit debe representar una unidad de trabajo coherente.
-- Incluye tests y documentación junto al comportamiento que justifican.
-- No agregues trailers `Co-Authored-By` ni atribución automática.
-- No incluyas secretos, salidas locales, binarios ni evidencia temporal.
+Do not add `Co-Authored-By` trailers, automated attribution, secrets, local output, binaries, or temporary evidence.
 
-## Pull requests
+Pull requests must link the approved issue (for example, `Closes #123`), explain the behavioral change, list commands actually run, and state risks, limits, and rollback steps. The release gate enforces a 1,000-line authored budget against the merge base; split larger work into reviewable units unless an approved, tracked exception applies.
 
-- Vincula el issue aprobado con `Closes #N`.
-- Selecciona un solo tipo de PR.
-- Explica el comportamiento anterior y el nuevo, no solo los archivos tocados.
-- Enumera los comandos de verificación realmente ejecutados.
-- Declara riesgos, límites y pasos de rollback.
-- Espera que CI y el release gate terminen correctamente antes de solicitar merge.
+Wait for CI and the release gate before requesting merge. This repository documents and verifies changes; it does not authorize or perform production rollouts.
 
-No fuerces un cambio grande dentro de un único PR. Separar unidades reduce el riesgo y hace posible una revisión técnica real.
+## Compatibility and license
 
-## Estilo
+Keep MCP tool names, JSON fields, flags, environment variables, and other wire contracts exactly as implemented. In particular, use `sourcerudder` and `SOURCERUDDER_AUTH_KEY`; do not rename external contracts in documentation.
 
-- Código, identificadores y comentarios técnicos: inglés.
-- Documentación pública: español claro, salvo que el documento establezca otra audiencia.
-- Mantén nombres MCP, campos JSON, flags y variables exactamente como aparecen en el código.
-- Prefiere cambios mínimos y elimina compatibilidad solo cuando no existan consumidores reales.
-
-## Licencia
-
-Al contribuir, aceptas que tu aporte se distribuya bajo la [licencia MIT](LICENSE) del repositorio.
+The root [LICENSE](LICENSE) remains MIT pending professional legal review. Do not treat this pending status as approval of any draft or license change.

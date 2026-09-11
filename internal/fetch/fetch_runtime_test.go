@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thiscloud/ia-buscar/pkg/types"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 // TestFetcherTimeoutEnforcedFromConfig is the Phase 6 / Spec
@@ -38,7 +38,7 @@ func TestFetcherTimeoutEnforcedFromConfig(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:   "ia-buscar/test",
+		UserAgent:   "sourcerudder/test",
 		TimeoutMs:   50, // 50 ms; srv will sleep 2 s
 		MaxAttempts: 1,  // single attempt: classify as timeout, not retry-exhausted
 	})
@@ -84,7 +84,7 @@ func TestFetcherSafeRedirectHonored(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000, MaxRedirects: 5})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000, MaxRedirects: 5})
 	resp, err := f.Fetch(context.Background(), srv.URL+"/start")
 	if err != nil {
 		t.Fatalf("Fetch: %v (Outcome=%s)", err, resp.Outcome)
@@ -124,7 +124,7 @@ func TestFetcherBlockedRedirectClassifiedCorrectly(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000, MaxRedirects: 5})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000, MaxRedirects: 5})
 	resp, err := f.Fetch(context.Background(), srv.URL)
 	if err == nil {
 		t.Fatalf("expected blocked-target error on unsafe redirect, got nil (resp=%+v)", resp)
@@ -149,7 +149,7 @@ func TestFetcherHTTP4xxClassifiedAsHttpError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000, MaxAttempts: 1, MaxRedirects: 5})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000, MaxAttempts: 1, MaxRedirects: 5})
 	resp, err := f.Fetch(context.Background(), srv.URL+"/missing")
 	if err == nil {
 		t.Fatalf("expected http-error for 404, got nil (resp=%+v)", resp)
@@ -176,7 +176,7 @@ func TestFetcherRetryOn429(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  3,
 		BaseBackoff:  20 * time.Millisecond,
@@ -217,7 +217,7 @@ func TestFetcherRetryOn502(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  3,
 		BaseBackoff:  20 * time.Millisecond,
@@ -258,7 +258,7 @@ func TestFetcherRetryOn503Then200(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  3,
 		BaseBackoff:  20 * time.Millisecond,
@@ -292,7 +292,7 @@ func TestFetcherRetryExhaustionClassified(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFetcherServiceWithConfig(Config{
-		UserAgent:    "ia-buscar/test",
+		UserAgent:    "sourcerudder/test",
 		TimeoutMs:    5000,
 		MaxAttempts:  2,
 		BaseBackoff:  20 * time.Millisecond,
@@ -382,7 +382,7 @@ func TestFetchResponseHandlerSurfaceExercisesWireContract(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.FetchAndExtract(context.Background(), srv.URL, "raw")
 	if err != nil {
 		t.Fatalf("FetchAndExtract: %v", err)
@@ -425,7 +425,7 @@ func TestFetchResponseHandlerSurfaceExercisesWireContract(t *testing.T) {
 // and the same response object carries a non-nil error so the
 // MCP wrapper can wrap it as a JSON-RPC error.
 func TestFetchResponseBlockedTargetWireContract(t *testing.T) {
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.Fetch(context.Background(), "http://127.0.0.1:1/secret")
 	if err == nil {
 		t.Fatal("expected error for blocked target")
@@ -473,7 +473,7 @@ func TestFetchResponseBlockedTargetWireContract(t *testing.T) {
 // returning err before setting fr.Warnings) would slip past the
 // IP-based test alone.
 func TestFetchResponseBlockedTargetURLTextPropagatesWarnings(t *testing.T) {
-	f := NewFetcherServiceWithConfig(Config{UserAgent: "ia-buscar/test", TimeoutMs: 5000})
+	f := NewFetcherServiceWithConfig(Config{UserAgent: "sourcerudder/test", TimeoutMs: 5000})
 	resp, err := f.Fetch(context.Background(), "http://localhost/secret")
 	if err == nil {
 		t.Fatal("expected error for URL-text-blocked target")

@@ -14,7 +14,7 @@
 #     registers exactly 25 tools, and the README already says "25 tools".
 #     The smoke asserts 25. RED branches verify N=24 and N=26 fail.
 #   * -memory-url flag: design requires `-memory-url ""` in the compose
-#     entrypoint, but cmd/ia-buscar/main.go does not declare that flag
+#     entrypoint, but cmd/sourcerudder/main.go does not declare that flag
 #     (it has 9 flags, no -memory-url). The IA_Recuerdo canary probe on
 #     127.0.0.1:7438 is the real assertion; the argv check is skipped.
 #   * internal/memory/client.go: does not exist in this worktree, so the
@@ -137,12 +137,12 @@ test_compose_file_exists() {
 }
 
 test_compose_top_level_project_name() {
-  # Threat B.1: project name MUST be `ia-buscar-qa`.
+  # Threat B.1: project name MUST be `sourcerudder-qa`.
   local f="$REPO_ROOT/deploy/qa/docker-compose.yml"
   assert_file_exists "$f" || return 1
   local content
   content=$(cat "$f")
-  assert_contains "$content" "name: ia-buscar-qa" "compose.name" || return 1
+  assert_contains "$content" "name: sourcerudder-qa" "compose.name" || return 1
 }
 
 test_compose_defines_qa_net_internal() {
@@ -155,7 +155,7 @@ test_compose_defines_qa_net_internal() {
   # explicitly. Either `internal: true` on the bridge, or `internal: true`
   # in the network defaults. We accept both spellings.
   if ! printf '%s' "$content" | grep -qE 'internal:[[:space:]]*true'; then
-    record_fail "compose.network: no `internal: true` found; qa-net would route to host"
+    record_fail "compose.network: no 'internal: true' found; qa-net would route to host"
     return 1
   fi
   # No network_mode: host anywhere.
@@ -178,17 +178,17 @@ test_compose_healthchecks_defined() {
     record_fail "compose.searxng: missing healthcheck block"
     return 1
   fi
-  # ia-buscar healthcheck
+  # sourcerudder healthcheck
   local app_block
-  app_block=$(printf '%s' "$content" | sed -n '/^  ia-buscar:/,/^  [a-z]/p' | head -n -1)
+  app_block=$(printf '%s' "$content" | sed -n '/^  sourcerudder:/,/^  [a-z]/p' | head -n -1)
   if ! printf '%s' "$app_block" | grep -qE 'healthcheck:'; then
-    record_fail "compose.ia-buscar: missing healthcheck block"
+    record_fail "compose.sourcerudder: missing healthcheck block"
     return 1
   fi
 }
 
-test_compose_ia_buscar_build_context() {
-  # The ia-buscar service must build from the repo root using
+test_compose_sourcerudder_build_context() {
+  # The sourcerudder service must build from the repo root using
   # deploy/docker/Dockerfile. This keeps the QA image identical to the
   # production build path. The build context MUST resolve to the repo
   # root when docker compose is invoked with `-f deploy/qa/docker-compose.yml`
@@ -199,13 +199,13 @@ test_compose_ia_buscar_build_context() {
   local f="$REPO_ROOT/deploy/qa/docker-compose.yml"
   local content
   content=$(cat "$f")
-  assert_contains "$content" "dockerfile: deploy/docker/Dockerfile" "compose.ia-buscar.dockerfile" || return 1
+  assert_contains "$content" "dockerfile: deploy/docker/Dockerfile" "compose.sourcerudder.dockerfile" || return 1
   # Strict equality: extract the context line and compare EXACTLY.
   # assert_contains uses substring match which would let `../../..`
   # falsely pass for `../..`. We anchor on the start and end of the line.
   local ctx
   ctx=$(grep -E '^[[:space:]]+context:' "$f" | head -1 | sed -E 's/^[[:space:]]+context:[[:space:]]*//')
-  assert_eq "$ctx" "../.." "compose.ia-buscar.context (exact match)" || return 1
+  assert_eq "$ctx" "../.." "compose.sourcerudder.context (exact match)" || return 1
 }
 
 test_compose_build_context_resolves_to_repo_root() {
@@ -231,7 +231,7 @@ test_compose_build_context_resolves_to_repo_root() {
 }
 
 test_compose_entrypoint_passes_memory_url_empty() {
-  # B4 gate: the live binary declares `-memory-url` (cmd/ia-buscar/main.go:33)
+  # B4 gate: the live binary declares `-memory-url` (cmd/sourcerudder/main.go:33)
   # with default "". Passing it explicitly to "" keeps the
   # IA_Recuerdo integration disabled AND proves the live binary has the
   # integration-disabled short-circuit wired. Without this flag the
@@ -302,8 +302,8 @@ test_compose_entrypoint_passes_auth_key() {
   # Match a list item that contains the literal `-auth-key` token
   # (with optional quoting). YAML list bullet `-` and flag dash are
   # both present; we anchor on the trailing `auth-key"`/`auth-key'`.
-  if ! printf '%s' "$content" | grep -qF 'IA_BUSCAR_AUTH_KEY=${QA_AUTH_KEY:-}'; then
-    record_fail "compose.environment: env-only mapping 'IA_BUSCAR_AUTH_KEY=\${QA_AUTH_KEY:-}' missing"
+  if ! printf '%s' "$content" | grep -qF "SOURCERUDDER_AUTH_KEY=\${QA_AUTH_KEY:-}"; then
+    record_fail "compose.environment: env-only mapping 'SOURCERUDDER_AUTH_KEY=\${QA_AUTH_KEY:-}' missing"
     return 1
   fi
   if printf '%s' "$content" | grep -qE '^[[:space:]]+-[[:space:]]+"?-auth-key"?[[:space:]]*$'; then
@@ -313,10 +313,10 @@ test_compose_entrypoint_passes_auth_key() {
 }
 
 test_compose_uses_existing_dockerfile_image_path() {
-  # Sanity: the compose file's `build:` key for ia-buscar must produce
+  # Sanity: the compose file's `build:` key for sourcerudder must produce
   # a runnable image using the production Dockerfile.
   local f="$REPO_ROOT/deploy/qa/docker-compose.yml"
-  assert_grep "^    build:" "$f" "compose.ia-buscar.build" || return 1
+  assert_grep "^    build:" "$f" "compose.sourcerudder.build" || return 1
 }
 
 test_searxng_settings_exists() {
@@ -352,7 +352,7 @@ test_searxng_settings_json_output() {
 }
 
 test_searxng_settings_binds_all_interfaces_8080() {
-  # SearxNG must listen on 0.0.0.0:8080 so the ia-buscar container can
+  # SearxNG must listen on 0.0.0.0:8080 so the sourcerudder container can
   # reach it via the in-stack DNS name.
   local f="$REPO_ROOT/deploy/qa/searxng/settings.yml"
   local content
@@ -420,15 +420,15 @@ test_qa_up_rejects_metacharacters() {
 # ---- Phase 2B: Process integration (Threat B) ------------------------------
 
 test_qa_up_uses_fixed_project_arg() {
-  # 2B.1: the qa-up script must pass `-p ia-buscar-qa` to every compose
+  # 2B.1: the qa-up script must pass `-p sourcerudder-qa` to every compose
   # invocation. This is what scopes the cleanup, not a global default.
   # The project name may be hardcoded or referenced via a local const;
-  # we assert both invariants: (a) the literal "ia-buscar-qa" appears
+  # we assert both invariants: (a) the literal "sourcerudder-qa" appears
   # in the script, and (b) the script forwards `-p` to compose.
   local script="$REPO_ROOT/scripts/qa-up.sh"
   assert_file_exists "$script" || return 1
-  if ! grep -qF 'ia-buscar-qa' "$script"; then
-    record_fail "qa-up.sh: literal project name `ia-buscar-qa` not found"
+  if ! grep -qF 'sourcerudder-qa' "$script"; then
+    record_fail "qa-up.sh: literal project name 'sourcerudder-qa' not found"
     return 1
   fi
   assert_grep " -p" "$script" "qa-up.project-arg" || return 1
@@ -664,12 +664,12 @@ test_readme_documents_env_qa_dev_only() {
   fi
 }
 
-test_readme_existing_sections_unchanged() {
-  # Existing sections like `## Licencia` must still be present.
+test_readme_has_canonical_license_section() {
+  # README.md is the canonical English document; its license section must remain.
   local f="$REPO_ROOT/README.md"
   assert_file_exists "$f" || return 1
-  if ! grep -qE '^## Licencia' "$f"; then
-    record_fail "README: `## Licencia` section missing (must remain unchanged)"
+  if ! grep -qE '^## License' "$f"; then
+    record_fail "README: missing canonical `## License` section"
     return 1
   fi
 }
@@ -753,7 +753,7 @@ main() {
   run_test test_compose_top_level_project_name
   run_test test_compose_defines_qa_net_internal
   run_test test_compose_healthchecks_defined
-  run_test test_compose_ia_buscar_build_context
+  run_test test_compose_sourcerudder_build_context
   run_test test_compose_build_context_resolves_to_repo_root
   run_test test_compose_publishes_only_loopback_8080
   run_test test_compose_entrypoint_overrides_searxng_url
@@ -788,7 +788,7 @@ main() {
   run_test test_makefile_existing_targets_unchanged
   run_test test_readme_qa_section_appended
   run_test test_readme_documents_env_qa_dev_only
-  run_test test_readme_existing_sections_unchanged
+  run_test test_readme_has_canonical_license_section
 
   run_test test_boundary_grep_production_paths_clean
   run_test test_diff_is_additive_only_under_budget

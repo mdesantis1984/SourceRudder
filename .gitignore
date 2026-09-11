@@ -1,6 +1,7 @@
 # Binaries
 bin/
 ia-buscar-*
+sourcerudder-*
 *.exe
 *.dll
 *.so
@@ -58,6 +59,7 @@ deploy/kubernetes/secret.yaml
 # Índice local de codebase-memory-mcp
 .codebase-memory/
 # Tooling indexes
+.agents/
 .atl/
 .codegraph/
 # Generated coverage reports
