@@ -12,9 +12,9 @@ SourceRudder gratefully recognizes the open-source communities and ecosystems th
 
 ## Community recognition
 
-[![Special recognition for Gentleman Programming](docs/assets/brand/gentleman-programming-recognition.svg)](https://gentlemanprogramming.com/#install)
+[![Official Gentle-AI banner](docs/assets/brand/gentle-ai-banner.webp)](https://gentlemanprogramming.com/)
 
-SourceRudder also recognizes [Gentleman Programming](https://gentlemanprogramming.com/#install), the [Gentleman Programming GitHub community](https://github.com/Gentleman-Programming), and [Alan Buscaglia](https://www.linkedin.com/in/alanbuscaglia/) for educational work centered on stronger developer foundations.
+SourceRudder also recognizes [Gentleman Programming](https://gentlemanprogramming.com/), the [Gentleman Programming GitHub community](https://github.com/Gentleman-Programming), and [Alan Buscaglia](https://www.linkedin.com/in/alanbuscaglia/) for educational work centered on stronger developer foundations.
 
 These acknowledgements are credits, not an endorsement or a statement of affiliation. Dependencies and external services retain their own terms and licenses.
 
