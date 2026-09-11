@@ -10,9 +10,10 @@ legal, ramas protegidas, revisores obligatorios ni gates de release.
 1. Cree `mdesantis1984/SourceRudder` como repositorio privado, publique el
    snapshot verificado de la migración en `main` y conserve IA_Buscar como
    remote legado y repositorio público histórico.
-2. Configure `main` protegida, permisos mínimos de Actions, alertas de
-   dependencias, labels de políticas para issues/PR y un entorno `release`
-   restringido.
+2. Configure permisos mínimos de Actions, alertas de dependencias, labels de
+   políticas para issues/PR y el entorno `release`. GitHub Free no aplica reglas
+   de protección de ramas o entornos en un repositorio personal privado;
+   actívelas antes del release público o después de mejorar el plan de la cuenta.
 3. Confirme CI sobre el commit publicado. CodeQL permanece omitido mientras el
    repositorio privado no tenga licencia de GitHub Code Security; Gitleaks,
    gosec y govulncheck continúan siendo obligatorios.
@@ -39,6 +40,9 @@ legal, ramas protegidas, revisores obligatorios ni gates de release.
    nuevo de SourceRudder.
 6. Haga público SourceRudder sólo cuando se hayan revisado la licencia,
    configuración de seguridad, metadata, integraciones externas y gates.
+7. Active la protección de `main` con los checks obligatorios `build`, `gate` y
+   `policy`, y restrinja el entorno `release` a tags `v*` aprobados antes de
+   aceptar cambios externos o publicar un release.
 
 ## Publicar 2.0.0
 

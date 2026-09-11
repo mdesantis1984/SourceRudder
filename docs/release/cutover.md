@@ -10,8 +10,10 @@ legal review, protected branches, required reviewers, or release gates.
 1. Create `mdesantis1984/SourceRudder` as a private repository, publish the
    verified migration snapshot to `main`, and retain IA_Buscar as a legacy
    remote and historical public repository.
-2. Configure protected `main`, least-privilege Actions permissions, dependency
-   alerts, issue/PR policy labels, and a restricted `release` environment.
+2. Configure least-privilege Actions permissions, dependency alerts, issue/PR
+   policy labels, and the `release` environment. GitHub Free does not enforce
+   branch or environment protection rules on a private personal repository;
+   enable them before public release or after upgrading the account plan.
 3. Confirm CI on the published commit. CodeQL remains skipped while the private
    repository lacks GitHub Code Security licensing; Gitleaks, gosec, and
    govulncheck remain mandatory.
@@ -37,6 +39,9 @@ legal review, protected branches, required reviewers, or release gates.
    SourceRudder.
 6. Make SourceRudder public only when licensing, security settings, repository
    metadata, external integrations, and release gates have been reviewed.
+7. Enable `main` branch protection with required `build`, `gate`, and `policy`
+   checks, and restrict the `release` environment to approved `v*` tags before
+   accepting external changes or publishing a release.
 
 ## Publish 2.0.0
 
