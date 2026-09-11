@@ -1,16 +1,50 @@
-# SourceRudder
+<p align="center">
+  <img src="docs/assets/sourcerudder-social-preview.png" width="100%" alt="SourceRudder - Steer every search. See every source.">
+</p>
+
+<p align="center"><strong>Give AI agents evidence they can inspect, not another opaque answer.</strong></p>
 
 [English](README.md) | [Español](README.es.md)
 
-SourceRudder is a Go MCP server for research, retrieval, validation, synthesis,
-and citation. **2.0.0 is a pre-release and has not been published yet.** It
-supports `stdio` and authenticated HTTP, specialized connectors, SearXNG, and
-optional IA_Recuerdo memory delivery.
+<p align="center">
+  <a href="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <img alt="Go 1.26.6" src="https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go&amp;logoColor=white">
+  <img alt="28 MCP tools" src="https://img.shields.io/badge/MCP_tools-28-2563EB">
+  <img alt="16 search tools" src="https://img.shields.io/badge/search_tools-16-0F766E">
+  <a href="https://github.com/mdesantis1984/SourceRudder/releases"><img alt="Private preview" src="https://img.shields.io/badge/release-private_preview-7C3AED"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-334155"></a>
+</p>
 
-Repository: <https://github.com/mdesantis1984/SourceRudder> · Module:
-`github.com/mdesantis1984/SourceRudder`
+<p align="center">
+  <a href="#try-it-locally">Run it locally</a> ·
+  <a href="#research-surface">Explore 28 tools</a> ·
+  <a href="#how-it-works">See the architecture</a> ·
+  <a href="docs/mcp-clients.md">Connect an MCP client</a> ·
+  <a href="https://github.com/mdesantis1984/SourceRudder/releases">Releases</a>
+</p>
 
-## Local quickstart
+SourceRudder is a self-hosted, MCP-native research gateway for developers who
+want broad source access without giving one answer provider control of the
+entire research path. It brings search, safe retrieval, local synthesis,
+caching, history, and operator-curated knowledge behind one stable interface.
+
+> **Private preview:** SourceRudder 2.0.0 is implemented and verified, but not
+> publicly released. The repository remains private while brand and license
+> review are completed. No adoption, customer, or fully-private-network claim
+> is made.
+
+## Why SourceRudder
+
+| What your agent needs | What SourceRudder provides |
+|---|---|
+| More than one generic search box | Purpose-built tools for code, packages, official docs, academia, communities, media, news, images, and the web. |
+| Evidence it can reason about | Stable result arrays, source metadata, strategy IDs, warnings, errors, cache state, and explicit partial outcomes. |
+| A research layer you can govern | Self-hosted routing, authenticated HTTP, local `stdio`, bounded fetch behavior, observable metrics, and an optional immutable local corpus. |
+
+Use it for coding agents, technical copilots, internal research automation, or
+any workflow where the **route to the evidence matters as much as the answer**.
+
+## Try it locally
 
 Requirements: Go 1.26.6+, Docker, and Docker Compose v2.
 
@@ -27,6 +61,22 @@ docker compose logs -f sourcerudder
 Compose runs the `sourcerudder` service and binds the HTTP port to
 `127.0.0.1:${SOURCERUDDER_PORT:-8080}`. Stop it with `docker compose down`.
 
+### Connect a local MCP client
+
+```json
+{
+  "mcpServers": {
+    "sourcerudder": {
+      "command": "/absolute/path/to/sourcerudder",
+      "args": ["-transport", "stdio"]
+    }
+  }
+}
+```
+
+See [MCP clients](docs/mcp-clients.md) for authenticated HTTP and tested client
+configuration patterns.
+
 ### Build and test
 
 ```bash
@@ -34,10 +84,9 @@ go build -o bin/sourcerudder ./cmd/sourcerudder
 go test ./...
 go test -race ./...
 go vet ./...
-git diff --check
 ```
 
-### Run locally
+### Run without Compose
 
 ```bash
 ./bin/sourcerudder -transport stdio -searxng-url http://localhost:8888
@@ -53,11 +102,31 @@ SEARXNG_URL='http://localhost:8888' \
 | `POST /mcp` | Bearer token | MCP JSON-RPC boundary. |
 | `GET /metrics` | Bearer token | Prometheus metrics. |
 
-## MCP contract
+## How it works
 
-The MCP resource `agent-guide://sourcerudder/wire-contract` is available through
-`resources/list` and `resources/read`. Search responses keep JSON arrays for
-`results`, `sourcesUsed`, `warnings`, and `errors`; `results` is never `null`.
+```mermaid
+flowchart LR
+    A[AI agent] -->|MCP| R[SourceRudder]
+    R --> P[Intent and source routing]
+    P --> S[Specialized search]
+    P --> F[Safe fetch and extraction]
+    P --> L[Read-only local index]
+    S --> E[Structured evidence]
+    F --> E
+    L --> E
+    E --> A
+```
+
+The gateway does not hide provider behavior behind a polished answer. Every
+tool returns enough source and outcome information for a downstream agent to
+decide whether to continue, retry, degrade, or stop.
+
+## Research surface
+
+The MCP resource `agent-guide://sourcerudder/wire-contract` documents the stable
+wire contract through `resources/list` and `resources/read`. Search responses
+keep JSON arrays for `results`, `sourcesUsed`, `warnings`, and `errors`;
+`results` is never `null`.
 
 | Group | Tool names |
 |---|---|
@@ -66,16 +135,32 @@ The MCP resource `agent-guide://sourcerudder/wire-contract` is available through
 | Synthesis | `summarize_results`, `deep_research`, `compare_sources` |
 | Stateful utilities | `get_cached`, `invalidate_cache`, `get_search_history`, `get_current_date` |
 
+### Available today
+
+| Surface | Verified state |
+|---|---|
+| MCP server | 28 registered tools over `stdio` and authenticated HTTP. |
+| Search | 16 source-specific tools with bounded result counts. |
+| Retrieval | URL validation, redirect/DNS checks, extraction, retries, and explicit blocked/failure outcomes. |
+| Local research | Immutable operator-curated JSON corpus with no crawling or network fallback. |
+| Operations | Prometheus metrics, health endpoint, Docker Compose, Kubernetes, and systemd assets. |
+| Distribution | 2.0.0 private preview; final archives and GHCR image remain release-gated. |
+
 Connectors include SearXNG, GitHub, Stack Overflow, npm, NuGet, PyPI, Docker
-Hub, and the official-documentation registry. Relevant strategy IDs remain:
-`searxng`, `searxng_reddit_index`, `official_doc_registry_search`,
+Hub, and the official-documentation registry. Relevant strategy IDs remain
+stable across tools, including `official_doc_registry_search`,
 `official_doc_web_fallback`, `local_index_lexical`, and
 `local_index_unavailable`.
 
-`search_local_index` uses one configured, validated, read-only JSON corpus. It
-does not discover files, follow symlinks, crawl, make HTTP requests, or fall
-back to `search_web`. Without `LOCAL_INDEX_PATH`, it returns
-`strategy="local_index_unavailable"` with `results=[]`.
+## Control without black-box claims
+
+- External searches still contact the providers you configure; self-hosted does
+  not mean every request remains inside your network.
+- Local synthesis is deterministic grouping, comparison, and summarization, not
+  an undisclosed LLM call.
+- The local index reads one validated corpus and never crawls your filesystem.
+- URL retrieval validates redirect hops and resolved targets to reduce SSRF
+  exposure while preserving explicit blocked and degraded states.
 
 ## Configuration and security
 
@@ -90,15 +175,9 @@ back to `search_web`. Without `LOCAL_INDEX_PATH`, it returns
 
 Keep secrets out of Git and command-line flags. Do not expose HTTP directly to
 the Internet; use a private network or a TLS reverse proxy with request and
-access controls. The fetcher validates redirect hops and DNS targets to reduce
-SSRF risk. See [SECURITY.md](SECURITY.md).
+access controls. See [Security](SECURITY.md).
 
 ## Local QA environment
-
-The isolated QA stack is separate from the quickstart Compose stack. Its shell
-tests require `QA_AUTH_KEY` (or `AUTH_KEY`, or a dev-only `.env.qa`) and inject
-it into the container as `SOURCERUDDER_AUTH_KEY`. Never put production
-credentials in `.env.qa`.
 
 ```bash
 export QA_AUTH_KEY="$(openssl rand -hex 32)"
@@ -108,23 +187,36 @@ make qa-smoke
 make qa-down
 ```
 
-Use it only on a protected development machine. The QA service publishes port
-`8080` on the loopback interface only.
+The isolated QA stack publishes only to loopback and remains separate from the
+quickstart Compose project. The optional `.env.qa` file is dev-only; never place
+production credentials in it.
 
-## Documentation index
+## Choose your path
 
-- [Migration to 2.0](MIGRATION-TO-2.0.md) · [Spanish migration guide](MIGRATION-TO-2.0.es.md)
-- [Changelog](CHANGELOG.md)
-- [Architecture](docs/architecture.md) and [deployment](docs/deployment.md)
-- [Configuration](docs/configuration.md) and [operations](docs/operations.md)
-- [MCP clients](docs/mcp-clients.md) and [development](docs/development.md)
-- [Contributing](CONTRIBUTING.md), [security](SECURITY.md), and [acknowledgements](ACKNOWLEDGEMENTS.md)
-- [License review gate](docs/legal/README.md)
-- [Cutover checklist](docs/release/cutover.md) and [rollback runbook](docs/release/rollback.md)
-- [Local-index example](configs/local-index.example.json)
+- **Evaluate it:** run the [local quickstart](#try-it-locally) and make one
+  source-backed query.
+- **Connect it:** use the [MCP client guide](docs/mcp-clients.md) for `stdio` or
+  authenticated HTTP.
+- **Operate it:** start with [deployment](docs/deployment.md),
+  [configuration](docs/configuration.md), and [operations](docs/operations.md).
+- **Extend it:** read [Contributing](CONTRIBUTING.md) and propose a connector or
+  contract improvement through an approved issue.
 
-## License
+## Documentation
+
+[Migration to 2.0](MIGRATION-TO-2.0.md) · [Changelog](CHANGELOG.md) ·
+[Architecture](docs/architecture.md) · [Development](docs/development.md) ·
+[Deployment](docs/deployment.md) · [Configuration](docs/configuration.md) ·
+[Operations](docs/operations.md) · [MCP clients](docs/mcp-clients.md) ·
+[Security](SECURITY.md) · [Acknowledgements](ACKNOWLEDGEMENTS.md)
+
+## License and release status
 
 The root [LICENSE](LICENSE) remains MIT pending professional review of the
-proposed custom SourceRudder license. No legal approval is claimed. Prior
-IA_Buscar releases retain their MIT rights.
+proposed SourceRudder license. No legal approval is claimed. The private 2.0.0
+release draft is preparation, not publication; historical IA_Buscar releases
+retain their MIT rights.
+
+---
+
+<p align="center"><strong>Steer every search. See every source.</strong></p>

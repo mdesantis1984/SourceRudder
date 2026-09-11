@@ -1,7 +1,7 @@
 # Binaries
 bin/
-ia-buscar-*
-sourcerudder-*
+/ia-buscar-*
+/sourcerudder-*
 *.exe
 *.dll
 *.so
