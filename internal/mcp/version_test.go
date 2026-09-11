@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -17,7 +16,7 @@ import (
 func TestServerIdentityIsSourceRudder2(t *testing.T) {
 	cacheSvc := cache.NewService(60)
 	cm := search.NewConnectorManager(cacheSvc)
-	srv := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 60, 5000, nil, synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	srv := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 60, 5000, nil, synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 	params, _ := json.Marshal(map[string]interface{}{})
 	resp, err := srv.HandleInitialize(context.Background(), params)

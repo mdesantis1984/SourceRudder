@@ -10,7 +10,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/auth"
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -26,7 +25,7 @@ func newHandlerOnlyServer(authValidator *auth.Validator) *Server {
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	return NewServer(cm, planner, "stdio", ":0", "http://localhost:8888", 60, 5000, fetchSvc, synthSvc, authValidator, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	return NewServer(cm, planner, "stdio", ":0", "http://localhost:8888", 60, 5000, fetchSvc, synthSvc, authValidator, observability.New(), cache.NewHistoryService(10))
 }
 
 // TestHandlerHealthzOpenWithoutCredentials is the Phase 12 RED gate

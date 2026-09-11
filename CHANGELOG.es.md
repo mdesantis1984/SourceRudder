@@ -4,6 +4,17 @@
 
 Este archivo documenta los cambios relevantes de SourceRudder.
 
+## [Sin publicar]
+
+### Eliminado
+
+- Se retiró el envío opcional de observaciones a IA_Recuerdo, incluidos sus
+  flags de CLI, variables de entorno `MEMORY_*`, configuración de despliegue y
+  requests salientes síncronos. La integración obsoleta se eliminó para que una
+  futura capacidad de persistencia pueda diseñarse de forma deliberada; este
+  cambio no incluye un reemplazo. Las 28 tools MCP y el historial de búsquedas
+  en proceso permanecen sin cambios.
+
 ## [2.0.0] - 2026-09-11
 
 ### Cambios de identidad incompatibles

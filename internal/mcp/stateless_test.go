@@ -10,7 +10,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -90,7 +89,7 @@ func TestCacheHitAcrossRepeatedSearch(t *testing.T) {
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(srv.URL, cacheSvc))
 
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 	callArgs, _ := json.Marshal(map[string]interface{}{"query": "repeatable query"})
 
@@ -138,7 +137,7 @@ func TestCacheStateDoesNotPersistAcrossServerInstances(t *testing.T) {
 		cacheA := cache.NewService(300)
 		cmA := search.NewConnectorManager(cacheA)
 		cmA.Register(connectors.NewWebConnector(srv.URL, cacheA))
-		serverA := NewServer(cmA, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+		serverA := NewServer(cmA, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 		if _, err := serverA.callToolByName(context.Background(), "search_web", callArgs); err != nil {
 			t.Fatalf("serverA first call failed: %v", err)
 		}
@@ -152,7 +151,7 @@ func TestCacheStateDoesNotPersistAcrossServerInstances(t *testing.T) {
 		cacheB := cache.NewService(300)
 		cmB := search.NewConnectorManager(cacheB)
 		cmB.Register(connectors.NewWebConnector(srv.URL, cacheB))
-		serverB := NewServer(cmB, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+		serverB := NewServer(cmB, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 		resp, err := serverB.callToolByName(context.Background(), "search_web", callArgs)
 		if err != nil {
 			t.Fatalf("serverB first call failed: %v", err)
@@ -190,13 +189,10 @@ func TestNoPersistenceSurfaceOnCacheService(t *testing.T) {
 }
 
 // TestStatelessArchitectureNoExternalFiles covers the property that the
-// service does not touch any persistence file on disk: it does not write
-// logs about external memory, it does not read a history file, and the
-// cache eviction is purely in-process. Under the restored
-// runtime contract the stateful tools DO exist, but their backing
-// surfaces are still in-process only: the cache is bounded by TTL,
-// the history buffer is bounded by bound, and the memory client
-// short-circuits when no baseURL is configured.
+// service does not touch any persistence file on disk: it does not read a
+// history file, and cache eviction is purely in-process. The stateful tools
+// exist, but their backing surfaces stay in-process: cache is bounded by TTL
+// and the history buffer is bounded by its configured limit.
 func TestStatelessArchitectureNoExternalFiles(t *testing.T) {
 	// Build a fresh cache service and confirm its public surface
 	// remains bounded by the configured TTL. Under the restored
@@ -223,7 +219,7 @@ func buildTestServer(t *testing.T) *Server {
 	t.Helper()
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
-	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", "http://localhost:8888", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 }
 
 // callToolByName is a small helper that runs a search_* tool by name and

@@ -28,9 +28,11 @@ publicado en los metadatos del release 2.0.0.
 ## Contratos wire sin cambios
 
 Los nombres de herramientas MCP, el JSON de herramientas, el comportamiento de
-los conectores y los strategy IDs se mantienen estables. Esto incluye SearXNG,
-MCP, Go, GitHub y la integración opcional IA_Recuerdo. `results` sigue siendo
-un array JSON y nunca `null`.
+los conectores y los strategy IDs se mantienen estables. El artefacto 2.0.0
+también incluyó el envío opcional de observaciones a IA_Recuerdo; el desarrollo
+posterior a 2.0 retira esa integración separada sin cambiar los nombres de tools
+MCP ni los schemas de respuesta. `results` sigue siendo un array JSON y nunca
+`null`.
 
 La superficie estable de herramientas es: `search_web`, `search_news`,
 `search_doc_oficial`, `search_local_index`, `search_github`, `search_github_pr`,

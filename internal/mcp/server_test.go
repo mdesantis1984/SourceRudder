@@ -11,7 +11,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/auth"
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -28,15 +27,9 @@ func (w *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
 }
 func (w *deadlineRecorder) Flush() {}
 
-// TestNewServerWiresMemoryClientIdentity is the threat-matrix
-// process-integration proof for the memory client wiring: the same
-// *memory.Client pointer passed to NewServer MUST be stored on the
-// Server unchanged, so handlers and the rest of the server agree on
-// whose memory endpoint they talk to.
-func TestNewServerWiresMemoryClientIdentity(t *testing.T) {
+func TestNewServerWiresHistoryServiceIdentity(t *testing.T) {
 	cacheSvc := cache.NewService(60)
 	history := cache.NewHistoryService(10)
-	mem := memory.NewClient("http://memory.local:7438", "key-abc")
 
 	srv := NewServer(
 		search.NewConnectorManager(cacheSvc),
@@ -47,15 +40,12 @@ func TestNewServerWiresMemoryClientIdentity(t *testing.T) {
 		synthesis.NewService(),
 		auth.NewValidator("k"),
 		observability.New(),
-		history, mem, // NEW stateful wiring
+		history,
 	)
 	if srv == nil {
 		t.Fatal("NewServer returned nil")
 	}
 
-	if srv.mem != mem {
-		t.Fatalf("Server.mem is NOT the same pointer passed to NewServer (got %p, want %p)", srv.mem, mem)
-	}
 	if srv.history != history {
 		t.Fatalf("Server.history is NOT the same pointer passed to NewServer (got %p, want %p)", srv.history, history)
 	}
@@ -103,34 +93,5 @@ func TestSSEBoundsHeartbeatWrite(t *testing.T) {
 	(&Server{}).handleHTTPGet(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx))
 	if !rec.deadline.After(time.Now()) || rec.deadline.After(time.Now().Add(6*time.Second)) {
 		t.Fatalf("SSE heartbeat write deadline is not bounded: %v", rec.deadline)
-	}
-}
-
-// TestNewServerWiresMemoryClientThroughStatefulHandler is the
-// scenario-side proof: a tool handler constructed from the Server
-// must be reachable through the same Server, so when a stateful
-// handler runs it consults the same memory client pointer. This
-// test confirms the Server is constructible with a non-nil memory
-// client and that the registry is reachable. Tool-level coverage
-// for the stateful handlers lives in tools_test.go.
-func TestNewServerWiresMemoryClientThroughStatefulHandler(t *testing.T) {
-	cacheSvc := cache.NewService(60)
-	mem := memory.NewClient("", "") // no-op; integration disabled but non-nil
-	srv := NewServer(
-		search.NewConnectorManager(cacheSvc),
-		search.NewPlanner(),
-		"stdio", ":8080", "http://localhost:8888",
-		60, 5000,
-		fetch.NewFetcherService(5000),
-		synthesis.NewService(),
-		auth.NewValidator("k"),
-		observability.New(),
-		cache.NewHistoryService(10), mem,
-	)
-	if srv == nil {
-		t.Fatal("NewServer returned nil")
-	}
-	if len(srv.Tools()) == 0 {
-		t.Fatal("expected tool registry to be non-empty")
 	}
 }

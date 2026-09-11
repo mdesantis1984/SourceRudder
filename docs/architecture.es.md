@@ -22,16 +22,15 @@ SourceRudder 2.0 está **sin publicar**. Es un servicio de investigación MCP qu
 | Fetch y extracción | Obtienen URL públicas solo después de que los controles SSRF validan destinos, redirecciones y límites de respuesta; la extracción devuelve contenido acotado. |
 | Síntesis | Resume o compara conjuntos de resultados normalizados sin reemplazar la evidencia de las fuentes. |
 | Índice local | Busca opcionalmente un corpus JSON inmutable y curado por el operador, con ranking léxico determinista y sin red ni rastreo del sistema de archivos. |
-| IA_Recuerdo | Integración opcional best-effort para observaciones de búsquedas completadas; no es necesaria para que una búsqueda sea exitosa. |
 | Métricas | Expone métricas compatibles con Prometheus para observación operativa del proceso y del servicio. |
 
 ## Límites de contrato y seguridad
 
 - Las herramientas MCP usan envolventes estables; los clientes deben inspeccionar `strategy`, `partial`, `warnings` y `errors` en lugar de tratar un resultado vacío como un fallo de transporte.
-- La caché, el historial y el reporte opcional a IA_Recuerdo son ayudas operativas, no un sistema distribuido de auditoría.
+- La caché y el historial son ayudas operativas en proceso, no un sistema distribuido de auditoría.
 - El fetch está separado deliberadamente de la búsqueda. Las protecciones SSRF se aplican antes de acceder a la red y a través de las redirecciones.
 - La entrada del índice local se valida al iniciar y sigue siendo un dato administrado por el operador.
 
 ## Implicación operativa
 
-La salud prueba que el proceso SourceRudder es accesible. No prueba que SearXNG, los proveedores directos, un corpus local o IA_Recuerdo opcional estén disponibles. Monitoree de forma independiente la salud del transporte, las señales de resultados degradados y la evidencia específica de cada proveedor.
+La salud prueba que el proceso SourceRudder es accesible. No prueba que SearXNG, los proveedores directos o un corpus local estén disponibles. Monitoree de forma independiente la salud del transporte, las señales de resultados degradados y la evidencia específica de cada proveedor.

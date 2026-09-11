@@ -651,16 +651,4 @@ func (s *Server) recordSearch(ctx context.Context, source string, resp *types.Se
 		return
 	}
 	_ = s.history.Append(ctx, cache.Entry{Query: resp.Query, Source: source})
-	// Ship the same observation to IA_Recuerdo through the *memory.Client
-	// injected at NewServer. Save is a no-op when the integration is
-	// disabled (empty baseURL) so callers do not need to branch. Errors
-	// are intentionally swallowed: a failed memory write MUST NOT bubble
-	// up and turn a successful search into a 5xx for the AI agent — the
-	// memory layer is best-effort observability, not part of the contract.
-	if s.mem != nil {
-		_ = s.mem.Save(ctx, map[string]interface{}{
-			"query":  resp.Query,
-			"source": source,
-		})
-	}
 }

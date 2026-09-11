@@ -28,8 +28,9 @@ release metadata.
 ## Unchanged wire contracts
 
 MCP tool names, tool JSON, connector behavior, and strategy IDs remain stable.
-This includes SearXNG, MCP, Go, GitHub, and optional IA_Recuerdo integration.
-`results` remains a JSON array, never `null`.
+The 2.0.0 artifact also included optional IA_Recuerdo observation forwarding;
+post-2.0 development retires that separate integration without changing MCP
+tool names or response schemas. `results` remains a JSON array, never `null`.
 
 The stable tool surface is: `search_web`, `search_news`, `search_doc_oficial`,
 `search_local_index`, `search_github`, `search_github_pr`,
