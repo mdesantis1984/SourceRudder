@@ -1,0 +1,191 @@
+{
+  "source_artwork": "sourcerudder-hero-master.png",
+  "source_sha256": "76ae5d54855b92529c98d8df0b5a642f276f4cca153243eb7e5bba55f707bec9",
+  "color_space": "sRGB",
+  "deliverables": [
+    {
+      "filename": "sourcerudder-hero-indigo.png",
+      "dimensions": {
+        "width": 1774,
+        "height": 887
+      },
+      "purpose": "README hero",
+      "exact_copy": [
+        "SourceRudder",
+        "Steer every search. See every source.",
+        "Self-hosted research infrastructure for AI agents",
+        "28 MCP tools",
+        "16 search surfaces",
+        "Explicit outcomes",
+        "Web",
+        "Papers",
+        "Datasets",
+        "Code",
+        "News",
+        "Video",
+        "More"
+      ],
+      "sha256": "ad5dad221e7a84a09bb7f97e1c4f10d2a1b68fdcda06b8347c25fb54d2190cbe"
+    },
+    {
+      "filename": "sourcerudder-github-preview.png",
+      "dimensions": {
+        "width": 1280,
+        "height": 640
+      },
+      "purpose": "GitHub social preview",
+      "exact_copy": [
+        "SourceRudder",
+        "Dirige cada búsqueda. Ve cada fuente.",
+        "28 herramientas MCP · 16 búsquedas especializadas",
+        "Conocé SourceRudder en GitHub",
+        "github.com/mdesantis1984/SourceRudder"
+      ],
+      "sha256": "ca8afd015ca3dabf1bb7eb07ff2f23c1a695058b3add8ddd982f64ac05a3f933"
+    },
+    {
+      "filename": "sourcerudder-linkedin-personal.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn personal post",
+      "exact_copy": [
+        "Creé SourceRudder para que los agentes investiguen con evidencia, no a ciegas.",
+        "28 herramientas MCP · 16 búsquedas especializadas · Autoalojado",
+        "Conocé SourceRudder en GitHub",
+        "github.com/mdesantis1984/SourceRudder"
+      ],
+      "sha256": "2ede05235a28480d8038228548a5d366cac35cc300ef4cfe9141ea9d5a6926f2"
+    },
+    {
+      "filename": "sourcerudder-linkedin-empresa.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 627
+      },
+      "purpose": "LinkedIn company post",
+      "exact_copy": [
+        "Evidencia para tus agentes. No otra respuesta opaca.",
+        "Gateway de investigación autoalojado y nativo de MCP",
+        "28 herramientas MCP · 16 búsquedas especializadas",
+        "Conocé SourceRudder en GitHub"
+      ],
+      "sha256": "55f9040fa81667fcdd120710c6f104566fcff3582118526d62a5add6a4050a73"
+    },
+    {
+      "filename": "sourcerudder-youtube-miniatura.png",
+      "dimensions": {
+        "width": 3840,
+        "height": 2160
+      },
+      "purpose": "YouTube thumbnail",
+      "exact_copy": [
+        "TU AGENTE NECESITA FUENTES",
+        "SourceRudder",
+        "28 herramientas MCP",
+        "EN GITHUB"
+      ],
+      "sha256": "092fe5bc6bff4e30dc13be8b218d813fe5798b5c8d55af027b174278e1f92b01"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-01.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 01",
+      "exact_copy": [
+        "¿Tu agente puede demostrar de dónde salió su respuesta?"
+      ],
+      "sha256": "d73478f1743f359696fd10298eb2f67166dd6704b648d66cfe8a37364d92632c"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-02.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 02",
+      "exact_copy": [
+        "Investigar con IA sigue fragmentado",
+        "APIs, formatos y fallos diferentes"
+      ],
+      "sha256": "7136f0a26735424ba3c1c2dddf48d39b9502d9834c45ecaf878214e9c388101e"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-03.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 03",
+      "exact_copy": [
+        "Una puerta de entrada. Muchas fuentes."
+      ],
+      "sha256": "bff0739f7d429976181361e668672f6178be851a65827f5c44be3ed131605a8b"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-04.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 04",
+      "exact_copy": [
+        "28 herramientas MCP",
+        "16 búsquedas especializadas"
+      ],
+      "sha256": "f1d7dfd68600bb5821082e8f674e45b02e2d0b578e59e2e9956f1170f286b310"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-05.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 05",
+      "exact_copy": [
+        "Fuentes, advertencias, errores y resultados parciales explícitos"
+      ],
+      "sha256": "8cc6cfbcb0efa99cc01de38861375bd4a5c07cf6ccb8b4d93819c8da3d803222"
+    },
+    {
+      "filename": "sourcerudder-linkedin-carrusel-06.png",
+      "dimensions": {
+        "width": 1200,
+        "height": 1500
+      },
+      "purpose": "LinkedIn carousel slide 06",
+      "exact_copy": [
+        "Controla la investigación. Conserva la evidencia.",
+        "Conocé SourceRudder en GitHub",
+        "github.com/mdesantis1984/SourceRudder"
+      ],
+      "sha256": "06cb2253d1fc93a2d68a0252ab8863d0e53a47f137b9d686a2c1eda56a466cd7"
+    },
+    {
+      "filename": "sourcerudder-icono-master.png",
+      "dimensions": {
+        "width": 1024,
+        "height": 1024
+      },
+      "purpose": "Square and circular-safe master icon",
+      "exact_copy": [],
+      "sha256": "ad1c08ae481f4661b85693bc225231c0df1a88cc7e326da74a478c5f4e379d44"
+    },
+    {
+      "filename": "sourcerudder-logo-horizontal.png",
+      "dimensions": {
+        "width": 2400,
+        "height": 800
+      },
+      "purpose": "Transparent horizontal logo lockup",
+      "exact_copy": [
+        "SourceRudder",
+        "Dirige cada búsqueda. Ve cada fuente."
+      ],
+      "sha256": "e5c6400f1b6051bec86acc3558cdc5e13f8f8a5df75b6522bc21c8e92e3325f2"
+    }
+  ]
+}

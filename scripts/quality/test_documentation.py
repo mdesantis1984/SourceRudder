@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import stat
@@ -45,16 +46,43 @@ class DocumentationTests(unittest.TestCase):
         script = exporter.read_text(encoding="utf-8")
         publish = script.index('mv "$export_root" "$assets_dir"')
         self.assertLess(script.index("mktemp -d"), publish)
+        self.assertLess(script.index('python3 "$campaign_builder"'), publish)
         self.assertLess(script.rindex('"$export_brand/sourcerudder-favicon-32.png"'), publish)
         self.assertIn('mv "$previous_assets" "$assets_dir"', script)
         manifest = json.loads((ROOT / "docs/assets/brand/manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(2, manifest["version"])
         self.assertEqual(10, manifest["source_issue"])
         for asset in manifest["raster_exports"]:
             with self.subTest(asset=asset["path"]):
                 path = ROOT / asset["path"]
                 self.assertTrue(path.is_file())
                 self.assertEqual((asset["width"], asset["height"]), png_dimensions(path))
-                self.assertLess(path.stat().st_size, 5 * 1024 * 1024)
+                self.assertLess(path.stat().st_size, asset.get("max_bytes", 5 * 1024 * 1024))
+
+        campaign_manifest_path = ROOT / manifest["campaign_manifest"]
+        campaign_manifest = json.loads(campaign_manifest_path.read_text(encoding="utf-8"))
+        source_artwork = ROOT / "docs/assets/brand" / campaign_manifest["source_artwork"]
+        self.assertEqual(campaign_manifest["source_sha256"], hashlib.sha256(source_artwork.read_bytes()).hexdigest())
+        self.assertEqual(13, len(campaign_manifest["deliverables"]))
+        for asset in campaign_manifest["deliverables"]:
+            with self.subTest(campaign_asset=asset["filename"]):
+                path = campaign_manifest_path.parent / asset["filename"]
+                self.assertEqual((asset["dimensions"]["width"], asset["dimensions"]["height"]), png_dimensions(path))
+                self.assertEqual(asset["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+
+        self.assertEqual(
+            (ROOT / "docs/assets/brand/campaign/sourcerudder-github-preview.png").read_bytes(),
+            (ROOT / "docs/assets/sourcerudder-social-preview.png").read_bytes(),
+        )
+        for relative in manifest["review_assets"]:
+            self.assertTrue((ROOT / relative).is_file())
+        for asset in manifest["third_party_assets"]:
+            with self.subTest(third_party_asset=asset["path"]):
+                path = ROOT / asset["path"]
+                self.assertTrue(path.is_file())
+                self.assertEqual(b"RIFF", path.read_bytes()[:4])
+                self.assertEqual(asset["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+                self.assertTrue(asset["source"].startswith("https://"))
         for relative in manifest["vector_masters"]:
             with self.subTest(asset=relative):
                 body = (ROOT / relative).read_text(encoding="utf-8")
@@ -71,7 +99,8 @@ class DocumentationTests(unittest.TestCase):
         for relative, headings in expectations.items():
             with self.subTest(document=relative):
                 body = (ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("docs/assets/sourcerudder-social-preview.png", body)
+                self.assertIn("docs/assets/brand/campaign/sourcerudder-hero-indigo.png", body)
+                self.assertNotIn("docs/assets/sourcerudder-social-preview.png", body)
                 self.assertIn("actions/workflows/ci.yml/badge.svg?branch=main", body)
                 self.assertIn("```mermaid", body)
                 self.assertIn("28", body)

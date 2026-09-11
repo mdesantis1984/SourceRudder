@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/sourcerudder-social-preview.png" width="100%" alt="SourceRudder - Dirige cada búsqueda. Ve cada fuente.">
+  <img src="docs/assets/brand/campaign/sourcerudder-hero-indigo.png" width="100%" alt="SourceRudder - Dirige cada búsqueda. Ve cada fuente.">
 </p>
 
 <p align="center"><strong>Ofrece a tus agentes evidencia que puedan inspeccionar, no otra respuesta opaca.</strong></p>
@@ -204,7 +204,7 @@ desarrollo; nunca incluyas credenciales de producción.
 
 ## Reconocimiento a la comunidad
 
-[![Reconocimiento especial a Gentleman Programming](docs/assets/brand/gentleman-programming-recognition.svg)](ACKNOWLEDGEMENTS.es.md#reconocimiento-a-la-comunidad)
+[![Banner oficial de Gentle-AI](docs/assets/brand/gentle-ai-banner.webp)](ACKNOWLEDGEMENTS.es.md#reconocimiento-a-la-comunidad)
 
 SourceRudder reconoce la enseñanza y la comunidad de [Gentleman Programming](https://gentlemanprogramming.com/#install). Los reconocimientos enlazados incluyen su GitHub oficial y el perfil de LinkedIn de Alan Buscaglia sin implicar respaldo ni afiliación.
 
