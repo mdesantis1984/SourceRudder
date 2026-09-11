@@ -11,6 +11,7 @@ PAIRS = (
     ("CONTRIBUTING.md", "CONTRIBUTING.es.md"),
     ("SECURITY.md", "SECURITY.es.md"),
     ("ACKNOWLEDGEMENTS.md", "ACKNOWLEDGEMENTS.es.md"),
+    ("CODE_OF_CONDUCT.md", "CODE_OF_CONDUCT.es.md"),
     ("MIGRATION-TO-2.0.md", "MIGRATION-TO-2.0.es.md"),
     ("docs/architecture.md", "docs/architecture.es.md"),
     ("docs/configuration.md", "docs/configuration.es.md"),
