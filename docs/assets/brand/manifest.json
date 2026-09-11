@@ -1,18 +1,41 @@
 {
-  "version": 1,
+  "version": 2,
   "source_issue": 10,
+  "generator": "scripts/build-campaign-assets.py",
+  "campaign_manifest": "docs/assets/brand/campaign/manifest.json",
   "palette": {
-    "abyss": "#020b14",
-    "navy": "#071521",
-    "signal_cyan": "#20dcef",
-    "signal_teal": "#1ce0bd",
-    "ice": "#f8fcff"
+    "indigo_50": "#EEF2FF",
+    "indigo_100": "#E0E7FF",
+    "indigo_200": "#C7D2FE",
+    "indigo_300": "#A5B4FC",
+    "indigo_400": "#818CF8",
+    "indigo_500": "#6366F1",
+    "indigo_600": "#4F46E5",
+    "indigo_700": "#4338CA",
+    "indigo_800": "#3730A3",
+    "indigo_900": "#312E81",
+    "indigo_950": "#1E1B4B",
+    "near_black": "#090A1A",
+    "white": "#F8FAFC"
   },
   "raster_exports": [
-    {"path": "docs/assets/sourcerudder-social-preview.png", "width": 1280, "height": 640, "role": "README hero and GitHub Social Preview"},
+    {"path": "docs/assets/sourcerudder-social-preview.png", "width": 1280, "height": 640, "role": "GitHub Social Preview", "max_bytes": 1000000},
     {"path": "docs/assets/brand/sourcerudder-hero-master.png", "width": 1774, "height": 887, "role": "maintainer-approved source artwork"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-hero-indigo.png", "width": 1774, "height": 887, "role": "README hero"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-github-preview.png", "width": 1280, "height": 640, "role": "GitHub campaign card", "max_bytes": 1000000},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-personal.png", "width": 1200, "height": 1500, "role": "LinkedIn personal post"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-empresa.png", "width": 1200, "height": 627, "role": "LinkedIn company post"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-youtube-miniatura.png", "width": 3840, "height": 2160, "role": "YouTube thumbnail", "max_bytes": 2000000},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-01.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 01"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-02.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 02"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-03.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 03"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-04.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 04"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-05.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 05"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-linkedin-carrusel-06.png", "width": 1200, "height": 1500, "role": "LinkedIn carousel slide 06"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-icono-master.png", "width": 1024, "height": 1024, "role": "square and circular-safe campaign icon"},
+    {"path": "docs/assets/brand/campaign/sourcerudder-logo-horizontal.png", "width": 2400, "height": 800, "role": "transparent horizontal campaign lockup"},
     {"path": "docs/assets/brand/sourcerudder-og-1200x630.png", "width": 1200, "height": 630, "role": "general Open Graph card"},
-    {"path": "docs/assets/brand/sourcerudder-linkedin-1200x627.png", "width": 1200, "height": 627, "role": "LinkedIn card"},
+    {"path": "docs/assets/brand/sourcerudder-linkedin-1200x627.png", "width": 1200, "height": 627, "role": "stable LinkedIn card path"},
     {"path": "docs/assets/brand/sourcerudder-x-1600x800.png", "width": 1600, "height": 800, "role": "X large card"},
     {"path": "docs/assets/brand/sourcerudder-avatar-1024.png", "width": 1024, "height": 1024, "role": "project avatar master"},
     {"path": "docs/assets/brand/sourcerudder-avatar-512.png", "width": 512, "height": 512, "role": "project avatar"},
@@ -23,9 +46,21 @@
     {"path": "docs/assets/brand/sourcerudder-icon-64.png", "width": 64, "height": 64, "role": "small project icon"},
     {"path": "docs/assets/brand/sourcerudder-favicon-32.png", "width": 32, "height": 32, "role": "favicon export"}
   ],
+  "review_assets": [
+    "docs/assets/brand/campaign/contact-sheet.png"
+  ],
   "vector_masters": [
     "docs/assets/brand/sourcerudder-mark.svg",
-    "docs/assets/brand/sourcerudder-lockup.svg",
-    "docs/assets/brand/gentleman-programming-recognition.svg"
+    "docs/assets/brand/sourcerudder-lockup.svg"
+  ],
+  "third_party_assets": [
+    {
+      "path": "docs/assets/brand/gentle-ai-banner.webp",
+      "source": "https://gentlemanprogramming.com/branding/gentle-ai-banner.webp",
+      "width": 1400,
+      "height": 788,
+      "sha256": "e9c6427c4de30f0a1f45c208a38be52994cf44473ad2b2bb33b2e6973695f62b",
+      "allowed_transformations": ["resize", "crop"]
+    }
   ]
 }
