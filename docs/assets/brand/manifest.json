@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "source_issue": 10,
+  "palette": {
+    "abyss": "#020b14",
+    "navy": "#071521",
+    "signal_cyan": "#20dcef",
+    "signal_teal": "#1ce0bd",
+    "ice": "#f8fcff"
+  },
+  "raster_exports": [
+    {"path": "docs/assets/sourcerudder-social-preview.png", "width": 1280, "height": 640, "role": "README hero and GitHub Social Preview"},
+    {"path": "docs/assets/brand/sourcerudder-hero-master.png", "width": 1774, "height": 887, "role": "maintainer-approved source artwork"},
+    {"path": "docs/assets/brand/sourcerudder-og-1200x630.png", "width": 1200, "height": 630, "role": "general Open Graph card"},
+    {"path": "docs/assets/brand/sourcerudder-linkedin-1200x627.png", "width": 1200, "height": 627, "role": "LinkedIn card"},
+    {"path": "docs/assets/brand/sourcerudder-x-1600x800.png", "width": 1600, "height": 800, "role": "X large card"},
+    {"path": "docs/assets/brand/sourcerudder-avatar-1024.png", "width": 1024, "height": 1024, "role": "project avatar master"},
+    {"path": "docs/assets/brand/sourcerudder-avatar-512.png", "width": 512, "height": 512, "role": "project avatar"},
+    {"path": "docs/assets/brand/sourcerudder-avatar-256.png", "width": 256, "height": 256, "role": "project avatar"},
+    {"path": "docs/assets/brand/sourcerudder-avatar-128.png", "width": 128, "height": 128, "role": "project avatar"},
+    {"path": "docs/assets/brand/sourcerudder-icon-512.png", "width": 512, "height": 512, "role": "project icon master"},
+    {"path": "docs/assets/brand/sourcerudder-icon-180.png", "width": 180, "height": 180, "role": "application touch icon"},
+    {"path": "docs/assets/brand/sourcerudder-icon-64.png", "width": 64, "height": 64, "role": "small project icon"},
+    {"path": "docs/assets/brand/sourcerudder-favicon-32.png", "width": 32, "height": 32, "role": "favicon export"}
+  ],
+  "vector_masters": [
+    "docs/assets/brand/sourcerudder-mark.svg",
+    "docs/assets/brand/sourcerudder-lockup.svg",
+    "docs/assets/brand/gentleman-programming-recognition.svg"
+  ]
+}
