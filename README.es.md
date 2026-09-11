@@ -202,13 +202,19 @@ desarrollo; nunca incluyas credenciales de producción.
 - **Extenderlo:** lee [Contribuir](CONTRIBUTING.es.md) y propón un conector o
   mejora de contrato mediante un issue aprobado.
 
+## Reconocimiento a la comunidad
+
+[![Reconocimiento especial a Gentleman Programming](docs/assets/brand/gentleman-programming-recognition.svg)](ACKNOWLEDGEMENTS.es.md#reconocimiento-a-la-comunidad)
+
+SourceRudder reconoce la enseñanza y la comunidad de [Gentleman Programming](https://gentlemanprogramming.com/#install). Los reconocimientos enlazados incluyen su GitHub oficial y el perfil de LinkedIn de Alan Buscaglia sin implicar respaldo ni afiliación.
+
 ## Documentación
 
 [Migración a 2.0](MIGRATION-TO-2.0.es.md) · [Changelog](CHANGELOG.es.md) ·
 [Arquitectura](docs/architecture.es.md) · [Desarrollo](docs/development.es.md) ·
 [Despliegue](docs/deployment.es.md) · [Configuración](docs/configuration.es.md) ·
 [Operaciones](docs/operations.es.md) · [Clientes MCP](docs/mcp-clients.es.md) ·
-[Seguridad](SECURITY.es.md) · [Agradecimientos](ACKNOWLEDGEMENTS.es.md)
+[Assets de marca](docs/brand.es.md) · [Seguridad](SECURITY.es.md) · [Agradecimientos](ACKNOWLEDGEMENTS.es.md)
 
 ## Licencia y estado del release
 

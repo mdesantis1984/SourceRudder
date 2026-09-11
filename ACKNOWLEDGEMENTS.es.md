@@ -10,6 +10,12 @@ SourceRudder agradece a las comunidades y ecosistemas de código abierto que hac
 - [GitHub](https://github.com/) y el ecosistema público de desarrolladores que permite investigar código e issues.
 - Los ecosistemas de paquetes, registros, documentación, investigación académica, comunidad y medios a los que acceden los conectores del proyecto.
 
+## Reconocimiento a la comunidad
+
+[![Reconocimiento especial a Gentleman Programming](docs/assets/brand/gentleman-programming-recognition.svg)](https://gentlemanprogramming.com/#install)
+
+SourceRudder también reconoce a [Gentleman Programming](https://gentlemanprogramming.com/#install), la [comunidad de Gentleman Programming en GitHub](https://github.com/Gentleman-Programming) y [Alan Buscaglia](https://www.linkedin.com/in/alanbuscaglia/) por su trabajo educativo centrado en bases más sólidas para desarrolladores.
+
 Estos reconocimientos son créditos, no un respaldo ni una declaración de afiliación. Las dependencias y los servicios externos conservan sus propios términos y licencias.
 
 ## Estado de la licencia

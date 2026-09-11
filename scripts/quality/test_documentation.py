@@ -1,5 +1,9 @@
+import json
 import re
+import stat
+import struct
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -14,6 +18,7 @@ PAIRS = (
     ("CODE_OF_CONDUCT.md", "CODE_OF_CONDUCT.es.md"),
     ("MIGRATION-TO-2.0.md", "MIGRATION-TO-2.0.es.md"),
     ("docs/architecture.md", "docs/architecture.es.md"),
+    ("docs/brand.md", "docs/brand.es.md"),
     ("docs/configuration.md", "docs/configuration.es.md"),
     ("docs/deployment.md", "docs/deployment.es.md"),
     ("docs/development.md", "docs/development.es.md"),
@@ -26,7 +31,38 @@ PAIRS = (
 )
 
 
+def png_dimensions(path):
+    header = path.read_bytes()[:24]
+    if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise ValueError(f"invalid PNG header: {path}")
+    return struct.unpack(">II", header[16:24])
+
+
 class DocumentationTests(unittest.TestCase):
+    def test_brand_manifest_matches_exported_assets(self):
+        exporter = ROOT / "scripts/export-brand-assets.sh"
+        self.assertTrue(exporter.stat().st_mode & stat.S_IXUSR)
+        script = exporter.read_text(encoding="utf-8")
+        publish = script.index('mv "$export_root" "$assets_dir"')
+        self.assertLess(script.index("mktemp -d"), publish)
+        self.assertLess(script.rindex('"$export_brand/sourcerudder-favicon-32.png"'), publish)
+        self.assertIn('mv "$previous_assets" "$assets_dir"', script)
+        manifest = json.loads((ROOT / "docs/assets/brand/manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(10, manifest["source_issue"])
+        for asset in manifest["raster_exports"]:
+            with self.subTest(asset=asset["path"]):
+                path = ROOT / asset["path"]
+                self.assertTrue(path.is_file())
+                self.assertEqual((asset["width"], asset["height"]), png_dimensions(path))
+                self.assertLess(path.stat().st_size, 5 * 1024 * 1024)
+        for relative in manifest["vector_masters"]:
+            with self.subTest(asset=relative):
+                body = (ROOT / relative).read_text(encoding="utf-8")
+                ET.fromstring(body)
+                self.assertIn('role="img"', body)
+                self.assertIn("<title", body)
+                self.assertIn("<desc", body)
+
     def test_readmes_are_product_led_and_show_release_status(self):
         expectations = {
             "README.md": ("## Why SourceRudder", "## Try it locally", "first public release"),
