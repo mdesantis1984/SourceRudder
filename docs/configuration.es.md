@@ -23,7 +23,6 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `-cache-ttl` | `300` | TTL de caché en proceso, en segundos. |
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` o `30000` | Timeout de fetch, en milisegundos. |
 | `-auth-key` | vacío | Reemplaza `SOURCERUDDER_AUTH_KEY`. |
-| `-memory-url` / `-memory-apikey` | vacío | Reemplazan `MEMORY_URL` / `MEMORY_APIKEY`. |
 | `-local-index-path` | vacío | Reemplaza `LOCAL_INDEX_PATH`. |
 
 ## Entorno y Compose
@@ -37,11 +36,9 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `FETCH_TIMEOUT_MS` | `30000` | Timeout de fetch; un `-fetch-timeout-ms` positivo tiene prioridad. |
 | `FETCH_MAX_REDIRECTS` | `5` | Máximo de redirecciones validadas. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Máximo de intentos de fetch. |
-| `MEMORY_URL` | vacío | Endpoint opcional de observaciones IA_Recuerdo. |
-| `MEMORY_APIKEY` | vacío | Bearer token opcional para ese endpoint. |
 | `LOCAL_INDEX_PATH` | vacío | Habilita `search_local_index`. |
 
-Use un `.env` local, ignorado por Git y con permisos restrictivos. `MEMORY_*` es best effort: un `MEMORY_URL` vacío desactiva requests salientes; un endpoint configurado recibe JSON por `POST` y puede agregar hasta 10 segundos sin convertir una búsqueda correcta en error.
+Use un `.env` local, ignorado por Git y con permisos restrictivos.
 
 ## Autenticación HTTP
 

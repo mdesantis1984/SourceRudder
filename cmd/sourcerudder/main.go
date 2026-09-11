@@ -16,7 +16,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
 	"github.com/mdesantis1984/SourceRudder/internal/mcp"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -33,8 +32,6 @@ var (
 	// the configured SearXNG instance and never calls Reddit's API directly.
 	redditUserAgent = flag.String("reddit-user-agent", envDefault("REDDIT_USER_AGENT", ""), "Deprecated no-op; search_reddit uses SearXNG")
 	redditBaseURL   = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", ""), "Deprecated no-op; search_reddit uses SearXNG")
-	memoryURL       = flag.String("memory-url", "", "IA_Recuerdo (memory) base URL; when empty, the integration is disabled and Save is a no-op (env: MEMORY_URL)")
-	memoryAPIKey    = flag.String("memory-apikey", "", "IA_Recuerdo (memory) bearer key; travels as Authorization: Bearer (env: MEMORY_APIKEY)")
 	localIndexPath  = flag.String("local-index-path", "", "Read-only local index corpus path (env: LOCAL_INDEX_PATH)")
 )
 
@@ -85,23 +82,6 @@ func buildFetchConfig(flagTimeoutMs int) fetch.Config {
 		MaxAttempts:  envInt("FETCH_MAX_ATTEMPTS", 3),
 		BaseBackoff:  200 * time.Millisecond,
 	}
-}
-
-// resolveMemoryConfig layers the MEMORY_URL / MEMORY_APIKEY env vars
-// under the explicit -memory-url / -memory-apikey flag values. The
-// explicit flags win when both are set so an operator's CLI override
-// is never silently dropped. It is split out from main so the
-// precedence rule is unit-tested without re-declaring flags.
-func resolveMemoryConfig(flagURL, flagKey string) (string, string) {
-	url := flagURL
-	if url == "" {
-		url = envDefault("MEMORY_URL", "")
-	}
-	key := flagKey
-	if key == "" {
-		key = envDefault("MEMORY_APIKEY", "")
-	}
-	return url, key
 }
 
 func resolveLocalIndexPath(flagValue string) string {
@@ -161,8 +141,6 @@ func main() {
 	observability.InitTracing("sourcerudder")
 	authValidator := auth.NewValidator(resolveAuthKey(*authKey))
 
-	memURL, memKey := resolveMemoryConfig(*memoryURL, *memoryAPIKey)
-	memClient := memory.NewClient(memURL, memKey)
 	history := cache.NewHistoryService(100)
 
 	cm := search.NewConnectorManager(cacheSvc)
@@ -189,7 +167,7 @@ func main() {
 		cm.Register(localIndex)
 	}
 
-	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history, memClient)
+	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history)
 	var trans mcp.Transport
 	switch *transport {
 	case "stdio":

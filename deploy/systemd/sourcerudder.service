@@ -41,8 +41,6 @@ Environment=FETCH_TIMEOUT_MS=30000
 Environment=FETCH_USER_AGENT=SourceRudder/2.0.0
 Environment=FETCH_MAX_REDIRECTS=5
 Environment=FETCH_MAX_ATTEMPTS=3
-Environment=MEMORY_URL=
-Environment=MEMORY_APIKEY=
 Environment=LOCAL_INDEX_PATH=
 
 [Install]

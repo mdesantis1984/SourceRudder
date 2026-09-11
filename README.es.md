@@ -171,7 +171,6 @@ estables, incluidos `official_doc_registry_search`,
 | `SOURCERUDDER_PORT` | Puerto del host para Compose; el default es `8080`. |
 | `SEARXNG_URL` | Endpoint de SearXNG; default `http://localhost:8888`. |
 | `LOCAL_INDEX_PATH` | Corpus local de solo lectura opcional. |
-| `MEMORY_URL`, `MEMORY_APIKEY` | Integración opcional con IA_Recuerdo; sin I/O si `MEMORY_URL` está vacío. |
 | `FETCH_USER_AGENT`, `FETCH_TIMEOUT_MS`, `FETCH_MAX_REDIRECTS`, `FETCH_MAX_ATTEMPTS` | Controles del fetcher. |
 
 Mantén los secretos fuera de Git y de los flags. No expongas HTTP directamente

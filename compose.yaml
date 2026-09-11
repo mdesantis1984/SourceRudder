@@ -44,8 +44,6 @@ services:
     environment:
       SOURCERUDDER_AUTH_KEY: "${SOURCERUDDER_AUTH_KEY:?Set SOURCERUDDER_AUTH_KEY in .env}"
       SEARXNG_URL: http://searxng:8080
-      MEMORY_URL: "${MEMORY_URL:-}"
-      MEMORY_APIKEY: "${MEMORY_APIKEY:-}"
     ports:
       - "127.0.0.1:${SOURCERUDDER_PORT:-8080}:8080"
     command: ["-transport", "http", "-http-addr", ":8080"]

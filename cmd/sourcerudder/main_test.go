@@ -10,7 +10,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
 	"github.com/mdesantis1984/SourceRudder/internal/mcp"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -163,7 +162,7 @@ func TestServerStart(t *testing.T) {
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	if server == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -175,7 +174,7 @@ func TestToolsCount(t *testing.T) {
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	tools := server.Tools()
 	if len(tools) != 28 {
 		t.Errorf("expected 28 tools (restored runtime contract), got %d", len(tools))
@@ -188,7 +187,7 @@ func TestHandleInitialize(t *testing.T) {
 	planner := search.NewPlanner()
 	fetchSvc := fetch.NewFetcherService(5000)
 	synthSvc := synthesis.NewService()
-	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	result, err := server.HandleInitialize(context.Background(), []byte(`{"clientId": "test"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

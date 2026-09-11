@@ -10,11 +10,6 @@ local_index:
   path: ""
   example: configs/local-index.example.json
 
-memory:
-  # Optional IA_Recuerdo integration. Keep both empty to disable network I/O.
-  url: ""
-  api_key: ""
-
 security:
   # Set SOURCERUDDER_AUTH_KEY in the process environment for HTTP transport.
   auth_key_env: SOURCERUDDER_AUTH_KEY

@@ -11,7 +11,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -24,7 +23,7 @@ func newRedditTestServer(t *testing.T, upstream http.Handler) *Server {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{SearxngURL: srv.URL}, cacheSvc))
-	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	return NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 }
 
 func TestRedditSearxngFailureIsPartial(t *testing.T) {

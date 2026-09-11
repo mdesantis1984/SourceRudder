@@ -9,7 +9,6 @@ import (
 
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -113,6 +112,5 @@ func newSTDIOTestServer() *Server {
 		nil,
 		observability.New(),
 		cache.NewHistoryService(10),
-		memory.NewClient("", ""),
 	)
 }

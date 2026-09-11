@@ -14,7 +14,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/auth"
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -47,14 +46,10 @@ type Server struct {
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
 	authValidator     *auth.Validator
-	// history and mem are the stateful dependencies restored by the
-	// restore-runtime-contract change: history backs get_search_history,
-	// mem backs the IA_Recuerdo observation shipping through
-	// stateful handlers. Both are intentionally non-nil at
-	// construction; an integration-disabled memory client short-circuits
-	// Save to nil so callers don't need to nil-check.
+	// history is shared by search handlers and get_search_history.
+	// Production construction supplies it; nil remains valid for
+	// isolated test fixtures.
 	history *cache.HistoryService
-	mem     *memory.Client
 	// httpSrv is the live HTTP server. It is set by Start (when
 	// transport == "http") and closed by Stop via Shutdown. Outside
 	// of HTTP transport it stays nil.
@@ -79,7 +74,7 @@ type Tool struct {
 // error: the Server has no metrics surface, /metrics will panic on
 // scrape, and a future regression could re-introduce the production
 // split where /metrics was empty while connectors still ticked counters.
-func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, authValidator *auth.Validator, met *observability.Metrics, history *cache.HistoryService, mem *memory.Client) *Server {
+func NewServer(connectorManager *search.ConnectorManager, planner *search.Planner, transport, httpAddr, searxngURL string, cacheTTL int, fetchTimeoutMs int, fetchSvc *fetch.FetcherService, synthSvc *synthesis.Service, authValidator *auth.Validator, met *observability.Metrics, history *cache.HistoryService) *Server {
 	_ = fetchTimeoutMs
 	if met == nil {
 		// Fail loud, not silent: a nil metrics here is the exact
@@ -98,7 +93,6 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 		synthesisService: synthSvc,
 		authValidator:    authValidator,
 		history:          history,
-		mem:              mem,
 	}
 	s.buildToolsRegistry()
 	s.registerTools()
