@@ -44,6 +44,6 @@ anchor; neither control protects a host after root compromise.
 - Record the reviewed source revision and immutable image digest before an upgrade.
 - Verify health, MCP initialization, tool listing, and representative provider calls after a change.
 - Roll back by restoring the previous known-good revision or digest. For systemd, restore the binary, root-owned `BINARY_SHA256`, rendered unit, `VERSION`, and `IMAGE` together.
-- Protect the GitHub `release` environment with required reviewers. Configure its legal approval secrets only after the committed legal-review record and activated license have been professionally reviewed and their hashes verified.
+- Protect the GitHub `release` environment with a deployment policy limited to approved release tags. Keep package and release permissions scoped to the workflow job.
 
 For exact runtime settings and recovery commands, see the deployment artifacts and the operations documentation. No release or deployment is implied by this guide.

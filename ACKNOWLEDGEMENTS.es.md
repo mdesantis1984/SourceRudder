@@ -15,4 +15,4 @@ Estos reconocimientos son créditos, no un respaldo ni una declaración de afili
 
 ## Estado de la licencia
 
-La transición de licencia de SourceRudder 2.0 continúa condicionada a una revisión profesional. Ningún texto de licencia en borrador se presenta aquí como aprobado, como atribución obligatoria o como concesión final de derechos. Consulte los materiales de licencia activos del repositorio y el registro de release revisado antes de basarse en términos de licencia.
+SourceRudder 2.0.0 y la línea histórica IA_Buscar se distribuyen bajo la [Licencia MIT](LICENSE). Las concesiones MIT existentes siguen vigentes para cada receptor de esas copias.

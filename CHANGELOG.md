@@ -4,7 +4,7 @@
 
 All notable SourceRudder changes are documented here.
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-09-11
 
 ### Breaking identity changes
 
@@ -29,8 +29,8 @@ All notable SourceRudder changes are documented here.
 - Added a gated release workflow for cross-platform archives, checksums,
   provenance attestations, multi-platform GHCR images, SBOM, and immutable
   deployment assets.
-- Added an explicit legal-review gate. SourceRudder 2.0.0 cannot be published
-  while the root license remains MIT or lacks a legal approval reference.
+- Confirmed MIT as the active SourceRudder 2.0.0 license and made release
+  readiness verify the exact approved license before publication.
 
 ### Documentation
 

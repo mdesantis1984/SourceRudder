@@ -2,30 +2,24 @@
 
 [English](cutover.md) | [Español](cutover.es.md)
 
-Este checklist prepara el cutover externo. No autoriza evadir la revisión
-legal, ramas protegidas, revisores obligatorios ni gates de release.
+Este checklist gobierna el cutover público de 2.0.0. No autoriza evadir ramas
+protegidas, checks obligatorios, verificación de artefactos ni gates de release.
 
-## Preparación del repositorio privado
+## Preparación del repositorio
 
-1. Cree `mdesantis1984/SourceRudder` como repositorio privado, publique el
-   snapshot verificado de la migración en `main` y conserve IA_Buscar como
-   remote legado y repositorio público histórico.
-2. Configure permisos mínimos de Actions, alertas de dependencias, labels de
-   políticas para issues/PR y el entorno `release`. GitHub Free no aplica reglas
-   de protección de ramas o entornos en un repositorio personal privado;
-   actívelas antes del release público o después de mejorar el plan de la cuenta.
-3. Confirme CI sobre el commit publicado. CodeQL permanece omitido mientras el
-   repositorio privado no tenga licencia de GitHub Code Security; Gitleaks,
-   gosec y govulncheck continúan siendo obligatorios.
+1. Mantenga `mdesantis1984/SourceRudder` público y conserve IA_Buscar como remote
+   legado y repositorio histórico.
+2. Mantenga permisos mínimos de Actions, alertas de dependencias, labels de
+   políticas para issues/PR, ramas `main` y `develop` protegidas, y el entorno
+   `release`.
+3. Exija CI, CodeQL, Gitleaks, gosec, govulncheck y release gate en verde sobre
+   el commit aprobado para el release.
 
 ## Antes del release público
 
-1. Complete la revisión profesional de la licencia SourceRudder final. Confirme
-   la `LICENSE` activada y el archivo correspondiente
-   `docs/legal/source-rudder-license-review.json`.
-2. Configure el entorno GitHub `release` con revisores obligatorios y los
-   secretos de entorno `SOURCERUDDER_LEGAL_APPROVAL_REF` y
-   `SOURCERUDDER_LEGAL_REVIEW_SHA256`.
+1. Verifique que la `LICENSE` raíz sea la licencia MIT aprobada para 2.0.0 y que
+   las notas y metadatos de distribución identifiquen MIT de forma consistente.
+2. Restrinja el entorno GitHub `release` al tag exacto aprobado para el release.
 3. Conserve el último tag, imagen, licencia MIT y artefactos de rollback de
    IA_Buscar 1.x. No reescriba ni relicencie copias históricas.
 4. Verifique que los remotes locales apunten a repositorios independientes:
@@ -36,18 +30,17 @@ legal, ramas protegidas, revisores obligatorios ni gates de release.
    git remote -v
    ```
 
-5. Ejecute `bash scripts/release-readiness.sh --identity-only` desde un clone
-   nuevo de SourceRudder.
-6. Haga público SourceRudder sólo cuando se hayan revisado la licencia,
-   configuración de seguridad, metadata, integraciones externas y gates.
-7. Active la protección de `main` con los checks obligatorios `build`, `gate` y
-   `policy`, y restrinja el entorno `release` a tags `v*` aprobados antes de
-   aceptar cambios externos o publicar un release.
+5. Ejecute los checks de identidad y licencia MIT desde un clone nuevo de
+   SourceRudder.
+6. Confirme visibilidad, configuración de seguridad, metadata, integraciones y
+   gates antes de crear el tag.
+7. Mantenga `main` protegido con los checks obligatorios `build`, `gate` y
+   `Analyze Go`.
 
 ## Publicar 2.0.0
 
 1. Cree el tag exacto `v2.0.0` sólo después de que el gate completo de release
-   pase en un worktree limpio y sobre el commit revisado.
+   pase en un worktree limpio y sobre el commit aprobado.
 2. Envíe el tag. `.github/workflows/release.yml` verificará todos los gates,
    construirá archivos multiplataforma, publicará una imagen GHCR con SBOM y
    procedencia, renderizará artefactos de despliegue inmutables y creará la
@@ -62,8 +55,8 @@ legal, ramas protegidas, revisores obligatorios ni gates de release.
 
 ## Condiciones de aborto
 
-Detenga el cutover si la licencia o el registro no coinciden con su hash
-protegido, CI no está verde, el digest es mutable o inesperado, no pueden
+Detenga el cutover si la licencia no coincide con su hash aprobado, CI no está
+verde, el digest es mutable o inesperado, no pueden
 verificarse las attestations, se perdieron protecciones o faltan artefactos de
 rollback. Siga el [procedimiento de reversión](rollback.es.md) en lugar de
 improvisar.

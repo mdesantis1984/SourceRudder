@@ -6,7 +6,7 @@
 
 | Línea de versión | Estado |
 |---|---|
-| SourceRudder 2.0 | Línea de desarrollo sin publicar; las correcciones de seguridad se evalúan contra `main` actual. |
+| SourceRudder 2.0 | Línea de release actual; las correcciones de seguridad se evalúan contra el último release 2.0 y `main`. |
 | Releases 1.x históricos | Solo históricos; no reciben soporte automático de seguridad. |
 
 Los forks, despliegues modificados y snapshots sin digest quedan fuera del soporte automático.

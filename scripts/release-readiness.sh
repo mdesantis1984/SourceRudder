@@ -54,23 +54,19 @@ if [[ "$mode" == "--identity-only" ]]; then
   exit 0
 fi
 
-expect_fixed 'SourceRudder Commercial Attribution License 1.0' LICENSE
-expect_fixed 'SPDX-License-Identifier: LicenseRef-SourceRudder-Commercial-Attribution-1.0' LICENSE
-if grep -qiE 'status:[[:space:]]*draft|not the active license|pending professional' LICENSE; then
-  fail "LICENSE still contains draft or pending-review language"
-fi
-[[ -n "${SOURCERUDDER_LEGAL_APPROVAL_REF:-}" ]] || fail "SOURCERUDDER_LEGAL_APPROVAL_REF is required"
-[[ "${SOURCERUDDER_LEGAL_REVIEW_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || fail "SOURCERUDDER_LEGAL_REVIEW_SHA256 must be 64 lowercase hex characters"
+expected_license_sha256='f275204b804f9d6649cd29bef3feaabbf985f7a7a33524b8a7ea97c0cd1bde95'
+actual_license_sha256="$(sha256sum LICENSE | cut -d ' ' -f 1)"
 
-review_record="docs/legal/source-rudder-license-review.json"
-[[ -f "$review_record" ]] || fail "$review_record is required after professional legal review"
-if ! python3 scripts/validate_legal_review.py \
-  --record "$review_record" \
-  --license LICENSE \
-  --version "$version" \
-  --approval-reference "$SOURCERUDDER_LEGAL_APPROVAL_REF" \
-  --record-sha256 "$SOURCERUDDER_LEGAL_REVIEW_SHA256"; then
-  fail "legal review record is invalid or does not match the activated license"
+expect_fixed 'MIT License' LICENSE
+expect_fixed 'Permission is hereby granted, free of charge' LICENSE
+
+if [[ "$actual_license_sha256" != "$expected_license_sha256" ]]; then
+  fail "LICENSE does not match the approved MIT license for SourceRudder 2.0.0"
+fi
+
+if [[ "$mode" == "--license-only" ]]; then
+  printf 'release-readiness: MIT license checks PASS\n'
+  exit 0
 fi
 
 tag="${mode:-${GITHUB_REF_NAME:-}}"
@@ -86,4 +82,4 @@ else
   [[ "$repository" == "mdesantis1984/SourceRudder" ]] || fail "workflow must run in mdesantis1984/SourceRudder"
 fi
 
-printf 'release-readiness: full release checks PASS (%s; legal review matched)\n' "$tag"
+printf 'release-readiness: full release checks PASS (%s; MIT license matched)\n' "$tag"

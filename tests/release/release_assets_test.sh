@@ -29,8 +29,8 @@ grep -qF 'isDraft' "$RELEASE_WORKFLOW"
 grep -qF -- '--draft=false' "$RELEASE_WORKFLOW"
 grep -qF 'immutable assets remain unchanged' "$RELEASE_WORKFLOW"
 grep -qF '# SourceRudder 2.0.0' "$RELEASE_NOTES"
-grep -qF 'Private release draft' "$RELEASE_NOTES"
-grep -qF 'Publication gate' "$RELEASE_NOTES"
+grep -qF 'MIT License' "$RELEASE_NOTES"
+grep -qF 'Licencia MIT' "$RELEASE_NOTES"
 
 if grep -Eq '^[[:space:]]*image:[[:space:]]*<IMAGE>' "$DIST_DIR/sourcerudder-kubernetes.yaml" \
   || grep -Eq '@VERSION@|@IMAGE@' "$DIST_DIR/sourcerudder.service"; then

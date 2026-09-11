@@ -3,8 +3,7 @@
 [English](rollback.md) | [Español](rollback.es.md)
 
 Este procedimiento aplica a releases de SourceRudder 2.0 después de completar
-los gates del repositorio y la licencia. SourceRudder 2.0.0 todavía no fue
-publicado.
+los gates del repositorio y del release.
 
 ## Invariantes
 

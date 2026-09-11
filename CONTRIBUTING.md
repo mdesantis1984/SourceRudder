@@ -83,4 +83,4 @@ Wait for CI and the release gate before requesting merge. This repository docume
 
 Keep MCP tool names, JSON fields, flags, environment variables, and other wire contracts exactly as implemented. In particular, use `sourcerudder` and `SOURCERUDDER_AUTH_KEY`; do not rename external contracts in documentation.
 
-The root [LICENSE](LICENSE) remains MIT pending professional legal review. Do not treat this pending status as approval of any draft or license change.
+SourceRudder and its accepted contributions are distributed under the repository's [MIT License](LICENSE). Any future licensing change must be explicit and prospective.
