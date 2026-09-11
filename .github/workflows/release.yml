@@ -103,7 +103,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            is_draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
+            if [ "$is_draft" = true ]; then
+              gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+              gh release edit "$GITHUB_REF_NAME" --draft=false --latest --verify-tag
+            else
+              echo "Release $GITHUB_REF_NAME is already published; immutable assets remain unchanged."
+            fi
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --verify-tag \
