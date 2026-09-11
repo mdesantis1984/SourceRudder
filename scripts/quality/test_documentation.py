@@ -27,6 +27,22 @@ PAIRS = (
 
 
 class DocumentationTests(unittest.TestCase):
+    def test_readmes_are_product_led_without_hiding_preview_status(self):
+        expectations = {
+            "README.md": ("## Why SourceRudder", "## Try it locally", "private preview"),
+            "README.es.md": ("## Por qué SourceRudder", "## Pruébalo localmente", "preview privada"),
+        }
+        for relative, headings in expectations.items():
+            with self.subTest(document=relative):
+                body = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("docs/assets/sourcerudder-social-preview.png", body)
+                self.assertIn("actions/workflows/ci.yml/badge.svg?branch=main", body)
+                self.assertIn("```mermaid", body)
+                self.assertIn("28", body)
+                self.assertIn("16", body)
+                self.assertIn(headings[2], body.lower())
+                self.assertLess(body.index(headings[0]), body.index(headings[1]))
+
     def test_local_markdown_links_resolve(self):
         broken = []
         for document in ROOT.rglob("*.md"):
