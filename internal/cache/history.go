@@ -22,7 +22,7 @@ type Entry struct {
 // so AI agents can audit what the operator searched through this
 // service in the current process. The buffer is intentionally small
 // (default bound: 100 entries) and disappears when the process exits;
-// it is NOT a replacement for IA_Recuerdo and never reaches disk.
+// it never reaches disk or an external service.
 type HistoryService struct {
 	mu      sync.Mutex
 	entries []Entry

@@ -13,7 +13,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -38,7 +37,7 @@ func TestStableEmptyArrayContract(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 	args, _ := json.Marshal(map[string]interface{}{"query": "stable-empty-fresh"})
 	resp, err := s.callToolByName(context.Background(), "search_web", args)
@@ -113,7 +112,7 @@ func TestSearchDocOficialStrategySignal(t *testing.T) {
 	webConnector := connectors.NewWebConnector(searxng.URL, cacheSvc)
 	cm.Register(webConnector)
 	cm.Register(connectors.NewOfficialDocsConnector(webConnector))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 	resp, err := s.callToolByName(context.Background(), "search_doc_oficial", []byte(`{"query":"go documentation"}`))
 	if err != nil {
@@ -180,7 +179,7 @@ func TestSearchLocalIndexUnavailableSignal(t *testing.T) {
 	cacheSvc := cache.NewService(300)
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(connectors.NewWebConnector(searxng.URL, cacheSvc))
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10), memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 	resp, err := s.callToolByName(context.Background(), "search_local_index", []byte(`{"query":"find in repo"}`))
 	if err != nil {
@@ -234,7 +233,7 @@ func TestSearchLocalIndexConfiguredProvider(t *testing.T) {
 	cm := search.NewConnectorManager(cacheSvc)
 	cm.Register(localIndex)
 	history := cache.NewHistoryService(10)
-	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), history, memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", "", 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), history)
 
 	resp, err := s.callToolByName(context.Background(), "search_local_index", []byte(`{"query":"local search"}`))
 	if err != nil {

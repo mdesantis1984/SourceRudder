@@ -4,6 +4,16 @@
 
 All notable SourceRudder changes are documented here.
 
+## [Unreleased]
+
+### Removed
+
+- Retired the optional IA_Recuerdo observation forwarder, including its CLI
+  flags, `MEMORY_*` environment variables, deployment settings, and synchronous
+  outbound requests. The obsolete integration was removed so any future
+  persistence capability can be designed deliberately; no replacement is part
+  of this change. The 28 MCP tools and in-process search history are unchanged.
+
 ## [2.0.0] - 2026-09-11
 
 ### Breaking identity changes

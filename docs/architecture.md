@@ -22,16 +22,15 @@ SourceRudder 2.0 is **unreleased**. It is an MCP research service that keeps its
 | Fetch and extraction | Retrieve public URLs only after SSRF controls validate destinations, redirects, and response limits; extraction returns bounded content. |
 | Synthesis | Summarize or compare normalized result sets rather than replacing source evidence. |
 | Local index | Optionally searches an immutable, operator-curated JSON corpus with deterministic lexical ranking and no network or filesystem crawl. |
-| IA_Recuerdo | Optional best-effort integration for completed-search observations; it is not required for a search result to succeed. |
 | Metrics | Exposes Prometheus-compatible process and service metrics for operational observation. |
 
 ## Contract and safety boundaries
 
 - MCP tools use stable wire envelopes; clients must inspect `strategy`, `partial`, `warnings`, and `errors` instead of treating an empty result as a transport failure.
-- Cache, history, and optional IA_Recuerdo reporting are operational aids, not a distributed audit system.
+- Cache and history are in-process operational aids, not a distributed audit system.
 - Fetching is deliberately separate from search. SSRF protections apply before network access and across redirects.
 - Local-index input is validated at startup and remains operator-owned data.
 
 ## Operational implication
 
-Health proves that the SourceRudder process is reachable. It does not prove that SearXNG, direct providers, a local corpus, or optional IA_Recuerdo are available. Monitor transport health, degraded-result signals, and provider-specific evidence independently.
+Health proves that the SourceRudder process is reachable. It does not prove that SearXNG, direct providers, or a local corpus are available. Monitor transport health, degraded-result signals, and provider-specific evidence independently.

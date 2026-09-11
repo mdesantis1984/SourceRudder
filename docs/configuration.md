@@ -23,7 +23,6 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `-cache-ttl` | `300` | In-process cache TTL in seconds. |
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` or `30000` | Fetch timeout in milliseconds. |
 | `-auth-key` | empty | Overrides `SOURCERUDDER_AUTH_KEY`. |
-| `-memory-url` / `-memory-apikey` | empty | Override `MEMORY_URL` / `MEMORY_APIKEY`. |
 | `-local-index-path` | empty | Overrides `LOCAL_INDEX_PATH`. |
 
 ## Environment and Compose
@@ -37,11 +36,9 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `FETCH_TIMEOUT_MS` | `30000` | Fetch timeout; `-fetch-timeout-ms` wins when positive. |
 | `FETCH_MAX_REDIRECTS` | `5` | Maximum validated redirects. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Maximum fetch attempts. |
-| `MEMORY_URL` | empty | Optional IA_Recuerdo observation endpoint. |
-| `MEMORY_APIKEY` | empty | Optional Bearer token for that endpoint. |
 | `LOCAL_INDEX_PATH` | empty | Enables `search_local_index`. |
 
-Use a local, ignored `.env` file with restrictive permissions. `MEMORY_*` is best effort: an empty `MEMORY_URL` disables outbound memory requests; a configured endpoint receives `POST` JSON and may add up to its 10-second client timeout without changing an otherwise successful search result.
+Use a local, ignored `.env` file with restrictive permissions.
 
 ## HTTP authentication
 

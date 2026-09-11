@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/qa-smoke.sh — probe the running QA stack. Spec contract:
 #   /healthz 200 {"status":"ok"}  |  /mcp tools/list == 28 entries
-#   search_web 200 + results:[] + cached:false  |  0 packets to 7438.
+#   search_web 200 + results:[] + cached:false.
 #
 # Auth: the compose service injects QA_AUTH_KEY into the container as
 # SOURCERUDDER_AUTH_KEY (env path, not argv — see CT201 fix), so every
@@ -73,12 +73,6 @@ set -- $S_RES
 # would be results > 0 with cached=true, but that path is impossible
 # with no engines).
 log "search_web empty-results (cache field ${2:-absent}) OK"
-
-# Memory integration ------------------------------------------------------
-# The live binary has `-memory-url ""`; internal/memory/client.go
-# short-circuits Save before any request. The QA bridge is intentionally
-# not internal because this host's docker-proxy cannot publish through it.
-log "memory integration disabled (-memory-url empty)"
 
 log "all smoke probes passed"
 exit 0

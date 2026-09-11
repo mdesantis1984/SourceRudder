@@ -169,7 +169,6 @@ stable across tools, including `official_doc_registry_search`,
 | `SOURCERUDDER_PORT` | Compose host port; defaults to `8080`. |
 | `SEARXNG_URL` | SearXNG endpoint; defaults to `http://localhost:8888`. |
 | `LOCAL_INDEX_PATH` | Optional read-only local-index corpus. |
-| `MEMORY_URL`, `MEMORY_APIKEY` | Optional IA_Recuerdo integration; no memory I/O occurs without `MEMORY_URL`. |
 | `FETCH_USER_AGENT`, `FETCH_TIMEOUT_MS`, `FETCH_MAX_REDIRECTS`, `FETCH_MAX_ATTEMPTS` | Fetcher controls. |
 
 Keep secrets out of Git and command-line flags. Do not expose HTTP directly to

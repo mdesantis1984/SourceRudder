@@ -9,7 +9,6 @@ SourceRudder gratefully recognizes the open-source communities and ecosystems th
 - [SearXNG](https://searxng.org/) for metasearch capabilities.
 - [GitHub](https://github.com/) and the public developer ecosystem that supports code and issue research.
 - The package, registry, documentation, academic, community, and media ecosystems accessed through the project's connectors.
-- The optional [IA_Recuerdo](https://github.com/mdesantis1984/IA_Recuerdo) integration.
 
 These acknowledgements are credits, not an endorsement or a statement of affiliation. Dependencies and external services retain their own terms and licenses.
 

@@ -31,7 +31,7 @@ export SOURCERUDDER_AUTH_KEY='replace-with-a-local-secret'
 | `internal/connectors` | Search-provider and official-documentation connectors. |
 | `internal/fetch` | Bounded remote retrieval and SSRF protections. |
 | `internal/search` | Planning and connector management. |
-| `internal/cache`, `internal/memory`, `internal/observability` | Runtime support services. |
+| `internal/cache`, `internal/observability` | Runtime support services. |
 | `pkg/types` | Shared public Go request and response types. |
 | `deploy/qa`, `scripts/quality` | Isolated QA stack and Python quality baseline. |
 

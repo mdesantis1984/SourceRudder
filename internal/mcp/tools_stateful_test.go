@@ -14,7 +14,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -555,7 +554,7 @@ func buildToolsTestServer(t *testing.T, cacheSvc *cache.Service) *Server {
 		synthesis.NewService(),
 		auth.NewValidator("k"),
 		observability.New(),
-		cache.NewHistoryService(10), memory.NewClient("", ""),
+		cache.NewHistoryService(10),
 	)
 }
 
@@ -572,7 +571,7 @@ func buildToolsTestServerWithHistory(t *testing.T, history *cache.HistoryService
 		synthesis.NewService(),
 		auth.NewValidator("k"),
 		observability.New(),
-		history, memory.NewClient("", ""),
+		history,
 	)
 }
 
@@ -592,7 +591,7 @@ func buildToolsTestServerWithHistoryAndConnectors(t *testing.T, history *cache.H
 		synthesis.NewService(),
 		auth.NewValidator("k"),
 		observability.New(),
-		history, memory.NewClient("", ""),
+		history,
 	)
 }
 

@@ -8,17 +8,6 @@
 # harness keeps the assertions honest. At the bottom, `main` runs every
 # test in order and exits non-zero on the first failure. This is the
 # "focused test command" used as the TDD evidence for every task.
-#
-# Deviations from design.md, captured here so the test tells the truth:
-#   * Tool count: design/spec say 28, but internal/mcp/server.go:126-150
-#     registers exactly 25 tools, and the README already says "25 tools".
-#     The smoke asserts 25. RED branches verify N=24 and N=26 fail.
-#   * -memory-url flag: design requires `-memory-url ""` in the compose
-#     entrypoint, but cmd/sourcerudder/main.go does not declare that flag
-#     (it has 9 flags, no -memory-url). The IA_Recuerdo canary probe on
-#     127.0.0.1:7438 is the real assertion; the argv check is skipped.
-#   * internal/memory/client.go: does not exist in this worktree, so the
-#     "empty baseURL short-circuits before I/O" assumption is moot.
 
 set -u
 set -o pipefail
@@ -226,31 +215,6 @@ test_compose_build_context_resolves_to_repo_root() {
   if printf '%s' "$content" | grep -qE '^[[:space:]]+context:[[:space:]]+["'"'"']?\.\.["'"'"']?[[:space:]]*$' && \
      ! printf '%s' "$content" | grep -qE '^[[:space:]]+context:[[:space:]]+["'"'"']?\.\./\.\.["'"'"']?[[:space:]]*$'; then
     record_fail "compose.build.context: shallow '..' points at deploy/, missing go.mod"
-    return 1
-  fi
-}
-
-test_compose_entrypoint_passes_memory_url_empty() {
-  # B4 gate: the live binary declares `-memory-url` (cmd/sourcerudder/main.go:33)
-  # with default "". Passing it explicitly to "" keeps the
-  # IA_Recuerdo integration disabled AND proves the live binary has the
-  # integration-disabled short-circuit wired. Without this flag the
-  # contract is structural-only (canary port); with it, the contract is
-  # behavioral (the binary itself disables Save).
-  local f="$REPO_ROOT/deploy/qa/docker-compose.yml"
-  local content
-  content=$(cat "$f")
-  # The entrypoint must contain `-memory-url` as a list item. The flag
-  # dash is part of the token; the YAML list bullet is a separate dash.
-  if ! printf '%s' "$content" | grep -qE '^[[:space:]]+-[[:space:]]+"?-memory-url"?[[:space:]]*$'; then
-    record_fail "compose.entrypoint: -memory-url flag missing"
-    return 1
-  fi
-  # The memory-url value must be an empty string literal. We accept any
-  # of: "", '' (yaml double or single quoted empty), or unquoted
-  # followed by another -flag. Match either " or ' around nothing.
-  if ! printf '%s' "$content" | grep -qE "memory-url[[:space:]]+(\"\"|'')"; then
-    record_fail "compose.entrypoint: -memory-url value must be empty string"
     return 1
   fi
 }
@@ -582,16 +546,6 @@ test_qa_smoke_asserts_twenty_eight_tools() {
   assert_eq "$smoke_count" "28" "smoke EXPECTED_TOOLS vs 28-tool runtime contract" || return 1
 }
 
-test_qa_smoke_canary_checks_no_memory_egress() {
-  # Threat B.5 + spec: zero requests to 127.0.0.1:7438. The canary
-  # listener should record 0 hits after a connector call. The actual
-  # code has no -memory-url flag and no internal/memory client at all,
-  # so the canary is the only real assertion.
-  local script="$REPO_ROOT/scripts/qa-smoke.sh"
-  assert_file_exists "$script" || return 1
-  assert_grep "7438" "$script" "smoke.canary.port" || return 1
-}
-
 # ---- Phase 4: Makefile and README additive appends -------------------------
 
 test_makefile_phony_appended() {
@@ -690,6 +644,18 @@ test_boundary_grep_production_paths_clean() {
   fi
 }
 
+test_retired_observation_forwarder_stays_absent() {
+  local live_refs
+  live_refs=$(grep -rE 'IA_Recuerdo|MEMORY_(URL|APIKEY)|memory-(url|apikey)|internal/memory' \
+    "$REPO_ROOT/.env.example" "$REPO_ROOT/compose.yaml" \
+    "$REPO_ROOT/cmd/" "$REPO_ROOT/internal/" "$REPO_ROOT/configs/" \
+    "$REPO_ROOT/deploy/" "$REPO_ROOT/scripts/" 2>/dev/null || true)
+  if [ -n "$live_refs" ]; then
+    record_fail "retired observation forwarder returned in live surfaces: $live_refs"
+    return 1
+  fi
+}
+
 test_diff_is_additive_only_under_budget() {
   # The SDD review guard is 400 changed lines for a single PR, but
   # local-docker-qa has been retroactively scoped under the same
@@ -758,7 +724,6 @@ main() {
   run_test test_compose_publishes_only_loopback_8080
   run_test test_compose_entrypoint_overrides_searxng_url
   run_test test_compose_entrypoint_passes_auth_key
-  run_test test_compose_entrypoint_passes_memory_url_empty
   run_test test_compose_uses_existing_dockerfile_image_path
   run_test test_searxng_settings_exists
   run_test test_searxng_settings_empty_engine_list
@@ -781,7 +746,6 @@ main() {
   run_test test_qa_smoke_asserts_twenty_eight_tools
   run_test test_qa_smoke_probes_search_web_empty_uncached
   run_test test_qa_smoke_sends_authorization_bearer
-  run_test test_qa_smoke_canary_checks_no_memory_egress
 
   run_test test_makefile_phony_appended
   run_test test_makefile_qa_targets_appended
@@ -791,6 +755,7 @@ main() {
   run_test test_readme_has_canonical_license_section
 
   run_test test_boundary_grep_production_paths_clean
+  run_test test_retired_observation_forwarder_stays_absent
   run_test test_diff_is_additive_only_under_budget
 
   printf '\n%d passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"

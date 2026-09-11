@@ -14,7 +14,6 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
-	"github.com/mdesantis1984/SourceRudder/internal/memory"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
@@ -64,7 +63,7 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	// every request below carries X-Api-Key to reach the handler.
 	authVal := auth.NewValidator("test-key-e2e")
 
-	s := NewServer(cm, search.NewPlanner(), "http", ":0", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), authVal, met, cache.NewHistoryService(10), memory.NewClient("", ""))
+	s := NewServer(cm, search.NewPlanner(), "http", ":0", searxng.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), authVal, met, cache.NewHistoryService(10))
 
 	// 3. The actual production HTTP boundary. s.Handler() is the same
 	// chain HTTPTransport.Start serves on a real port; wrapping it in

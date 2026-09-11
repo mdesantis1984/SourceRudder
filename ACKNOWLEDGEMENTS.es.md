@@ -9,7 +9,6 @@ SourceRudder agradece a las comunidades y ecosistemas de código abierto que hac
 - [SearXNG](https://searxng.org/) por las capacidades de metabúsqueda.
 - [GitHub](https://github.com/) y el ecosistema público de desarrolladores que permite investigar código e issues.
 - Los ecosistemas de paquetes, registros, documentación, investigación académica, comunidad y medios a los que acceden los conectores del proyecto.
-- La integración opcional con [IA_Recuerdo](https://github.com/mdesantis1984/IA_Recuerdo).
 
 Estos reconocimientos son créditos, no un respaldo ni una declaración de afiliación. Las dependencias y los servicios externos conservan sus propios términos y licencias.
 
