@@ -2,9 +2,8 @@
 
 [English](MIGRATION-TO-2.0.md) | [Español](MIGRATION-TO-2.0.es.md)
 
-SourceRudder 2.0.0 is a pre-release and has not been published yet. Use this
-guide to prepare an IA_Buscar 1.x deployment; do not treat it as a published
-release announcement.
+SourceRudder 2.0.0 is the first public SourceRudder release. Use this guide to
+upgrade an IA_Buscar 1.x deployment safely.
 
 ## Breaking identities
 
@@ -23,8 +22,8 @@ release announcement.
 
 Update client launch commands, Compose overrides, systemd unit references,
 Kubernetes names, secret keys, monitoring labels, and the MCP resource URI.
-Pin a released image digest; `<digest>` is intentionally a placeholder until
-2.0.0 is published.
+Replace `<digest>` with the immutable image digest published in the 2.0.0
+release metadata.
 
 ## Unchanged wire contracts
 
@@ -67,12 +66,10 @@ After clients hardcode the new resource URI or depend on SourceRudder service
 names, rollback requires reverting those configurations too. MCP tool payloads
 and strategy IDs do not themselves require a wire-format rollback.
 
-## License transition gate
+## License
 
-The root [LICENSE](LICENSE) remains MIT pending professional review of the
-proposed custom SourceRudder license. Do not represent the proposed license as
-approved, published, or effective. Prior IA_Buscar releases retain their MIT
-rights. Complete legal review and an explicit release decision before changing
-license text, distribution notices, or release metadata.
+SourceRudder 2.0.0 and prior IA_Buscar releases are distributed under the
+[MIT License](LICENSE). Recipients may continue using every MIT-licensed copy
+under those terms; any future license change can apply only prospectively.
 
 See the [README](README.md) for local operation and QA guidance.

@@ -6,7 +6,7 @@
 
 | Version line | Status |
 |---|---|
-| SourceRudder 2.0 | Unreleased development line; security fixes are evaluated against current `main`. |
+| SourceRudder 2.0 | Current release line; security fixes are evaluated against the latest 2.0 release and current `main`. |
 | Historical 1.x releases | Historical only; they receive no automatic security support. |
 
 Forks, modified deployments, and unpinned snapshots are outside automatic support.

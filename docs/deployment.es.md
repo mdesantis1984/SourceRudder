@@ -46,6 +46,6 @@ un compromiso de root.
 - Registre la revisión de código aprobada y el digest inmutable de imagen antes de una actualización.
 - Verifique salud, inicialización MCP, listado de herramientas y llamadas representativas a proveedores después de un cambio.
 - Revierta restaurando la revisión o digest conocido como bueno. Para systemd, restaure juntos el binario, el `BINARY_SHA256` propiedad de root, la unidad renderizada, `VERSION` e `IMAGE`.
-- Proteja el entorno GitHub `release` con revisores obligatorios. Configure sus secretos de aprobación legal sólo después de revisar profesionalmente el registro legal confirmado y la licencia activada, y de verificar sus hashes.
+- Proteja el entorno GitHub `release` con una política de despliegue limitada a tags de release aprobados. Mantenga los permisos de paquetes y releases acotados al job del workflow.
 
 Para la configuración exacta de runtime y comandos de recuperación, consulte los artefactos de despliegue y la documentación de operaciones. Esta guía no implica ningún release ni despliegue.

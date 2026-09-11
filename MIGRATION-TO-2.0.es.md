@@ -2,9 +2,8 @@
 
 [English](MIGRATION-TO-2.0.md) | [Español](MIGRATION-TO-2.0.es.md)
 
-SourceRudder 2.0.0 es una pre-release y todavía no fue publicada. Esta guía
-prepara un despliegue de IA_Buscar 1.x; no debe interpretarse como un anuncio de
-una release publicada.
+SourceRudder 2.0.0 es el primer release público de SourceRudder. Esta guía
+permite actualizar un despliegue IA_Buscar 1.x de forma segura.
 
 ## Identidades incompatibles
 
@@ -23,8 +22,8 @@ una release publicada.
 
 Actualice comandos de inicio de clientes, overrides de Compose, referencias de
 unidades systemd, nombres de Kubernetes, claves de secretos, etiquetas de
-monitoring y la URI del recurso MCP. Use una imagen con digest de una release;
-`<digest>` es un placeholder intencional hasta que 2.0.0 se publique.
+monitoring y la URI del recurso MCP. Reemplace `<digest>` con el digest inmutable
+publicado en los metadatos del release 2.0.0.
 
 ## Contratos wire sin cambios
 
@@ -69,13 +68,11 @@ los nombres de servicio SourceRudder, el rollback exige revertir también esas
 configuraciones. Los payloads MCP y los strategy IDs no requieren rollback de
 formato wire.
 
-## Puerta de transición de licencia
+## Licencia
 
-La [LICENSE](LICENSE) raíz sigue siendo MIT mientras se espera la revisión
-profesional de la licencia SourceRudder personalizada propuesta. No presente la
-licencia propuesta como aprobada, publicada ni efectiva. Las releases previas de
-IA_Buscar conservan sus derechos MIT. Complete una revisión legal y una decisión
-explícita de release antes de cambiar texto de licencia, avisos de distribución
-y metadatos de release.
+SourceRudder 2.0.0 y las releases previas de IA_Buscar se distribuyen bajo la
+[Licencia MIT](LICENSE). Cada receptor puede seguir usando las copias recibidas
+bajo esos términos; cualquier cambio futuro de licencia solo puede aplicarse de
+manera prospectiva.
 
 Consulte el [README](README.es.md) para la operación local y la guía de QA.

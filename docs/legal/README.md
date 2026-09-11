@@ -1,31 +1,18 @@
-# SourceRudder License Review Gate
+# SourceRudder Licensing
 
 [English](README.md) | [Español](README.es.md)
 
-SourceRudder 2.0.0 is unreleased. The root `LICENSE` remains MIT, and no custom
-license is active or represented as legally approved.
+SourceRudder 2.0.0 is distributed under the repository's root [MIT License](../../LICENSE).
+The license permits commercial and non-commercial use, copying, modification,
+distribution, sublicensing, and sale subject to preserving its copyright and
+permission notice.
 
-The release workflow requires independent evidence after professional legal
-review. This technical gate does not determine legal sufficiency; it prevents a
-release from proceeding without a review record that matches the exact license
-bytes being distributed.
+## Release verification
 
-## Activation procedure
+The release-readiness gate binds 2.0.0 to the exact approved `LICENSE` bytes and
+fails if they change. This is a technical integrity check, not legal advice.
 
-1. Have qualified legal counsel review the proposed license, attribution terms,
-   compatibility implications, governing law, and intended distribution model.
-2. Apply counsel-approved text to the root `LICENSE`, including
-   `SPDX-License-Identifier: LicenseRef-SourceRudder-Commercial-Attribution-1.0`.
-3. Copy `source-rudder-license-review.example.json` to
-   `source-rudder-license-review.json` and have the reviewer complete every
-   field, including professional identification and engagement/opinion
-   references. Set `license_sha256` to the lowercase SHA-256 of the final
-   `LICENSE`.
-4. Commit the license and review record through normal protected review.
-5. Configure a protected GitHub `release` environment with required reviewers.
-   Store the immutable approval reference as
-   `SOURCERUDDER_LEGAL_APPROVAL_REF` and the committed review-record SHA-256 as
-   `SOURCERUDDER_LEGAL_REVIEW_SHA256` environment secrets.
-6. Run the full release-readiness gate. Do not bypass a failed legal check.
-
-Historical IA_Buscar copies retain all rights previously granted under MIT.
+Historical IA_Buscar copies retain all rights already granted under MIT. Those
+grants cannot be withdrawn from recipients. Any future licensing change must be
+explicit, reviewed through the protected contribution workflow, and applied
+only prospectively.

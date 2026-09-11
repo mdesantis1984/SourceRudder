@@ -18,8 +18,6 @@ jobs:
     environment: release
     env:
       IMAGE: ghcr.io/mdesantis1984/sourcerudder
-      SOURCERUDDER_LEGAL_APPROVAL_REF: ${{ secrets.SOURCERUDDER_LEGAL_APPROVAL_REF }}
-      SOURCERUDDER_LEGAL_REVIEW_SHA256: ${{ secrets.SOURCERUDDER_LEGAL_REVIEW_SHA256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

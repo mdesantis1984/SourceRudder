@@ -27,10 +27,10 @@ PAIRS = (
 
 
 class DocumentationTests(unittest.TestCase):
-    def test_readmes_are_product_led_without_hiding_preview_status(self):
+    def test_readmes_are_product_led_and_show_release_status(self):
         expectations = {
-            "README.md": ("## Why SourceRudder", "## Try it locally", "private preview"),
-            "README.es.md": ("## Por qué SourceRudder", "## Pruébalo localmente", "preview privada"),
+            "README.md": ("## Why SourceRudder", "## Try it locally", "first public release"),
+            "README.es.md": ("## Por qué SourceRudder", "## Pruébalo localmente", "primer release público"),
         }
         for relative, headings in expectations.items():
             with self.subTest(document=relative):

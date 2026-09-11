@@ -15,4 +15,4 @@ These acknowledgements are credits, not an endorsement or a statement of affilia
 
 ## License status
 
-The SourceRudder 2.0 license transition remains gated by professional review. No draft license wording is presented here as approved, mandatory attribution, or a final grant of rights. Consult the repository's active licensing materials and the reviewed release record before relying on licensing terms.
+SourceRudder 2.0.0 and the historical IA_Buscar line are distributed under the [MIT License](LICENSE). Existing MIT grants remain valid for every recipient of those copies.

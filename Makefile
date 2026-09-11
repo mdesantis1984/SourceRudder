@@ -67,9 +67,8 @@ release-image:
 release-gate:
 	bash scripts/release-gate.sh
 
-# Static migration checks run in ordinary CI. A tagged release additionally
-# requires repository cutover, an activated reviewed license, and a legal
-# approval reference.
+# Static identity and approved MIT-license checks run in ordinary CI. A tagged
+# release additionally requires a clean worktree and the exact tag at HEAD.
 release-readiness:
 	bash scripts/release-readiness.sh --identity-only
 

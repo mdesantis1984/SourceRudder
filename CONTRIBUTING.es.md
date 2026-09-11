@@ -83,4 +83,4 @@ Espere a CI y al release gate antes de solicitar merge. Este repositorio documen
 
 Conserve exactamente los nombres de herramientas MCP, campos JSON, flags, variables de entorno y demás contratos de red implementados. En particular, use `sourcerudder` y `SOURCERUDDER_AUTH_KEY`; no cambie contratos externos en la documentación.
 
-El [LICENSE](LICENSE) raíz continúa siendo MIT pendiente de revisión legal profesional. No consideres ese estado pendiente como aprobación de un borrador ni de un cambio de licencia.
+SourceRudder y sus contribuciones aceptadas se distribuyen bajo la [Licencia MIT](LICENSE) del repositorio. Cualquier cambio futuro de licencia debe ser explícito y prospectivo.

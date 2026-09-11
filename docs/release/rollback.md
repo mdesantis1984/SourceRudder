@@ -2,8 +2,8 @@
 
 [English](rollback.md) | [Español](rollback.es.md)
 
-This runbook applies to SourceRudder 2.0 releases after the repository and
-license gates have been completed. SourceRudder 2.0.0 is not published yet.
+This runbook applies to SourceRudder 2.0 releases after repository and release
+gates have completed.
 
 ## Invariants
 

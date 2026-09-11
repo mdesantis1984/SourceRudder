@@ -4,7 +4,7 @@
 
 Este archivo documenta los cambios relevantes de SourceRudder.
 
-## [2.0.0] - No publicado
+## [2.0.0] - 2026-09-11
 
 ### Cambios de identidad incompatibles
 
@@ -32,9 +32,8 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 - Se agregó un workflow de release con gates para archivos multiplataforma,
   checksums, attestations de procedencia, imágenes GHCR multiplataforma, SBOM y
   artefactos de despliegue inmutables.
-- Se agregó un gate explícito de revisión legal. SourceRudder 2.0.0 no puede
-  publicarse mientras la licencia raíz siga siendo MIT o falte una referencia
-  de aprobación legal.
+- Se confirmó MIT como licencia activa de SourceRudder 2.0.0 y se hizo que
+  release readiness verifique la licencia aprobada exacta antes de publicar.
 
 ### Documentación
 

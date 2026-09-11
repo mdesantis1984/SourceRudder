@@ -11,7 +11,7 @@
   <img alt="Go 1.26.6" src="https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go&amp;logoColor=white">
   <img alt="28 herramientas MCP" src="https://img.shields.io/badge/herramientas_MCP-28-2563EB">
   <img alt="16 herramientas de búsqueda" src="https://img.shields.io/badge/búsquedas-16-0F766E">
-  <a href="https://github.com/mdesantis1984/SourceRudder/releases"><img alt="Preview privada" src="https://img.shields.io/badge/release-preview_privada-7C3AED"></a>
+  <a href="https://github.com/mdesantis1984/SourceRudder/releases/tag/v2.0.0"><img alt="Release 2.0.0" src="https://img.shields.io/badge/release-v2.0.0-7C3AED"></a>
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-334155"></a>
 </p>
 
@@ -29,10 +29,10 @@ recorrido de investigación a un único proveedor de respuestas. Reúne búsqued
 recuperación segura, síntesis local, caché, historial y conocimiento curado por
 el operador detrás de una interfaz estable.
 
-> **Preview privada:** SourceRudder 2.0.0 está implementado y verificado, pero
-> todavía no tiene un release público. El repositorio permanece privado mientras
-> finalizan las revisiones de marca y licencia. No se afirman adopción, clientes
-> ni una red completamente privada.
+> **SourceRudder 2.0.0:** el primer release público incluye el producto
+> renombrado, contratos MCP estables, artefactos de despliegue reforzados y una
+> cadena de suministro verificable. No se afirman adopción, clientes ni una red
+> completamente privada.
 
 ## Por qué SourceRudder
 
@@ -145,7 +145,7 @@ nunca es `null`.
 | Recuperación | Validación de URL, controles de redirects/DNS, extracción, reintentos y estados explícitos de bloqueo o fallo. |
 | Investigación local | Corpus JSON inmutable y curado por el operador, sin crawling ni fallback de red. |
 | Operaciones | Métricas Prometheus, health endpoint, Docker Compose, Kubernetes y systemd. |
-| Distribución | Preview privada 2.0.0; archivos finales e imagen GHCR todavía bloqueados por los gates. |
+| Distribución | Archivos públicos 2.0.0 e imagen GHCR con checksums, SBOM, procedencia y attestations. |
 
 Los conectores incluyen SearXNG, GitHub, Stack Overflow, npm, NuGet, PyPI,
 Docker Hub y el registro de documentación oficial. Los strategy IDs permanecen
@@ -213,10 +213,10 @@ desarrollo; nunca incluyas credenciales de producción.
 
 ## Licencia y estado del release
 
-La [LICENSE](LICENSE) raíz sigue siendo MIT mientras se espera la revisión
-profesional de la licencia SourceRudder propuesta. No se afirma aprobación legal.
-El draft privado de 2.0.0 es preparación, no publicación; las releases históricas
-de IA_Buscar conservan sus derechos MIT.
+SourceRudder 2.0.0 y la línea histórica IA_Buscar se distribuyen bajo la
+[Licencia MIT](LICENSE). MIT permite uso comercial y no comercial, modificación,
+redistribución, sublicenciamiento y venta, con la condición de conservar el aviso
+de copyright y el aviso de permiso.
 
 ---
 
