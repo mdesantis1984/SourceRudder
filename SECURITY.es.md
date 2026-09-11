@@ -15,7 +15,12 @@ Los forks, despliegues modificados y snapshots sin digest quedan fuera del sopor
 
 No divulgues vulnerabilidades explotables en issues, discusiones, pull requests ni otros canales públicos.
 
-Envíe el reporte mediante el [GitHub Security Advisory privado de SourceRudder](https://github.com/mdesantis1984/SourceRudder/security/advisories/new). No divulgue la vulnerabilidad en un issue, discussion, pull request ni otro canal público.
+Mientras el repositorio sea privado, envíe el reporte directamente a un
+maintainer mediante el canal privado de colaboración utilizado para otorgar
+acceso. No divulgue la vulnerabilidad en un issue, discussion, pull request ni
+otro canal compartido. Antes de habilitar el acceso público, los maintainers
+deben configurar el reporte privado de vulnerabilidades de GitHub y reemplazar
+esta vía transitoria.
 
 Incluya versión, commit o imagen afectados; pasos seguros de reproducción; impacto observado; logs redactados; y mitigaciones conocidas. No incluya secretos. La prioridad de respuesta depende del impacto, la explotabilidad y la disponibilidad de una mitigación segura.
 

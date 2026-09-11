@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/mdesantis1984/SourceRudder/security/advisories/new
-    about: Report security vulnerabilities privately. Do not open a public issue.
+    url: https://github.com/mdesantis1984/SourceRudder/blob/main/SECURITY.md
+    about: Read the private reporting instructions. Do not open an issue.
