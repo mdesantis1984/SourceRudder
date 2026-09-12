@@ -27,6 +27,7 @@ binary="$(awk -F= '$1 == "BINARY" { print $2 }' Makefile)"
 [[ ! -e cmd/ia-buscar ]] || fail "legacy cmd/ia-buscar directory still exists"
 [[ -f deploy/systemd/sourcerudder.service ]] || fail "sourcerudder.service is missing"
 [[ ! -e deploy/systemd/ia-buscar.service ]] || fail "legacy systemd unit still exists"
+[[ -x scripts/build-release-archives.sh ]] || fail "release archive builder is missing or not executable"
 
 expect_fixed 'serverName    = "sourcerudder"' internal/mcp/server.go
 expect_fixed "serverVersion = \"$version\"" internal/mcp/server.go
@@ -41,6 +42,7 @@ expect_fixed 'SourceRudder/<VERSION>' deploy/kubernetes/deployment.yaml
 expect_fixed 'MemorySwapMax=512M' deploy/systemd/sourcerudder.service
 expect_fixed 'sha256sum -c /etc/sourcerudder/release/BINARY_SHA256' deploy/systemd/sourcerudder.service
 expect_fixed 'SourceRudder/@VERSION@' deploy/systemd/sourcerudder.service
+expect_fixed 'bash scripts/build-release-archives.sh' .github/workflows/release.yml
 
 if grep -RIE 'IA_Buscar|IA_BUSCAR|ia-buscar|github\.com/thiscloud' \
   cmd internal pkg deploy scripts tests configs .github/workflows \

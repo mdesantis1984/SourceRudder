@@ -4,7 +4,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="$(mktemp -d)"
-trap 'rm -rf "$DIST_DIR"' EXIT
+ARCHIVES_ONE="$(mktemp -d)"
+ARCHIVES_TWO="$(mktemp -d)"
+trap 'rm -rf "$DIST_DIR" "$ARCHIVES_ONE" "$ARCHIVES_TWO"' EXIT
 
 DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 VERSION="$(awk -F= '$1 == "VERSION" { print $2 }' "$ROOT_DIR/Makefile")"
@@ -29,6 +31,7 @@ grep -qF 'type:bug' "$RELEASE_CONFIG"
 grep -qF 'isDraft' "$RELEASE_WORKFLOW"
 grep -qF -- '--draft=false' "$RELEASE_WORKFLOW"
 grep -qF 'immutable assets remain unchanged' "$RELEASE_WORKFLOW"
+grep -qF 'bash scripts/build-release-archives.sh' "$RELEASE_WORKFLOW"
 grep -qF "# SourceRudder $VERSION" "$RELEASE_NOTES"
 grep -qF 'MIT License' "$RELEASE_NOTES"
 grep -qF 'Licencia MIT' "$RELEASE_NOTES"
@@ -38,5 +41,14 @@ if grep -Eq '^[[:space:]]*image:[[:space:]]*<IMAGE>' "$DIST_DIR/sourcerudder-kub
   printf 'release assets contain unresolved placeholders\n' >&2
   exit 1
 fi
+
+TARGETS="linux/amd64 windows/amd64" SOURCE_DATE_EPOCH=1700000000 DIST_DIR="$ARCHIVES_ONE" \
+  bash "$ROOT_DIR/scripts/build-release-archives.sh"
+TARGETS="linux/amd64 windows/amd64" SOURCE_DATE_EPOCH=1700000000 DIST_DIR="$ARCHIVES_TWO" \
+  bash "$ROOT_DIR/scripts/build-release-archives.sh"
+cmp "$ARCHIVES_ONE/sourcerudder_${VERSION}_linux_amd64.tar.gz" \
+  "$ARCHIVES_TWO/sourcerudder_${VERSION}_linux_amd64.tar.gz"
+cmp "$ARCHIVES_ONE/sourcerudder_${VERSION}_windows_amd64.zip" \
+  "$ARCHIVES_TWO/sourcerudder_${VERSION}_windows_amd64.zip"
 
 printf 'release_assets_test: PASS\n'

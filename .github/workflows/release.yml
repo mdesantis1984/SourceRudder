@@ -34,6 +34,8 @@ jobs:
           python3 -m unittest discover -s scripts/quality -p 'test_*.py' -v
           bash tests/k8s/k8s_deployment_test.sh
           bash tests/qa/qa_scripts_test.sh
+          bash tests/release/release_assets_test.sh
+          bash tests/release/release_readiness_test.sh
       - name: Resolve release version
         id: version
         run: |
@@ -42,28 +44,7 @@ jobs:
       - name: Build release archives
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            goos="${target%/*}"
-            goarch="${target#*/}"
-            name="sourcerudder_${VERSION}_${goos}_${goarch}"
-            mkdir -p "dist/$name"
-            output="dist/$name/sourcerudder"
-            if [ "$goos" = windows ]; then output="${output}.exe"; fi
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$output" ./cmd/sourcerudder
-            cp LICENSE README.md "dist/$name/"
-            if [ "$goos" = linux ]; then
-              binary_hash="$(sha256sum "$output" | awk '{print $1}')"
-              printf '%s  /opt/sourcerudder/bin/sourcerudder\n' "$binary_hash" > "dist/$name/BINARY_SHA256"
-            fi
-            if [ "$goos" = windows ]; then
-              (cd dist && zip -qr "${name}.zip" "$name")
-            else
-              tar -C dist -czf "dist/${name}.tar.gz" "$name"
-            fi
-            rm -rf "dist/$name"
-          done
+        run: bash scripts/build-release-archives.sh
       - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
