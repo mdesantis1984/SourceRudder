@@ -22,6 +22,8 @@ All notable SourceRudder changes are documented here.
 
 - Wired HTTP request counters and per-source search latency histograms into the
   production MCP request path so `/metrics` reflects real traffic.
+- Bound the distributable systemd unit to loopback by default so dual-stack
+  hosts do not expose the unauthenticated health endpoint on every interface.
 
 ### Distribution and documentation
 

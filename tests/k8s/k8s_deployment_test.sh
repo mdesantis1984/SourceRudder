@@ -7,8 +7,8 @@
 # failing assertion(s) and exits non-zero.
 #
 # Background: the application listens on `:8080` (see cmd/sourcerudder/main.go
-# `-http-addr` flag default, the Dockerfile `EXPOSE 8080`, and the systemd
-# unit's `-http-addr :8080`). The previous deployment manifest declared
+# `-http-addr` flag default and the Dockerfile `EXPOSE 8080`; the systemd unit
+# binds the same port on loopback). The previous deployment manifest declared
 # `containerPort: 5000` plus matching probe ports and Service targetPort,
 # which would have caused Kubernetes to direct liveness/readiness probes
 # at a port the container never bound. The runtime guard for that
