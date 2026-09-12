@@ -20,6 +20,7 @@ make --no-print-directory -C "$ROOT_DIR" release-image \
 
 grep -qF "image: $IMAGE" "$DIST_DIR/sourcerudder-kubernetes.yaml"
 grep -qF "$IMAGE" "$DIST_DIR/sourcerudder.service"
+grep -qF -- '-http-addr 127.0.0.1:8080' "$DIST_DIR/sourcerudder.service"
 grep -qxF "$VERSION" "$DIST_DIR/VERSION"
 grep -qxF "$IMAGE" "$DIST_DIR/IMAGE"
 grep -qF 'image: <IMAGE>' "$ROOT_DIR/deploy/kubernetes/deployment.yaml"
