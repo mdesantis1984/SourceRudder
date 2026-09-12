@@ -76,7 +76,7 @@ func buildFetchConfig(flagTimeoutMs int) fetch.Config {
 		timeoutMs = flagTimeoutMs
 	}
 	return fetch.Config{
-		UserAgent:    envDefault("FETCH_USER_AGENT", "SourceRudder/2.0.0 (anonymous-only)"),
+		UserAgent:    envDefault("FETCH_USER_AGENT", "SourceRudder/3.0.0 (anonymous-only)"),
 		TimeoutMs:    timeoutMs,
 		MaxRedirects: envInt("FETCH_MAX_REDIRECTS", 5),
 		MaxAttempts:  envInt("FETCH_MAX_ATTEMPTS", 3),

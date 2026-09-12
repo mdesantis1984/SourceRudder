@@ -39,7 +39,7 @@ func buildResourcesTestServer(t *testing.T) *Server {
 func TestResourcesListAdvertisesAgentGuide(t *testing.T) {
 	s := buildResourcesTestServer(t)
 	if AgentGuideURI != "agent-guide://sourcerudder/wire-contract" {
-		t.Fatalf("AgentGuideURI = %q; want SourceRudder 2.0 URI", AgentGuideURI)
+		t.Fatalf("AgentGuideURI = %q; want SourceRudder URI", AgentGuideURI)
 	}
 
 	res, err := s.HandleResourcesList(context.Background(), nil)

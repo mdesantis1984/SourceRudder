@@ -6,6 +6,10 @@ All notable SourceRudder changes are documented here.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-12
+
+### Breaking changes
+
 ### Removed
 
 - Retired the optional IA_Recuerdo observation forwarder, including its CLI
@@ -13,6 +17,18 @@ All notable SourceRudder changes are documented here.
   outbound requests. The obsolete integration was removed so any future
   persistence capability can be designed deliberately; no replacement is part
   of this change. The 28 MCP tools and in-process search history are unchanged.
+
+### Fixed
+
+- Wired HTTP request counters and per-source search latency histograms into the
+  production MCP request path so `/metrics` reflects real traffic.
+
+### Distribution and documentation
+
+- Added the complete SourceRudder visual identity and indigo campaign asset set.
+- Made release automation derive artifact, image, and deployment versions from
+  the reviewed `Makefile` version while release readiness rejects mismatched
+  tags and missing release notes.
 
 ## [2.0.0] - 2026-09-11
 

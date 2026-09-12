@@ -156,7 +156,7 @@ func (c *PyPIConnector) searchByPrefix(ctx context.Context, query string, maxRes
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/html")
-	req.Header.Set("User-Agent", "SourceRudder/2.0.0")
+	req.Header.Set("User-Agent", "SourceRudder/3.0.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -59,7 +59,7 @@ spec:
             - name: FETCH_TIMEOUT_MS
               value: "30000"
             - name: FETCH_USER_AGENT
-              value: "SourceRudder/2.0.0"
+              value: "SourceRudder/<VERSION>"
             - name: FETCH_MAX_REDIRECTS
               value: "5"
             - name: FETCH_MAX_ATTEMPTS

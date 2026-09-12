@@ -2,13 +2,13 @@
 
 [English](rollback.md) | [Español](rollback.es.md)
 
-Este procedimiento aplica a releases de SourceRudder 2.0 después de completar
+Este procedimiento aplica a releases de SourceRudder después de completar
 los gates del repositorio y del release.
 
 ## Invariantes
 
 - Revierta a un commit revisado y a un digest de imagen inmutable, nunca a una
-  etiqueta mutable como `latest` o `2.0.0` sin digest.
+  etiqueta mutable como `latest` o una etiqueta de versión sin digest.
 - Conserve el binario, digest, configuración y nombres de secretos anteriores
   hasta comprobar que el reemplazo está saludable.
 - No elimine volúmenes, cachés ni artefactos de reversión durante un incidente.
@@ -19,10 +19,10 @@ los gates del repositorio y del release.
 
 1. Identifique el commit, tag de release y digest de imagen buenos anteriores.
 2. Verifique que la referencia tenga el formato
-   `ghcr.io/mdesantis1984/sourcerudder:2.0.0@sha256:<digest>`.
+   `ghcr.io/mdesantis1984/sourcerudder:<version>@sha256:<digest>`.
 3. Ejecute build, vet, tests, race, contratos de despliegue y validación Compose
    sobre el commit de reversión.
-4. Confirme que `SOURCERUDDER_AUTH_KEY` y los secretos opcionales sigan
+4. Confirme que `SOURCERUDDER_AUTH_KEY` y los secretos del despliegue sigan
    disponibles. Nunca copie secretos a Git ni a las notas del incidente.
 
 ## Puente de Incidente en Kubernetes

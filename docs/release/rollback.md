@@ -2,13 +2,13 @@
 
 [English](rollback.md) | [Español](rollback.es.md)
 
-This runbook applies to SourceRudder 2.0 releases after repository and release
+This runbook applies to SourceRudder releases after repository and release
 gates have completed.
 
 ## Invariants
 
 - Roll back to a reviewed commit and an immutable image digest, never a mutable
-  tag such as `latest` or `2.0.0` alone.
+  tag such as `latest` or a version tag alone.
 - Keep the previous binary, image digest, configuration, and secret names until
   the replacement is healthy.
 - Do not delete volumes, caches, or rollback artifacts during incident response.
@@ -18,10 +18,10 @@ gates have completed.
 
 1. Identify the previous good commit, release tag, and image digest.
 2. Verify the image reference has the form
-   `ghcr.io/mdesantis1984/sourcerudder:2.0.0@sha256:<digest>`.
+   `ghcr.io/mdesantis1984/sourcerudder:<version>@sha256:<digest>`.
 3. Run the normal build, vet, test, race, deployment-contract, and Compose
    validation checks on the rollback commit.
-4. Confirm the active `SOURCERUDDER_AUTH_KEY` and optional integration secrets
+4. Confirm the active `SOURCERUDDER_AUTH_KEY` and deployment secrets
    remain available. Never copy secrets into Git or incident notes.
 
 ## Kubernetes Incident Bridge

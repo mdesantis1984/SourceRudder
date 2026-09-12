@@ -37,7 +37,7 @@ import (
 )
 
 // Default User-Agent used by callers that do not provide a Config.
-const defaultUserAgent = "SourceRudder/2.0.0"
+const defaultUserAgent = "SourceRudder/3.0.0"
 
 const (
 	maxFetchResponseBytes = 4 << 20
