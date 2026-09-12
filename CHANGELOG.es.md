@@ -6,6 +6,10 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ## [Sin publicar]
 
+## [3.0.0] - 2026-09-12
+
+### Cambios incompatibles
+
 ### Eliminado
 
 - Se retiró el envío opcional de observaciones a IA_Recuerdo, incluidos sus
@@ -14,6 +18,19 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   futura capacidad de persistencia pueda diseñarse de forma deliberada; este
   cambio no incluye un reemplazo. Las 28 tools MCP y el historial de búsquedas
   en proceso permanecen sin cambios.
+
+### Corregido
+
+- Se conectaron los contadores de requests HTTP y los histogramas de latencia
+  por fuente a la ruta MCP de producción para que `/metrics` refleje tráfico real.
+
+### Distribución y documentación
+
+- Se incorporaron la identidad visual completa de SourceRudder y el conjunto de
+  recursos de campaña índigo.
+- La automatización de release ahora deriva las versiones de archivos, imágenes
+  y despliegues desde la versión revisada en `Makefile`; release readiness rechaza
+  tags inconsistentes y notas de release ausentes.
 
 ## [2.0.0] - 2026-09-11
 

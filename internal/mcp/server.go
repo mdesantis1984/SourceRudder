@@ -22,7 +22,7 @@ import (
 
 const (
 	serverName    = "sourcerudder"
-	serverVersion = "2.0.0"
+	serverVersion = "3.0.0"
 )
 
 const maxRPCRequestBytes = 1 << 20
