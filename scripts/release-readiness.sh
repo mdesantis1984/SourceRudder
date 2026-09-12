@@ -41,6 +41,7 @@ expect_fixed 'image: <IMAGE>' deploy/kubernetes/deployment.yaml
 expect_fixed 'SourceRudder/<VERSION>' deploy/kubernetes/deployment.yaml
 expect_fixed 'MemorySwapMax=512M' deploy/systemd/sourcerudder.service
 expect_fixed 'sha256sum -c /etc/sourcerudder/release/BINARY_SHA256' deploy/systemd/sourcerudder.service
+expect_fixed '-http-addr 127.0.0.1:8080' deploy/systemd/sourcerudder.service
 expect_fixed 'SourceRudder/@VERSION@' deploy/systemd/sourcerudder.service
 expect_fixed 'bash scripts/build-release-archives.sh' .github/workflows/release.yml
 

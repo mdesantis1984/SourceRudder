@@ -18,7 +18,7 @@ EnvironmentFile=/etc/sourcerudder/sourcerudder.env
 ExecStartPre=/bin/sh -c '/usr/bin/test -f /opt/sourcerudder/VERSION && /usr/bin/test -f /opt/sourcerudder/IMAGE && /usr/bin/grep -qxF @VERSION@ /opt/sourcerudder/VERSION || (echo "VERSION mismatch: /opt/sourcerudder/VERSION does not contain expected token"; exit 1)'
 ExecStartPre=/bin/sh -c '/usr/bin/grep -qxF @IMAGE@ /opt/sourcerudder/IMAGE || (echo "IMAGE mismatch: /opt/sourcerudder/IMAGE does not contain expected token"; exit 1)'
 ExecStartPre=/bin/sh -c '/usr/bin/test -f /etc/sourcerudder/release/BINARY_SHA256 && /usr/bin/sha256sum -c /etc/sourcerudder/release/BINARY_SHA256 || (echo "binary checksum mismatch"; exit 1)'
-ExecStart=/opt/sourcerudder/bin/sourcerudder -transport http -http-addr :8080 -searxng-url http://localhost:8888
+ExecStart=/opt/sourcerudder/bin/sourcerudder -transport http -http-addr 127.0.0.1:8080 -searxng-url http://localhost:8888
 # This unit is the host-managed always-on MCP endpoint.
 Restart=always
 RestartSec=5

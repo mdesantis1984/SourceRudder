@@ -23,6 +23,9 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 - Se conectaron los contadores de requests HTTP y los histogramas de latencia
   por fuente a la ruta MCP de producción para que `/metrics` refleje tráfico real.
+- La unidad systemd distribuible ahora se enlaza a loopback por defecto para que
+  hosts dual-stack no expongan el endpoint de salud sin autenticación en todas
+  las interfaces.
 
 ### Distribución y documentación
 

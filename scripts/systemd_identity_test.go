@@ -26,6 +26,23 @@ func renderSystemdUnit(t *testing.T, version, image string) string {
 	return rendered
 }
 
+func TestSystemdTemplateBindsHTTPToLoopback(t *testing.T) {
+	rendered := renderSystemdUnit(t, "3.0.0", "example.invalid/image@sha256:digest")
+	var execStart string
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.HasPrefix(line, "ExecStart=") {
+			execStart = line
+			break
+		}
+	}
+	if execStart == "" {
+		t.Fatal("rendered systemd unit has no ExecStart")
+	}
+	if !strings.Contains(execStart, "-http-addr 127.0.0.1:8080") {
+		t.Fatalf("systemd HTTP listener is not loopback-bound: %s", execStart)
+	}
+}
+
 // extractExecStartPre returns every ExecStartPre=... line in the
 // rendered systemd unit so identity assertions target the actual
 // pre-flight commands and not unrelated prose.
