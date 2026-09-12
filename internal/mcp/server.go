@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +66,30 @@ type Tool struct {
 	Description string
 	InputSchema map[string]interface{}
 	Handler     func(ctx context.Context, args json.RawMessage) (interface{}, error)
+}
+
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *metricsResponseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *metricsResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *metricsResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // NewServer wires an MCP server. met MUST be the same *observability.Metrics
@@ -139,7 +164,15 @@ func (s *Server) Handler() http.Handler {
 	// validator's middleware instance.
 	root.Handle("/mcp", protectedHandler)
 	root.Handle("/metrics", protectedHandler)
-	return root
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := &metricsResponseWriter{ResponseWriter: w}
+		root.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		s.met.RecordHTTPRequest(r.Method, r.URL.Path, fmt.Sprintf("%d", status))
+	})
 }
 
 func (s *Server) buildToolsRegistry() {
@@ -422,11 +455,10 @@ func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (i
 	for _, t := range s.toolsRegistry {
 		if t.Name == req.Name {
 			inputJSON, _ := json.Marshal(req.Arguments)
-			result, err := t.Handler(ctx, inputJSON)
+			result, err := s.invokeTool(ctx, t, inputJSON)
 			if err != nil {
 				return nil, err
 			}
-			s.met.IncrToolCall(t.Name)
 			return map[string]interface{}{
 				"content": []map[string]interface{}{
 					{"type": "text", "text": formatResult(result)},
@@ -435,6 +467,18 @@ func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (i
 		}
 	}
 	return nil, fmt.Errorf("tool not found: %s", req.Name)
+}
+
+func (s *Server) invokeTool(ctx context.Context, tool Tool, args json.RawMessage) (interface{}, error) {
+	started := time.Now()
+	result, err := tool.Handler(ctx, args)
+	if strings.HasPrefix(tool.Name, "search_") {
+		s.met.RecordSearchLatency(strings.TrimPrefix(tool.Name, "search_"), time.Since(started).Seconds())
+	}
+	if err == nil {
+		s.met.IncrToolCall(tool.Name)
+	}
+	return result, err
 }
 
 func formatResult(v interface{}) string {
@@ -472,14 +516,12 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Mcp-Session-Id", sid)
 	}
 	w.WriteHeader(http.StatusOK)
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return
-	}
 	if err := writePing(); err != nil {
 		return
 	}
-	flusher.Flush()
+	if err := controller.Flush(); err != nil {
+		return
+	}
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -490,7 +532,9 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 			if err := writePing(); err != nil {
 				return
 			}
-			flusher.Flush()
+			if err := controller.Flush(); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -630,7 +674,7 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 	for _, t := range s.toolsRegistry {
 		if t.Name == reqParams.Name {
 			inputJSON, _ := json.Marshal(reqParams.Arguments)
-			result, err := t.Handler(ctx, inputJSON)
+			result, err := s.invokeTool(ctx, t, inputJSON)
 			if err != nil {
 				return map[string]interface{}{
 					"jsonrpc": "2.0",
@@ -638,7 +682,6 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
 				}
 			}
-			s.met.IncrToolCall(t.Name)
 			return map[string]interface{}{
 				"jsonrpc": "2.0",
 				"id":      id,
