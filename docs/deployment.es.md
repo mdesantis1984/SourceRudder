@@ -1,8 +1,8 @@
 [English](deployment.md) | [Español](deployment.es.md)
 
-# Modelo de despliegue de SourceRudder 2.0
+# Modelo de despliegue de SourceRudder
 
-SourceRudder 2.0 está **sin publicar**. Este documento describe los artefactos de despliegue y las expectativas operativas; no autoriza ni realiza un despliegue.
+Este documento describe los artefactos de despliegue y las expectativas operativas de SourceRudder; no autoriza ni realiza un despliegue.
 
 ## Rutas de artefactos admitidas
 
@@ -30,7 +30,7 @@ attestation de procedencia de GitHub:
 
 ```bash
 sha256sum -c checksums.txt --ignore-missing
-gh attestation verify sourcerudder_2.0.0_linux_amd64.tar.gz \
+gh attestation verify sourcerudder_3.0.0_linux_amd64.tar.gz \
   --repo mdesantis1984/SourceRudder
 ```
 

@@ -2,14 +2,14 @@
 
 [English](README.md) | [Español](README.es.md)
 
-SourceRudder 2.0.0 se distribuye bajo la [Licencia MIT](../../LICENSE) raíz del
+Las releases de SourceRudder se distribuyen bajo la [Licencia MIT](../../LICENSE) raíz del
 repositorio. La licencia permite el uso comercial y no comercial, la copia, la
 modificación, la distribución, el sublicenciamiento y la venta, con la condición
 de conservar el aviso de copyright y el aviso de permiso.
 
 ## Verificación del release
 
-El gate de release readiness vincula 2.0.0 con los bytes exactos de la `LICENSE`
+El gate de release readiness vincula la versión actual de `Makefile` con los bytes exactos de la `LICENSE`
 aprobada y falla si cambian. Es un control técnico de integridad, no asesoramiento
 legal.
 

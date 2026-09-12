@@ -1,7 +1,7 @@
 .PHONY: build run test clean deps lint release-gate release-readiness
 
 BINARY=sourcerudder
-VERSION=2.0.0
+VERSION=3.0.0
 GO=go
 
 build:
@@ -32,13 +32,13 @@ fmt:
 # release-image renders the exact tagged image digest into separate deployment
 # assets so production references an immutable artifact while the templates
 # remain reusable and unchanged.
-# Operators MUST use this target (not a mutable tag like `:latest` or
-# `:2.0.0`) so a rollback resolves to a known, reviewed image. The
+# Operators MUST use this target (not a mutable tag like `:latest` or a version
+# tag without its digest) so a rollback resolves to a known, reviewed image. The
 # image reference and systemd identity placeholders are rendered into DIST_DIR.
 #
 # Usage:
 #   make release-image IMAGE_DIGEST=sha256:<64-hex-digest>
-#   # writes ghcr.io/mdesantis1984/sourcerudder:2.0.0@sha256:<digest>
+#   # writes ghcr.io/mdesantis1984/sourcerudder:$(VERSION)@sha256:<digest>
 #   # writes rendered deployment files plus VERSION and IMAGE into dist/
 RELEASE_SHA ?= $(shell git rev-parse HEAD)
 GHCR ?= ghcr.io/mdesantis1984
@@ -53,11 +53,11 @@ release-image:
 	@grep -qF '@IMAGE@' deploy/systemd/sourcerudder.service || { echo "release-image: systemd template has no @IMAGE@ placeholder" >&2; exit 1; }
 	@echo "release-image: SOURCE_SHA=$(RELEASE_SHA) IMAGE=$(RELEASE_IMAGE)"
 	@mkdir -p "$(DIST_DIR)"
-	@sed 's|image: <IMAGE>|image: $(RELEASE_IMAGE)|' deploy/kubernetes/deployment.yaml > "$(DIST_DIR)/sourcerudder-kubernetes.yaml"
+	@sed 's|image: <IMAGE>|image: $(RELEASE_IMAGE)|; s|<VERSION>|$(VERSION)|g' deploy/kubernetes/deployment.yaml > "$(DIST_DIR)/sourcerudder-kubernetes.yaml"
 	@sed 's|@VERSION@|$(VERSION)|g; s|@IMAGE@|$(RELEASE_IMAGE)|g' deploy/systemd/sourcerudder.service > "$(DIST_DIR)/sourcerudder.service"
 	@printf '%s\n' "$(VERSION)" > "$(DIST_DIR)/VERSION"
 	@printf '%s\n' "$(RELEASE_IMAGE)" > "$(DIST_DIR)/IMAGE"
-	@! grep -Eq '^[[:space:]]*image:[[:space:]]*<IMAGE>|@VERSION@|@IMAGE@' "$(DIST_DIR)/sourcerudder-kubernetes.yaml" "$(DIST_DIR)/sourcerudder.service" || { echo "release-image: unresolved release placeholder" >&2; exit 1; }
+	@! grep -Eq '^[[:space:]]*image:[[:space:]]*<IMAGE>|<VERSION>|@VERSION@|@IMAGE@' "$(DIST_DIR)/sourcerudder-kubernetes.yaml" "$(DIST_DIR)/sourcerudder.service" || { echo "release-image: unresolved release placeholder" >&2; exit 1; }
 	@echo "release-image: immutable deployment assets written to $(DIST_DIR)"
 
 # Release gate: dirty-worktree, review placeholder, line budget (with

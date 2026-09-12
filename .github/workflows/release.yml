@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v2.0.0'
+      - 'v*'
 
 permissions:
   contents: write
@@ -34,31 +34,17 @@ jobs:
           python3 -m unittest discover -s scripts/quality -p 'test_*.py' -v
           bash tests/k8s/k8s_deployment_test.sh
           bash tests/qa/qa_scripts_test.sh
+          bash tests/release/release_assets_test.sh
+          bash tests/release/release_readiness_test.sh
+      - name: Resolve release version
+        id: version
+        run: |
+          version="$(awk -F= '$1 == "VERSION" { print $2 }' Makefile)"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Build release archives
         env:
-          VERSION: '2.0.0'
-        run: |
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            goos="${target%/*}"
-            goarch="${target#*/}"
-            name="sourcerudder_${VERSION}_${goos}_${goarch}"
-            mkdir -p "dist/$name"
-            output="dist/$name/sourcerudder"
-            if [ "$goos" = windows ]; then output="${output}.exe"; fi
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$output" ./cmd/sourcerudder
-            cp LICENSE README.md "dist/$name/"
-            if [ "$goos" = linux ]; then
-              binary_hash="$(sha256sum "$output" | awk '{print $1}')"
-              printf '%s  /opt/sourcerudder/bin/sourcerudder\n' "$binary_hash" > "dist/$name/BINARY_SHA256"
-            fi
-            if [ "$goos" = windows ]; then
-              (cd dist && zip -qr "${name}.zip" "$name")
-            else
-              tar -C dist -czf "dist/${name}.tar.gz" "$name"
-            fi
-            rm -rf "dist/$name"
-          done
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/build-release-archives.sh
       - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -77,7 +63,7 @@ jobs:
           tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/mdesantis1984/SourceRudder
-            org.opencontainers.image.version=2.0.0
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           provenance: mode=max
           sbom: true
@@ -95,10 +81,12 @@ jobs:
       - name: Promote immutable image
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
-        run: docker buildx imagetools create --tag "$IMAGE:2.0.0" "$IMAGE@$IMAGE_DIGEST"
+          VERSION: ${{ steps.version.outputs.version }}
+        run: docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$IMAGE_DIGEST"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             is_draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
@@ -111,7 +99,6 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --verify-tag \
-              --title "SourceRudder 2.0.0" \
-              --generate-notes \
-              --notes "See MIGRATION-TO-2.0.md for breaking identity changes and rollback instructions."
+              --title "SourceRudder $VERSION" \
+              --notes-file ".github/release-notes/$GITHUB_REF_NAME.md"
           fi
