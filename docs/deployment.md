@@ -1,8 +1,8 @@
 [English](deployment.md) | [Español](deployment.es.md)
 
-# SourceRudder 2.0 deployment model
+# SourceRudder deployment model
 
-SourceRudder 2.0 is **unreleased**. This document describes deployment artifacts and operational expectations; it does not authorize or perform a deployment.
+This document describes SourceRudder deployment artifacts and operational expectations; it does not authorize or perform a deployment.
 
 ## Supported artifact paths
 
@@ -29,7 +29,7 @@ Before installing a downloaded archive, verify its published checksum and GitHub
 
 ```bash
 sha256sum -c checksums.txt --ignore-missing
-gh attestation verify sourcerudder_2.0.0_linux_amd64.tar.gz \
+gh attestation verify sourcerudder_3.0.0_linux_amd64.tar.gz \
   --repo mdesantis1984/SourceRudder
 ```
 

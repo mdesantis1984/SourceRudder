@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v2.0.0'
+      - 'v*'
 
 permissions:
   contents: write
@@ -34,9 +34,14 @@ jobs:
           python3 -m unittest discover -s scripts/quality -p 'test_*.py' -v
           bash tests/k8s/k8s_deployment_test.sh
           bash tests/qa/qa_scripts_test.sh
+      - name: Resolve release version
+        id: version
+        run: |
+          version="$(awk -F= '$1 == "VERSION" { print $2 }' Makefile)"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Build release archives
         env:
-          VERSION: '2.0.0'
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
@@ -77,7 +82,7 @@ jobs:
           tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/mdesantis1984/SourceRudder
-            org.opencontainers.image.version=2.0.0
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           provenance: mode=max
           sbom: true
@@ -95,10 +100,12 @@ jobs:
       - name: Promote immutable image
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
-        run: docker buildx imagetools create --tag "$IMAGE:2.0.0" "$IMAGE@$IMAGE_DIGEST"
+          VERSION: ${{ steps.version.outputs.version }}
+        run: docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$IMAGE_DIGEST"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             is_draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
@@ -111,7 +118,6 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --verify-tag \
-              --title "SourceRudder 2.0.0" \
-              --generate-notes \
-              --notes "See MIGRATION-TO-2.0.md for breaking identity changes and rollback instructions."
+              --title "SourceRudder $VERSION" \
+              --notes-file ".github/release-notes/$GITHUB_REF_NAME.md"
           fi

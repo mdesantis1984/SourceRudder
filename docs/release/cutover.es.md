@@ -1,8 +1,8 @@
-# Cutover de SourceRudder 2.0
+# Cutover de SourceRudder 3.0
 
 [English](cutover.md) | [Español](cutover.es.md)
 
-Este checklist gobierna el cutover público de 2.0.0. No autoriza evadir ramas
+Este checklist gobierna el cutover público de 3.0.0. No autoriza evadir ramas
 protegidas, checks obligatorios, verificación de artefactos ni gates de release.
 
 ## Preparación del repositorio
@@ -17,11 +17,12 @@ protegidas, checks obligatorios, verificación de artefactos ni gates de release
 
 ## Antes del release público
 
-1. Verifique que la `LICENSE` raíz sea la licencia MIT aprobada para 2.0.0 y que
+1. Verifique que la `LICENSE` raíz sea la licencia MIT aprobada para 3.0.0 y que
    las notas y metadatos de distribución identifiquen MIT de forma consistente.
 2. Restrinja el entorno GitHub `release` al tag exacto aprobado para el release.
-3. Conserve el último tag, imagen, licencia MIT y artefactos de rollback de
-   IA_Buscar 1.x. No reescriba ni relicencie copias históricas.
+3. Conserve los tags, imágenes, licencias MIT y artefactos de rollback de
+   SourceRudder 2.0.0 y del último IA_Buscar 1.x. No reescriba ni relicencie
+   copias históricas.
 4. Verifique que los remotes locales apunten a repositorios independientes:
 
    ```bash
@@ -34,12 +35,14 @@ protegidas, checks obligatorios, verificación de artefactos ni gates de release
    SourceRudder.
 6. Confirme visibilidad, configuración de seguridad, metadata, integraciones y
    gates antes de crear el tag.
-7. Mantenga `main` protegido con los checks obligatorios `build`, `gate` y
+7. Confirme que los operadores hayan retirado los flags obsoletos de IA_Recuerdo
+   y las variables `MEMORY_*` antes de reemplazar un despliegue 2.0.0.
+8. Mantenga `main` protegido con los checks obligatorios `build`, `gate` y
    `Analyze Go`.
 
-## Publicar 2.0.0
+## Publicar 3.0.0
 
-1. Cree el tag exacto `v2.0.0` sólo después de que el gate completo de release
+1. Cree el tag exacto `v3.0.0` sólo después de que el gate completo de release
    pase en un worktree limpio y sobre el commit aprobado.
 2. Envíe el tag. `.github/workflows/release.yml` verificará todos los gates,
    construirá archivos multiplataforma, publicará una imagen GHCR con SBOM y
@@ -48,10 +51,9 @@ protegidas, checks obligatorios, verificación de artefactos ni gates de release
 3. Verifique checksums y attestations, y confirme que la referencia de imagen
    publicada contenga el digest esperado.
 4. Ejecute smoke tests en un despliegue controlado antes de redirigir clientes.
-5. Mantenga disponible el despliegue 1.x anterior durante la ventana de
+5. Mantenga disponible el despliegue 2.0.0 anterior durante la ventana de
    observación.
-6. Archive IA_Buscar sólo después de que SourceRudder sea público, estable y
-   esté enlazado desde el repositorio legado. No elimine ni reescriba su historial.
+6. Mantenga intactos el repositorio histórico de IA_Buscar y su historial de releases.
 
 ## Condiciones de aborto
 

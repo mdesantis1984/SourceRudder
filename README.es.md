@@ -11,7 +11,7 @@
   <img alt="Go 1.26.6" src="https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go&amp;logoColor=white">
   <img alt="28 herramientas MCP" src="https://img.shields.io/badge/herramientas_MCP-28-2563EB">
   <img alt="16 herramientas de búsqueda" src="https://img.shields.io/badge/búsquedas-16-0F766E">
-  <a href="https://github.com/mdesantis1984/SourceRudder/releases/tag/v2.0.0"><img alt="Release 2.0.0" src="https://img.shields.io/badge/release-v2.0.0-7C3AED"></a>
+  <a href="https://github.com/mdesantis1984/SourceRudder/releases/tag/v3.0.0"><img alt="Release 3.0.0" src="https://img.shields.io/badge/release-v3.0.0-7C3AED"></a>
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-334155"></a>
 </p>
 
@@ -145,7 +145,7 @@ nunca es `null`.
 | Recuperación | Validación de URL, controles de redirects/DNS, extracción, reintentos y estados explícitos de bloqueo o fallo. |
 | Investigación local | Corpus JSON inmutable y curado por el operador, sin crawling ni fallback de red. |
 | Operaciones | Métricas Prometheus, health endpoint, Docker Compose, Kubernetes y systemd. |
-| Distribución | Archivos públicos 2.0.0 e imagen GHCR con checksums, SBOM, procedencia y attestations. |
+| Distribución | Archivos públicos 3.0.0 e imagen GHCR con checksums, SBOM, procedencia y attestations. |
 
 Los conectores incluyen SearXNG, GitHub, Stack Overflow, npm, NuGet, PyPI,
 Docker Hub y el registro de documentación oficial. Los strategy IDs permanecen
@@ -218,7 +218,7 @@ SourceRudder reconoce la enseñanza y la comunidad de [Gentleman Programming](ht
 
 ## Licencia y estado del release
 
-SourceRudder 2.0.0 y la línea histórica IA_Buscar se distribuyen bajo la
+Las releases de SourceRudder y la línea histórica IA_Buscar se distribuyen bajo la
 [Licencia MIT](LICENSE). MIT permite uso comercial y no comercial, modificación,
 redistribución, sublicenciamiento y venta, con la condición de conservar el aviso
 de copyright y el aviso de permiso.

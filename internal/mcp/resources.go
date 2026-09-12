@@ -208,7 +208,7 @@ Los tools fetch, fetch_and_extract, extract_structured, validate_url y check_lin
 Configuración expuesta al operador:
 
 - --fetch-timeout-ms (default 30000) — timeout del ciclo completo. También leíble vía env var FETCH_TIMEOUT_MS; el flag CLI gana cuando ambos están configurados.
-- Variable de entorno FETCH_USER_AGENT (default: SourceRudder/2.0.0).
+- Variable de entorno FETCH_USER_AGENT (default: SourceRudder/3.0.0).
 - FETCH_MAX_REDIRECTS (default 5).
 - FETCH_MAX_ATTEMPTS (default 3).
 - Backoff: exponencial con jitter determinístico, base 200ms.
@@ -225,6 +225,7 @@ El contrato SearchResponse y los nombres de tools están congelados en esta rama
 
 ## 12. Changelog
 
+- **3.0.0** — se retira el forwarder opcional de observaciones publicado en 2.0.0; desaparecen sus flags, variables de entorno, configuración de despliegue y forwarding síncrono. Las 28 tools MCP, sus schemas, campos JSON, conectores e IDs de estrategia permanecen estables. El runtime incorpora además la corrección de métricas HTTP y latencia de búsqueda.
 - **2.0.0** — el servidor adopta la identidad SourceRudder, el URI ` + "`" + `agent-guide://sourcerudder/wire-contract` + "`" + ` y el módulo ` + "`" + `github.com/mdesantis1984/SourceRudder` + "`" + `. Los nombres de tools, campos JSON, conectores e IDs de estrategia permanecen estables.
 - **1.5.0** — search_local_index carga un corpus JSON local, explícito y read-only al iniciar; aplica ranking lexical determinista y devuelve ` + "`" + `local_index_lexical` + "`" + `. Sin LOCAL_INDEX_PATH conserva ` + "`" + `local_index_unavailable` + "`" + `. No hay crawling, requests de red ni manejo de credenciales.
 - **1.4.0 unreleased feature candidate** — search_doc_oficial resolves Go and SearXNG through a bounded local registry, restricts SearXNG execution to approved documentation hosts, validates result provenance, and returns ` + "`" + `official_doc_registry_search` + "`" + `. Unknown, ambiguous, failed, or unvalidated requests retain the typed ` + "`" + `official_doc_web_fallback` + "`" + ` path. No tag, deployment, publication, or release was created.
