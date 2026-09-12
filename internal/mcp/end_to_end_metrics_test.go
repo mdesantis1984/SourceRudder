@@ -137,6 +137,12 @@ func TestDegradedSearXNGExposesMetricOverHTTP(t *testing.T) {
 	if got := counterValue(body, "sourcerudder_search_degraded_total", "web", "unresponsive_engines"); got < 1 {
 		t.Fatalf("expected sourcerudder_search_degraded_total{web,unresponsive_engines} >= 1, got %d, body:\n%s", got, body)
 	}
+	if !strings.Contains(body, `sourcerudder_http_requests_total{method="POST",path="/mcp",status="200"} 1`) {
+		t.Fatalf("expected the successful MCP request to increment sourcerudder_http_requests_total, body:\n%s", body)
+	}
+	if !strings.Contains(body, `sourcerudder_search_latency_seconds_count{source="web"} 1`) {
+		t.Fatalf("expected search_web to observe sourcerudder_search_latency_seconds, body:\n%s", body)
+	}
 }
 
 // scrapeHTTP fetches the response body at a URL and returns it as a
