@@ -6,6 +6,12 @@ All notable SourceRudder changes are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- HTTP shutdown now ends open `GET /mcp` Server-Sent Events streams immediately
+  instead of waiting for the shutdown timeout, while in-flight POST requests
+  still finish.
+
 ## [3.0.0] - 2026-09-12
 
 ### Breaking changes

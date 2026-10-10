@@ -6,6 +6,12 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ## [Sin publicar]
 
+### Corregido
+
+- El apagado HTTP ahora cierra de inmediato los flujos Server-Sent Events
+  abiertos de `GET /mcp` en lugar de esperar el tiempo límite de apagado; las
+  solicitudes POST en curso siguen completándose.
+
 ## [3.0.0] - 2026-09-12
 
 ### Cambios incompatibles

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,6 +60,11 @@ type Server struct {
 	// stored so Stop can be invoked even after the server has been
 	// started in a goroutine.
 	httpLn net.Listener
+	// Only SSE streams observe this signal; POST contexts remain live
+	// until their requests complete during graceful HTTP shutdown.
+	sseShutdown         chan struct{}
+	sseShutdownInitOnce sync.Once
+	sseShutdownOnce     sync.Once
 }
 
 type Tool struct {
@@ -500,7 +506,19 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) sseShutdownSignal() <-chan struct{} {
+	// Lazy initialization also supports zero-value Server test fixtures.
+	s.sseShutdownInitOnce.Do(func() { s.sseShutdown = make(chan struct{}) })
+	return s.sseShutdown
+}
+
+func (s *Server) endSSEStreams() {
+	s.sseShutdownSignal()
+	s.sseShutdownOnce.Do(func() { close(s.sseShutdown) })
+}
+
 func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
+	shutdown := s.sseShutdownSignal()
 	controller := http.NewResponseController(w)
 	writePing := func() error {
 		if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
@@ -527,6 +545,8 @@ func (s *Server) handleHTTPGet(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-shutdown:
 			return
 		case <-ticker.C:
 			if err := writePing(); err != nil {
@@ -731,6 +751,7 @@ func (s *Server) Start(ctx context.Context) error {
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,
 	}
+	httpSrv.RegisterOnShutdown(s.endSSEStreams)
 	s.httpSrv = httpSrv
 	// Listen synchronously so address-conflict errors surface to the
 	// caller instead of being silently logged from a goroutine.
@@ -749,6 +770,7 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) Stop(ctx context.Context) error {
+	s.endSSEStreams()
 	if s.httpSrv == nil {
 		return nil
 	}
