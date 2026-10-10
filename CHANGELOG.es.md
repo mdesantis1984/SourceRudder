@@ -13,6 +13,9 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   (`2025-11-25`, `2025-06-18`, `2024-11-05`) y, en caso contrario, `2025-11-25`.
   Las solicitudes HTTP GET/POST con una versión no admitida en el encabezado
   `MCP-Protocol-Version` reciben `400`.
+- El apagado HTTP ahora cierra de inmediato los flujos Server-Sent Events
+  abiertos de `GET /mcp` en lugar de esperar el tiempo límite de apagado; las
+  solicitudes POST en curso siguen completándose.
 
 ### Seguridad
 
