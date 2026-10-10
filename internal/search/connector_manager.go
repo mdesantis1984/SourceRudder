@@ -30,9 +30,9 @@ func (m *ConnectorManager) Search(ctx context.Context, source string, req *types
 	conn, ok := m.connectors[source]
 	if !ok {
 		return &types.SearchResponse{
-			Query:      req.Query,
-			Results:    []types.SearchResultItem{},
-			Errors:     []string{"unknown source: " + source},
+			Query:       req.Query,
+			Results:     []types.SearchResultItem{},
+			Errors:      []string{"unknown source: " + source},
 			SourcesUsed: []string{source},
 		}, nil
 	}

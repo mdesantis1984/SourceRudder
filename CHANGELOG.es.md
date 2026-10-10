@@ -8,9 +8,26 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ### Corregido
 
+- `initialize` ahora negocia la versión de protocolo MCP en lugar de devolver
+  siempre `2024-11-05`: devuelve la versión solicitada si está admitida
+  (`2025-11-25`, `2025-06-18`, `2024-11-05`) y, en caso contrario, `2025-11-25`.
+  Las solicitudes HTTP GET/POST con una versión no admitida en el encabezado
+  `MCP-Protocol-Version` reciben `400`.
 - El apagado HTTP ahora cierra de inmediato los flujos Server-Sent Events
   abiertos de `GET /mcp` en lugar de esperar el tiempo límite de apagado; las
   solicitudes POST en curso siguen completándose.
+
+### Seguridad
+
+- Se compila con Go 1.26.9 para incorporar las correcciones de la biblioteca
+  estándar en `crypto/tls`, `net/http`, `net/textproto` y `os` informadas por
+  `govulncheck` (GO-2026-6603 a GO-2026-6617).
+
+### Distribución y documentación
+
+- Se agregó la configuración de Pi por HTTP nativo y stdio local a la guía de
+  clientes MCP, incluida la exposición de herramientas y la verificación de
+  conexión.
 
 ## [3.0.0] - 2026-09-12
 

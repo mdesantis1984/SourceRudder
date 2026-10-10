@@ -418,7 +418,7 @@ func (s *Server) HandleInitialize(ctx context.Context, params json.RawMessage) (
 	}
 	sessionID := uuid.New().String()
 	return map[string]interface{}{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": negotiateProtocolVersion(req.ProtocolVersion),
 		"serverInfo": map[string]interface{}{
 			"name":    serverName,
 			"version": serverVersion,
@@ -494,6 +494,20 @@ func formatResult(v interface{}) string {
 
 func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 	setCORSHeaders(w, r)
+	if r.Method == http.MethodGet || r.Method == http.MethodPost {
+		if versions, present := r.Header[http.CanonicalHeaderKey("MCP-Protocol-Version")]; present {
+			for _, version := range versions {
+				if !isSupportedProtocolVersion(version) {
+					writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      nil,
+						"error":   map[string]interface{}{"code": -32600, "message": fmt.Sprintf("unsupported MCP protocol version: %q", version)},
+					})
+					return
+				}
+			}
+		}
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.handleHTTPGet(w, r)
@@ -594,7 +608,7 @@ func (s *Server) handleRPCRequest(ctx context.Context, req rpcRequest) (interfac
 	var resp interface{}
 	switch req.Method {
 	case "initialize":
-		resp = s.handleMCPInitialize(req.ID)
+		resp = s.handleMCPInitialize(req.ID, req.Params)
 	case "tools/list", "mcp.tools.list":
 		resp = s.handleMCPToolsList(req.ID)
 	case "tools/call", "mcp.tools.call":
@@ -617,12 +631,18 @@ func (s *Server) handleRPCRequest(ctx context.Context, req rpcRequest) (interfac
 	return resp, isNotification
 }
 
-func (s *Server) handleMCPInitialize(id interface{}) map[string]interface{} {
+func (s *Server) handleMCPInitialize(id interface{}, params ...json.RawMessage) map[string]interface{} {
+	var req struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if len(params) > 0 {
+		_ = json.Unmarshal(params[0], &req)
+	}
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      id,
 		"result": map[string]interface{}{
-			"protocolVersion": "2024-11-05",
+			"protocolVersion": negotiateProtocolVersion(req.ProtocolVersion),
 			"serverInfo":      map[string]interface{}{"name": serverName, "version": serverVersion},
 			"capabilities": map[string]interface{}{
 				"tools":     map[string]interface{}{"listChanged": false},
@@ -735,7 +755,7 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, Mcp-Session-Id, Accept")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, Mcp-Session-Id, Accept, MCP-Protocol-Version")
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 

@@ -21,7 +21,7 @@ go mod download
 go test ./...
 ```
 
-SourceRudder 2.0 uses Go `1.26.6`. Docker Compose v2 and Python 3 are required for the QA and quality suites.
+SourceRudder 2.0 uses Go `1.26.9`. Docker Compose v2 and Python 3 are required for the QA and quality suites.
 
 ## Verify your change
 
