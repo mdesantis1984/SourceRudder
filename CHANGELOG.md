@@ -12,6 +12,9 @@ All notable SourceRudder changes are documented here.
   returning `2024-11-05`: it echoes supported requests (`2025-11-25`,
   `2025-06-18`, `2024-11-05`) and otherwise returns `2025-11-25`. HTTP GET/POST
   requests with an unsupported `MCP-Protocol-Version` header receive `400`.
+- HTTP shutdown now ends open `GET /mcp` Server-Sent Events streams immediately
+  instead of waiting for the shutdown timeout, while in-flight POST requests
+  still finish.
 
 ### Security
 
