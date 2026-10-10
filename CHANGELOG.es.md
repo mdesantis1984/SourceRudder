@@ -6,6 +6,12 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ## [Sin publicar]
 
+### Seguridad
+
+- Se compila con Go 1.26.9 para incorporar las correcciones de la biblioteca
+  estándar en `crypto/tls`, `net/http`, `net/textproto` y `os` informadas por
+  `govulncheck` (GO-2026-6603 a GO-2026-6617).
+
 ## [3.0.0] - 2026-09-12
 
 ### Cambios incompatibles
