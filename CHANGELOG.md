@@ -6,6 +6,12 @@ All notable SourceRudder changes are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Build with Go 1.26.9 to pick up standard library fixes in `crypto/tls`,
+  `net/http`, `net/textproto`, and `os` reported by `govulncheck`
+  (GO-2026-6603 to GO-2026-6617).
+
 ## [3.0.0] - 2026-09-12
 
 ### Breaking changes
