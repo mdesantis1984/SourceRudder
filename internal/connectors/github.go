@@ -24,9 +24,9 @@ type GitHubConnector struct {
 
 func NewGitHubConnector(token string, cacheSvc *cache.Service) *GitHubConnector {
 	return &GitHubConnector{
-		baseURL: "https://api.github.com",
-		token:   token,
-		cacheSvc:  cacheSvc,
+		baseURL:    "https://api.github.com",
+		token:      token,
+		cacheSvc:   cacheSvc,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -203,14 +203,14 @@ func (c *GitHubConnector) doGitHubRequest(ctx context.Context, apiURL string, re
 
 	var data struct {
 		Items []struct {
-			Name        string `json:"name"`
-			FullName    string `json:"full_name"`
-			HTMLURL     string `json:"html_url"`
-			Description string `json:"description"`
+			Name        string  `json:"name"`
+			FullName    string  `json:"full_name"`
+			HTMLURL     string  `json:"html_url"`
+			Description string  `json:"description"`
 			Score       float64 `json:"score"`
-			Language    string `json:"language"`
-			Stargazers  int `json:"stargazers_count"`
-			UpdatedAt   string `json:"updated_at"`
+			Language    string  `json:"language"`
+			Stargazers  int     `json:"stargazers_count"`
+			UpdatedAt   string  `json:"updated_at"`
 			Owner       struct {
 				Login string `json:"login"`
 			} `json:"owner"`

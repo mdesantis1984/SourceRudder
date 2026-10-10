@@ -111,7 +111,7 @@ func (c *StackOverflowConnector) doStackOverflowRequest(ctx context.Context, api
 			} `json:"owner"`
 			CreationDate int64 `json:"creation_date"`
 		} `json:"items"`
-		QuotaMax     int `json:"quota_max"`
+		QuotaMax       int `json:"quota_max"`
 		QuotaRemaining int `json:"quota_remaining"`
 	}
 
