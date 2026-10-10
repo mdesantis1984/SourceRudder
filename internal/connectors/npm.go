@@ -119,14 +119,14 @@ func (c *NPMConnector) doNPMRequest(ctx context.Context, apiURL string) ([]types
 		}
 
 		results = append(results, types.SearchResultItem{
-			Title:       item.Package.Name,
-			URL:         pkgURL,
-			Snippet:     item.Package.Description,
-			Source:      "npm",
-			Type:        "package",
-			Score:       item.Package.Score,
-			Author:      item.Package.Name,
-			CitationID:  fmt.Sprintf("npm:%s", item.Package.Name),
+			Title:      item.Package.Name,
+			URL:        pkgURL,
+			Snippet:    item.Package.Description,
+			Source:     "npm",
+			Type:       "package",
+			Score:      item.Package.Score,
+			Author:     item.Package.Name,
+			CitationID: fmt.Sprintf("npm:%s", item.Package.Name),
 		})
 	}
 
