@@ -6,6 +6,18 @@ All notable SourceRudder changes are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `initialize` now negotiates the MCP protocol version instead of always
+  returning `2024-11-05`: it echoes supported requests (`2025-11-25`,
+  `2025-06-18`, `2024-11-05`) and otherwise returns `2025-11-25`. HTTP GET/POST
+  requests with an unsupported `MCP-Protocol-Version` header receive `400`.
+
+### Documentation
+
+- Added Pi native HTTP and local stdio configuration to the MCP client guide,
+  including tool exposure and connection verification.
+
 ## [3.0.0] - 2026-09-12
 
 ### Breaking changes

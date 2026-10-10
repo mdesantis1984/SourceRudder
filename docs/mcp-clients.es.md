@@ -50,6 +50,25 @@ Agregue a `opencode.json`:
 
 Verifique con `opencode mcp list`.
 
+### Pi
+
+Guarde en `~/.pi/agent/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "sourcerudder": {
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": { "Authorization": "Bearer ${SOURCERUDDER_AUTH_KEY}" },
+      "exposure": "codemode",
+      "timeout": 120
+    }
+  }
+}
+```
+
+Prefiera HTTP nativo en lugar de proxies stdio como `mcp-remote`. Use `codemode` para que las herramientas puedan invocarse desde scripts codemode en el mismo turno, sin esperar a que `tool_search` las cargue para una llamada posterior al modelo. Verifique con `pi mcp list` y ejecute `/reload` en las sesiones abiertas luego de cambiar la configuración.
+
 ## stdio local
 
 Use una ruta absoluta a `sourcerudder` y confirme que SearXNG sea accesible, habitualmente en `http://127.0.0.1:8888`. El Bearer HTTP no aplica porque el cliente administra el proceso.
@@ -100,7 +119,25 @@ Guarde en `.vscode/mcp.json`:
 }
 ```
 
+### Pi
+
+Guarde en `~/.pi/agent/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "sourcerudder": {
+      "command": "/RUTA/ABSOLUTA/sourcerudder",
+      "args": ["-transport", "stdio", "-searxng-url", "http://127.0.0.1:8888"],
+      "exposure": "codemode"
+    }
+  }
+}
+```
+
 ## Verificar el contrato wire
+
+`initialize` devuelve la versión de protocolo solicitada si está admitida (`2025-11-25`, `2025-06-18` o `2024-11-05`); en caso contrario, devuelve `2025-11-25`. La versión `2025-03-26` no se anuncia porque exige recibir lotes JSON-RPC. Las solicitudes HTTP GET/POST con una versión no admitida en el encabezado `MCP-Protocol-Version` reciben `400`.
 
 Reinicie el cliente luego de cambiar configuración. Para HTTP use este request JSON-RPC:
 
@@ -120,5 +157,6 @@ Conserve el formato JSON devuelto, los nombres de conectores y los strategy IDs.
 
 - [Cursor MCP](https://cursor.com/docs/mcp)
 - [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/)
+- [Servidores MCP de Pi](https://pi.dev/docs/mcp)
 - [Visual Studio Code MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
 - [Claude Desktop local MCP servers](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
