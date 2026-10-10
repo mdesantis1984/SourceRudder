@@ -50,6 +50,25 @@ Add to `opencode.json`:
 
 Verify with `opencode mcp list`.
 
+### Pi
+
+Save in `~/.pi/agent/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "sourcerudder": {
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": { "Authorization": "Bearer ${SOURCERUDDER_AUTH_KEY}" },
+      "exposure": "codemode",
+      "timeout": 120
+    }
+  }
+}
+```
+
+Prefer native HTTP over stdio proxies such as `mcp-remote`. Use `codemode` so tools are callable from codemode scripts in the same turn, without waiting for `tool_search` to load them for a later model call. Verify with `pi mcp list` and run `/reload` in open sessions after changing configuration.
+
 ## Local stdio
 
 Use an absolute path to `sourcerudder` and ensure SearXNG is reachable, commonly at `http://127.0.0.1:8888`. HTTP Bearer authentication does not apply because the client owns the process.
@@ -100,7 +119,25 @@ Save in `.vscode/mcp.json`:
 }
 ```
 
+### Pi
+
+Save in `~/.pi/agent/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "sourcerudder": {
+      "command": "/ABSOLUTE/PATH/sourcerudder",
+      "args": ["-transport", "stdio", "-searxng-url", "http://127.0.0.1:8888"],
+      "exposure": "codemode"
+    }
+  }
+}
+```
+
 ## Verify the wire contract
+
+`initialize` echoes a supported requested protocol version (`2025-11-25`, `2025-06-18`, or `2024-11-05`), otherwise returning `2025-11-25`. Version `2025-03-26` is not advertised because it requires receiving JSON-RPC batches. HTTP GET/POST requests with an unsupported `MCP-Protocol-Version` header receive `400`.
 
 Restart the client after changing configuration. For HTTP, use the following JSON-RPC request:
 
@@ -120,5 +157,6 @@ Keep the returned JSON shape, connector names, and strategy IDs intact. In parti
 
 - [Cursor MCP](https://cursor.com/docs/mcp)
 - [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/)
+- [Pi MCP servers](https://pi.dev/docs/mcp)
 - [Visual Studio Code MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
 - [Claude Desktop local MCP servers](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
