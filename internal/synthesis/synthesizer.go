@@ -189,12 +189,12 @@ type DeepResearchResult struct {
 
 type ThemeResults struct {
 	Theme   string                   `json:"theme"`
-	Results []types.SearchResultItem  `json:"results"`
+	Results []types.SearchResultItem `json:"results"`
 	Summary string                   `json:"summary"`
 }
 
 type SourceInfo struct {
-	URL           string  `json:"url"`
+	URL          string  `json:"url"`
 	Title        string  `json:"title"`
 	RecencyScore float64 `json:"recencyScore"`
 	Completeness float64 `json:"completeness"`
@@ -362,7 +362,7 @@ func categorizeByTitle(title, snippet string) string {
 
 	categories := map[string][]string{
 		"Technical Documentation": {"docs", "documentation", "api", "reference", "guide", "tutorial", "manual"},
-		"Code & Programming":     {"github", "code", "source", "repository", "commit", "pull", "issue", "stackoverflow"},
+		"Code & Programming":      {"github", "code", "source", "repository", "commit", "pull", "issue", "stackoverflow"},
 		"News & Updates":          {"news", "announcement", "release", "update", "version", "2024", "2025", "2026"},
 		"Packages & Dependencies": {"npm", "pypi", "nuget", "docker", "hub", "package", "library", "framework"},
 		"Community & Discussion":  {"community", "forum", "discussion", "blog", "article", "post"},
@@ -398,11 +398,11 @@ func buildComparisonMap(results []types.SearchResultItem) map[string]SourceInfo 
 
 	for _, r := range results {
 		info := SourceInfo{
-			URL:           r.URL,
-			Title:         r.Title,
-			RecencyScore:  0.5,
-			Completeness:  calculateCompleteness(r),
-			Reliability:   calculateReliability(r.Source),
+			URL:          r.URL,
+			Title:        r.Title,
+			RecencyScore: 0.5,
+			Completeness: calculateCompleteness(r),
+			Reliability:  calculateReliability(r.Source),
 		}
 
 		if r.PublishedAt != nil {

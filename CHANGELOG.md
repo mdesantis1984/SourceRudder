@@ -13,6 +13,12 @@ All notable SourceRudder changes are documented here.
   `2025-06-18`, `2024-11-05`) and otherwise returns `2025-11-25`. HTTP GET/POST
   requests with an unsupported `MCP-Protocol-Version` header receive `400`.
 
+### Security
+
+- Build with Go 1.26.9 to pick up standard library fixes in `crypto/tls`,
+  `net/http`, `net/textproto`, and `os` reported by `govulncheck`
+  (GO-2026-6603 to GO-2026-6617).
+
 ### Documentation
 
 - Added Pi native HTTP and local stdio configuration to the MCP client guide,

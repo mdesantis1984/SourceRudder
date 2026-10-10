@@ -14,6 +14,12 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   Las solicitudes HTTP GET/POST con una versión no admitida en el encabezado
   `MCP-Protocol-Version` reciben `400`.
 
+### Seguridad
+
+- Se compila con Go 1.26.9 para incorporar las correcciones de la biblioteca
+  estándar en `crypto/tls`, `net/http`, `net/textproto` y `os` informadas por
+  `govulncheck` (GO-2026-6603 a GO-2026-6617).
+
 ### Distribución y documentación
 
 - Se agregó la configuración de Pi por HTTP nativo y stdio local a la guía de

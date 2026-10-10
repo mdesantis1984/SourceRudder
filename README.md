@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <img alt="Go 1.26.6" src="https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go&amp;logoColor=white">
+  <img alt="Go 1.26.9" src="https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go&amp;logoColor=white">
   <img alt="28 MCP tools" src="https://img.shields.io/badge/MCP_tools-28-2563EB">
   <img alt="16 search tools" src="https://img.shields.io/badge/search_tools-16-0F766E">
   <a href="https://github.com/mdesantis1984/SourceRudder/releases/tag/v3.0.0"><img alt="Release 3.0.0" src="https://img.shields.io/badge/release-v3.0.0-7C3AED"></a>
@@ -45,7 +45,7 @@ any workflow where the **route to the evidence matters as much as the answer**.
 
 ## Try it locally
 
-Requirements: Go 1.26.6+, Docker, and Docker Compose v2.
+Requirements: Go 1.26.9+, Docker, and Docker Compose v2.
 
 ```bash
 git clone https://github.com/mdesantis1984/SourceRudder.git

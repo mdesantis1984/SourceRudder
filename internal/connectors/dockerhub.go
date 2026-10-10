@@ -94,13 +94,13 @@ func (c *DockerHubConnector) doDockerHubRequest(ctx context.Context, apiURL stri
 	var data struct {
 		Count   int `json:"count"`
 		Results []struct {
-			RepoName        string `json:"repo_name"`
-			Namespace       string `json:"namespace"`
+			RepoName         string `json:"repo_name"`
+			Namespace        string `json:"namespace"`
 			ShortDescription string `json:"short_description"`
-			StarCount       int    `json:"star_count"`
-			PullCount       int64  `json:"pull_count"`
-			IsOfficial      bool   `json:"is_official"`
-			IsAutomated     bool   `json:"is_automated"`
+			StarCount        int    `json:"star_count"`
+			PullCount        int64  `json:"pull_count"`
+			IsOfficial       bool   `json:"is_official"`
+			IsAutomated      bool   `json:"is_automated"`
 		} `json:"results"`
 	}
 
@@ -118,14 +118,14 @@ func (c *DockerHubConnector) doDockerHubRequest(ctx context.Context, apiURL stri
 		}
 
 		results = append(results, types.SearchResultItem{
-			Title:       fullName,
-			URL:         fmt.Sprintf("https://hub.docker.com/%s/%s", urlPath, fullName),
-			Snippet:     item.ShortDescription,
-			Source:      "dockerhub",
-			Type:        "repository",
-			Score:       float64(item.StarCount),
-			Author:      item.Namespace,
-			CitationID:  fmt.Sprintf("dockerhub:%s", fullName),
+			Title:      fullName,
+			URL:        fmt.Sprintf("https://hub.docker.com/%s/%s", urlPath, fullName),
+			Snippet:    item.ShortDescription,
+			Source:     "dockerhub",
+			Type:       "repository",
+			Score:      float64(item.StarCount),
+			Author:     item.Namespace,
+			CitationID: fmt.Sprintf("dockerhub:%s", fullName),
 		})
 	}
 
