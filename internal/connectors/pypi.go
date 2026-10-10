@@ -114,12 +114,12 @@ func (c *PyPIConnector) tryExactMatch(ctx context.Context, pkgName string) (*typ
 
 	var data struct {
 		Info struct {
-			Name        string `json:"name"`
-			Summary     string `json:"summary"`
-			Version     string `json:"version"`
-			HomePage    string `json:"home_page"`
-			ProjectURL  string `json:"project_url"`
-			PackageURL  string `json:"package_url"`
+			Name        string            `json:"name"`
+			Summary     string            `json:"summary"`
+			Version     string            `json:"version"`
+			HomePage    string            `json:"home_page"`
+			ProjectURL  string            `json:"project_url"`
+			PackageURL  string            `json:"package_url"`
 			ProjectUrls map[string]string `json:"project_urls"`
 		} `json:"info"`
 	}

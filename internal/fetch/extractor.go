@@ -273,17 +273,17 @@ func (e *Extractor) ExtractMetadata(html string) (map[string]string, error) {
 	metadata := make(map[string]string)
 
 	metaPatterns := map[string]*regexp.Regexp{
-		"description":      regexp.MustCompile(`<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']`),
-		"keywords":         regexp.MustCompile(`<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']*)["']`),
-		"og:title":         regexp.MustCompile(`<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']`),
-		"og:description":   regexp.MustCompile(`<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']`),
-		"og:image":         regexp.MustCompile(`<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']`),
-		"twitter:card":     regexp.MustCompile(`<meta[^>]*name=["']twitter:card["'][^>]*content=["']([^"']*)["']`),
-		"twitter:title":    regexp.MustCompile(`<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']*)["']`),
-		"author":           regexp.MustCompile(`<meta[^>]*name=["']author["'][^>]*content=["']([^"']*)["']`),
-		"robots":           regexp.MustCompile(`<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["']`),
-		"canonical":        regexp.MustCompile(`<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']`),
-		"alternate":        regexp.MustCompile(`<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']*)["']`),
+		"description":    regexp.MustCompile(`<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']`),
+		"keywords":       regexp.MustCompile(`<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']*)["']`),
+		"og:title":       regexp.MustCompile(`<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']`),
+		"og:description": regexp.MustCompile(`<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']`),
+		"og:image":       regexp.MustCompile(`<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']`),
+		"twitter:card":   regexp.MustCompile(`<meta[^>]*name=["']twitter:card["'][^>]*content=["']([^"']*)["']`),
+		"twitter:title":  regexp.MustCompile(`<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']*)["']`),
+		"author":         regexp.MustCompile(`<meta[^>]*name=["']author["'][^>]*content=["']([^"']*)["']`),
+		"robots":         regexp.MustCompile(`<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["']`),
+		"canonical":      regexp.MustCompile(`<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']`),
+		"alternate":      regexp.MustCompile(`<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']*)["']`),
 	}
 
 	for key, pattern := range metaPatterns {

@@ -94,17 +94,17 @@ func (c *NuGetConnector) doNuGetRequest(ctx context.Context, apiURL string) ([]t
 	var data struct {
 		TotalHits int `json:"totalHits"`
 		Data      []struct {
-			ID            string `json:"id"`
-			Version       string `json:"version"`
-			Description   string `json:"description"`
-			Title         string `json:"title"`
-			ProjectURL    string `json:"projectUrl"`
-			IconURL       string `json:"iconUrl"`
-			Authors       []string `json:"authors"`
-			Owners        []string `json:"owners"`
-			Tags          []string `json:"tags"`
-			TotalDownloads int64  `json:"totalDownloads"`
-			Verified      bool    `json:"verified"`
+			ID             string   `json:"id"`
+			Version        string   `json:"version"`
+			Description    string   `json:"description"`
+			Title          string   `json:"title"`
+			ProjectURL     string   `json:"projectUrl"`
+			IconURL        string   `json:"iconUrl"`
+			Authors        []string `json:"authors"`
+			Owners         []string `json:"owners"`
+			Tags           []string `json:"tags"`
+			TotalDownloads int64    `json:"totalDownloads"`
+			Verified       bool     `json:"verified"`
 		} `json:"data"`
 	}
 
@@ -125,15 +125,15 @@ func (c *NuGetConnector) doNuGetRequest(ctx context.Context, apiURL string) ([]t
 		}
 
 		results = append(results, types.SearchResultItem{
-			Title:       title,
-			URL:         item.ProjectURL,
-			Snippet:     snippet,
-			Source:      "nuget",
-			Type:        "package",
-			Score:       float64(item.TotalDownloads),
-			Author:      strings.Join(item.Authors, ", "),
-			Tags:        item.Tags,
-			CitationID:  fmt.Sprintf("nuget:%s", item.ID),
+			Title:      title,
+			URL:        item.ProjectURL,
+			Snippet:    snippet,
+			Source:     "nuget",
+			Type:       "package",
+			Score:      float64(item.TotalDownloads),
+			Author:     strings.Join(item.Authors, ", "),
+			Tags:       item.Tags,
+			CitationID: fmt.Sprintf("nuget:%s", item.ID),
 		})
 	}
 
