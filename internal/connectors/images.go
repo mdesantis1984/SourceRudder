@@ -109,7 +109,7 @@ func imageCacheKey(query string, maxResults int, req *types.SearchRequest) strin
 		"language=" + req.Language,
 		"safe_search=" + strconv.FormatBool(req.SafeSearch),
 	}
-	return cache.GenerateCacheKey(query, sources, req.TimeRange)
+	return cache.GenerateSearchCacheKey(query, sources, req, maxResults)
 }
 
 func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
@@ -191,6 +191,7 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 			URL:          candidate.imageURL,
 			Snippet:      imageSnippet(candidate.item.Content, candidate.item.URL, candidate.item.ThumbnailSrc, candidate.imageURL, candidate.item.Source, engine),
 			Source:       engine,
+			Engine:       candidate.item.Engine,
 			Type:         "image",
 			Score:        float64(maxResults - outputIndex),
 			CitationID:   imageCitationID(candidate.canonicalURL),
@@ -379,12 +380,5 @@ func imageCitationID(canonicalURL string) string {
 }
 
 func (c *ImagesConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
-	if c.cacheSvc == nil {
-		return
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	cacheSearxngResponse(ctx, c.cacheSvc, cacheKey, resp)
 }

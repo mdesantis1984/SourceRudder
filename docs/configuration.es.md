@@ -78,4 +78,4 @@ Use un archivo regular, sin symlink y no escribible por grupo u otros. El loader
 
 ## Estado
 
-La caché tiene un TTL predeterminado de 300 segundos; el historial conserva las 100 búsquedas más recientes. Ambos viven en proceso, no se comparten entre réplicas y se pierden al reiniciar. No los use como auditoría durable.
+La caché tiene un TTL predeterminado de 300 segundos. Las búsquedas mediante SearXNG limitan el TTL de respuestas degradadas (`partial: true`, incluidos motores sin respuesta) a 30 segundos, sin extender un TTL configurado menor; las respuestas sanas conservan el TTL configurado. Sus claves versionadas incluyen los parámetros de solicitud, como idioma, búsqueda segura, rango temporal y límite efectivo de resultados, y no reutilizan claves anteriores. El historial conserva las 100 búsquedas más recientes. Ambos viven en proceso, no se comparten entre réplicas y se pierden al reiniciar. No los use como auditoría durable.

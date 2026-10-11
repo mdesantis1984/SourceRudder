@@ -8,6 +8,12 @@ All notable SourceRudder changes are documented here.
 
 ### Fixed
 
+- SearXNG-backed web, news, YouTube, images, academic, and Reddit searches now
+  cap degraded-response caching at 30 seconds (or the configured TTL if shorter),
+  while healthy responses retain the configured TTL. Versioned cache keys include
+  request parameters such as language, safe search, time range, and effective limit.
+- SearXNG results now retain upstream provenance in an optional `engine` field;
+  existing `source`, partial-result warnings, and metrics remain unchanged.
 - `initialize` now negotiates the MCP protocol version instead of always
   returning `2024-11-05`: it echoes supported requests (`2025-11-25`,
   `2025-06-18`, `2024-11-05`) and otherwise returns `2025-11-25`. HTTP GET/POST

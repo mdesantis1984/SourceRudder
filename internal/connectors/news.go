@@ -41,7 +41,7 @@ func (c *NewsConnector) Search(ctx context.Context, req *types.SearchRequest) (*
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"news", "searxng"}, req.TimeRange)
+	cacheKey := cache.GenerateSearchCacheKey(query, []string{"news", "searxng"}, req, maxResults)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[news] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -133,6 +133,7 @@ func (c *NewsConnector) searchSearxng(ctx context.Context, query string, maxResu
 			URL:        item.URL,
 			Snippet:    item.Content,
 			Source:     item.Engine,
+			Engine:     item.Engine,
 			Type:       "article",
 			Score:      float64(maxResults - i),
 			CitationID: fmt.Sprintf("news:%s:%d", parsedDomain, i),
@@ -147,12 +148,5 @@ func (c *NewsConnector) searchSearxng(ctx context.Context, query string, maxResu
 }
 
 func (c *NewsConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
-	if c.cacheSvc == nil {
-		return
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	cacheSearxngResponse(ctx, c.cacheSvc, cacheKey, resp)
 }
