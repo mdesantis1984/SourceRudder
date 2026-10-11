@@ -78,4 +78,4 @@ Use a regular, non-symlink file that is not group- or world-writable. The loader
 
 ## State
 
-Cache entries have a default 300-second TTL; search history retains the newest 100 searches. Both are in-process only, are not shared by replicas, and disappear on restart. Do not treat either as durable audit storage.
+Cache entries have a default 300-second TTL. SearXNG-backed searches cap degraded (`partial: true`, including unresponsive engines) response TTLs at 30 seconds, without extending a shorter configured TTL; healthy responses keep the configured TTL. Their versioned keys include request parameters, including language, safe search, time range, and effective result limit, and cannot reuse legacy keys. Search history retains the newest 100 searches. Both are in-process only, are not shared by replicas, and disappear on restart. Do not treat either as durable audit storage.

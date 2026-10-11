@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -62,6 +63,16 @@ func (s *Service) Get(ctx context.Context, cacheKey string) (*types.CacheEntry, 
 }
 
 func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sources []string) {
+	s.SetWithMaxTTL(ctx, cacheKey, payload, sources, 0)
+}
+
+// SetWithMaxTTL caps the configured TTL without extending shorter lifetimes.
+// A non-positive cap leaves the configured TTL unchanged.
+func (s *Service) SetWithMaxTTL(ctx context.Context, cacheKey string, payload []byte, sources []string, maxTTL time.Duration) {
+	ttl := s.ttl
+	if maxTTL > 0 && ttl > maxTTL {
+		ttl = maxTTL
+	}
 	now := time.Now()
 	s.mu.Lock()
 	s.deleteExpiredLocked(now)
@@ -69,7 +80,7 @@ func (s *Service) Set(ctx context.Context, cacheKey string, payload []byte, sour
 		key:     cacheKey,
 		value:   payload,
 		created: now,
-		expires: now.Add(s.ttl),
+		expires: now.Add(ttl),
 		sources: sources,
 	}
 	s.mu.Unlock()
@@ -122,6 +133,20 @@ func (s *Service) deleteExpiredLocked(now time.Time) {
 			delete(s.entries, key)
 		}
 	}
+}
+
+// GenerateSearchCacheKey uses a versioned, unambiguous encoding of the request.
+// The effective limit replaces the raw limit so equivalent defaults share a key.
+func GenerateSearchCacheKey(query string, sources []string, req *types.SearchRequest, limit int) string {
+	request := *req
+	request.Query = query
+	request.MaxResults = limit
+	data, _ := json.Marshal(struct {
+		Sources []string
+		Request types.SearchRequest
+	}{sources, request})
+	sum := sha256.Sum256(data)
+	return "cache:v2:" + hex.EncodeToString(sum[:])[:16]
 }
 
 func GenerateCacheKey(query string, sources []string, timeRange string) string {
