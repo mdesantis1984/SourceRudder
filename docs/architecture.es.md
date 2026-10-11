@@ -27,7 +27,8 @@ SourceRudder 2.0 está **sin publicar**. Es un servicio de investigación MCP qu
 ## Límites de contrato y seguridad
 
 - Las herramientas MCP usan envolventes estables; los clientes deben inspeccionar `strategy`, `partial`, `warnings` y `errors` en lugar de tratar un resultado vacío como un fallo de transporte.
-- La caché y el historial son ayudas operativas en proceso, no un sistema distribuido de auditoría.
+- Los resultados mediante SearXNG exponen un campo opcional `engine` con el nombre del motor de origen cuando está disponible. Agrega procedencia sin cambiar los valores existentes de `source`; los nombres ausentes se omiten.
+- La caché y el historial son ayudas operativas en proceso, no un sistema distribuido de auditoría. La caché de respuestas SearXNG usa claves versionadas que incluyen la solicitud y limita la vida de respuestas degradadas al menor valor entre 30 segundos y el TTL configurado.
 - El fetch está separado deliberadamente de la búsqueda. Las protecciones SSRF se aplican antes de acceder a la red y a través de las redirecciones.
 - La entrada del índice local se valida al iniciar y sigue siendo un dato administrado por el operador.
 

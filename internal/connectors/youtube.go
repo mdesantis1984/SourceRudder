@@ -41,7 +41,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"youtube", "searxng"}, req.TimeRange)
+	cacheKey := cache.GenerateSearchCacheKey(query, []string{"youtube", "searxng"}, req, maxResults)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[youtube] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -138,6 +138,7 @@ func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxR
 			URL:        item.URL,
 			Snippet:    truncateSnippet(item.Content),
 			Source:     engine,
+			Engine:     item.Engine,
 			Type:       "video",
 			Score:      float64(maxResults - len(results)),
 			Tags:       []string{},
@@ -206,12 +207,5 @@ func truncateSnippet(snippet string) string {
 }
 
 func (c *YouTubeConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
-	if c.cacheSvc == nil {
-		return
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	cacheSearxngResponse(ctx, c.cacheSvc, cacheKey, resp)
 }

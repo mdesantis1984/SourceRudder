@@ -1,12 +1,34 @@
 package connectors
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
+
+// DegradedSearchCacheTTL bounds stale degradation while avoiding retry storms.
+const DegradedSearchCacheTTL = 30 * time.Second
+
+func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, resp *types.SearchResponse) {
+	if svc == nil {
+		return
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	var cap time.Duration
+	if resp.Partial {
+		cap = DegradedSearchCacheTTL
+	}
+	svc.SetWithMaxTTL(ctx, key, data, resp.SourcesUsed, cap)
+}
 
 type searxngUnresponsiveError struct {
 	engines []searxngUnresponsiveEngine

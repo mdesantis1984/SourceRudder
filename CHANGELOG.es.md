@@ -8,6 +8,13 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ### Corregido
 
+- Las búsquedas web, noticias, YouTube, imágenes, académicas y Reddit mediante
+  SearXNG limitan la caché de respuestas degradadas a 30 segundos (o al TTL
+  configurado si es menor); las respuestas sanas conservan el TTL configurado.
+  Las claves versionadas incluyen parámetros como idioma, búsqueda segura,
+  rango temporal y límite efectivo de resultados.
+- Los resultados SearXNG conservan la procedencia en un campo opcional `engine`;
+  `source`, las advertencias de resultados parciales y las métricas no cambian.
 - `initialize` ahora negocia la versión de protocolo MCP en lugar de devolver
   siempre `2024-11-05`: devuelve la versión solicitada si está admitida
   (`2025-11-25`, `2025-06-18`, `2024-11-05`) y, en caso contrario, `2025-11-25`.

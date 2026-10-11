@@ -23,6 +23,7 @@ type SearchResultItem struct {
 	URL          string     `json:"url"`
 	Snippet      string     `json:"snippet,omitempty"`
 	Source       string     `json:"source"`
+	Engine       string     `json:"engine,omitempty"` // Original SearXNG engine, when provided.
 	Type         string     `json:"type,omitempty"`
 	Score        float64    `json:"score,omitempty"`
 	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
