@@ -41,7 +41,7 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, []string{"academic", "searxng"}, req.TimeRange)
+	cacheKey := cache.GenerateSearchCacheKey(query, []string{"academic", "searxng"}, req, maxResults)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[academic] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -141,6 +141,7 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 			URL:         item.URL,
 			Snippet:     truncateSnippet(item.Content),
 			Source:      engine,
+			Engine:      item.Engine,
 			Type:        "paper",
 			Score:       float64(maxResults - i),
 			PublishedAt: publishedAt,
@@ -196,12 +197,5 @@ func parsePublishedDate(dateStr string) *time.Time {
 }
 
 func (c *AcademicConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
-	if c.cacheSvc == nil {
-		return
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	cacheSearxngResponse(ctx, c.cacheSvc, cacheKey, resp)
 }

@@ -53,7 +53,7 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		observability.EndSpan(span, 0, nil)
 	}()
 
-	cacheKey := cache.GenerateCacheKey(query, redditCacheDimensions(maxResults, req), req.TimeRange)
+	cacheKey := cache.GenerateSearchCacheKey(query, redditCacheDimensions(maxResults, req), req, maxResults)
 	if cached, ok, _ := c.cacheSvc.Get(ctx, cacheKey); ok {
 		log.Printf("[reddit] cache hit for query: %s", query)
 		cachedResp := &types.SearchResponse{}
@@ -164,6 +164,7 @@ func (c *RedditConnector) searchSearxng(ctx context.Context, query string, maxRe
 			URL:          canonicalURL,
 			Snippet:      item.Content,
 			Source:       engine,
+			Engine:       item.Engine,
 			Type:         "post",
 			Score:        float64(maxResults - len(results)),
 			PublishedAt:  parsePublishedDate(item.PublishedDate),
@@ -232,12 +233,5 @@ func redditCacheDimensions(maxResults int, req *types.SearchRequest) []string {
 }
 
 func (c *RedditConnector) cacheResults(ctx context.Context, cacheKey string, resp *types.SearchResponse) {
-	if c.cacheSvc == nil {
-		return
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	cacheSearxngResponse(ctx, c.cacheSvc, cacheKey, resp)
 }
