@@ -6,6 +6,27 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ## [Sin publicar]
 
+### Añadido
+
+- Herramienta MCP `fetch_youtube_transcript` (`url`, `language` opcional,
+  `maxChars` opcional) que devuelve la transcripción de un video de YouTube con
+  título, canal, fecha, duración, idioma, indicador manual/automática y estado
+  de caché, mediante yt-dlp con PO tokens de bgutil. Las transcripciones se
+  cachean por video e idioma, y un 429 o verificación anti-bot produce un único
+  error `youtube_blocked` con un cooldown global corto, sin reintentos.
+- `fetch_url` y `fetch_and_extract` delegan las URLs de video de YouTube al
+  servicio de transcripciones en lugar de scrapear la página de visualización.
+- Activos en `deploy/youtube/`: instaladores de yt-dlp y bgutil, un
+  `bgutil-pot-provider.service` endurecido y solo en loopback, un timer semanal
+  `yt-dlp-update` y las nuevas variables `YTDLP_PATH`, `YTDLP_JS_RUNTIMES`,
+  `YOUTUBE_POT_BASE_URL`, `YOUTUBE_FETCH_POT`, `YOUTUBE_DEFAULT_LANGUAGE`, `YOUTUBE_CACHE_TTL`, `YOUTUBE_BLOCK_COOLDOWN`,
+  `YTDLP_TIMEOUT`, `YOUTUBE_WORK_DIR` y `YOUTUBE_TRANSCRIPTS`, documentadas en las
+  guías de despliegue y configuración.
+
+### Cambiado
+
+- El servidor ahora registra 29 herramientas MCP (antes 28).
+
 ### Seguridad
 
 - Se actualizó el toolchain de Go a 1.27.4 y `github.com/klauspost/compress` a
