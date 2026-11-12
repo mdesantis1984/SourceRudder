@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mdesantis1984/SourceRudder/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Go 1.27.4" src="https://img.shields.io/badge/Go-1.27.4-00ADD8?logo=go&amp;logoColor=white">
-  <img alt="28 herramientas MCP" src="https://img.shields.io/badge/herramientas_MCP-28-2563EB">
+  <img alt="29 herramientas MCP" src="https://img.shields.io/badge/herramientas_MCP-29-2563EB">
   <img alt="16 herramientas de búsqueda" src="https://img.shields.io/badge/búsquedas-16-0F766E">
   <a href="https://github.com/mdesantis1984/SourceRudder/releases/tag/v3.0.0"><img alt="Release 3.0.0" src="https://img.shields.io/badge/release-v3.0.0-7C3AED"></a>
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-334155"></a>
@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="#pruébalo-localmente">Ejecutarlo localmente</a> ·
-  <a href="#superficie-de-investigación">Explorar 28 herramientas</a> ·
+  <a href="#superficie-de-investigación">Explorar 29 herramientas</a> ·
   <a href="#cómo-funciona">Ver la arquitectura</a> ·
   <a href="docs/mcp-clients.es.md">Conectar un cliente MCP</a> ·
   <a href="https://github.com/mdesantis1984/SourceRudder/releases">Releases</a>
@@ -132,7 +132,7 @@ nunca es `null`.
 | Grupo | Herramientas |
 |---|---|
 | Búsqueda | `search_web`, `search_news`, `search_doc_oficial`, `search_local_index`, `search_github`, `search_github_pr`, `search_github_issue`, `search_stackoverflow`, `search_npm`, `search_nuget`, `search_pypi`, `search_docker_hub`, `search_academic`, `search_reddit`, `search_youtube`, `search_images` |
-| Recuperación y validación | `fetch_url`, `fetch_and_extract`, `extract_structured`, `validate_url`, `check_link_status` |
+| Recuperación y validación | `fetch_url`, `fetch_and_extract`, `fetch_youtube_transcript`, `extract_structured`, `validate_url`, `check_link_status` |
 | Síntesis | `summarize_results`, `deep_research`, `compare_sources` |
 | Utilidades con estado | `get_cached`, `invalidate_cache`, `get_search_history`, `get_current_date` |
 
@@ -140,7 +140,7 @@ nunca es `null`.
 
 | Superficie | Estado verificado |
 |---|---|
-| Servidor MCP | 28 herramientas registradas sobre `stdio` y HTTP autenticado. |
+| Servidor MCP | 29 herramientas registradas sobre `stdio` y HTTP autenticado. |
 | Búsqueda | 16 herramientas específicas con cantidad de resultados acotada. |
 | Recuperación | Validación de URL, controles de redirects/DNS, extracción, reintentos y estados explícitos de bloqueo o fallo. |
 | Investigación local | Corpus JSON inmutable y curado por el operador, sin crawling ni fallback de red. |
