@@ -6,6 +6,12 @@ All notable SourceRudder changes are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Upgraded the Go toolchain to 1.27.4 and `github.com/klauspost/compress` to
+  v1.20.4, fixing GO-2026-6809 (crypto/x509), GO-2026-6859 (net/http), and
+  GO-2026-6865 (klauspost/compress) reported by govulncheck.
+
 ### Fixed
 
 - SearXNG-backed web, news, YouTube, images, academic, and Reddit searches now

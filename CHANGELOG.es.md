@@ -6,6 +6,12 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ## [Sin publicar]
 
+### Seguridad
+
+- Se actualizó el toolchain de Go a 1.27.4 y `github.com/klauspost/compress` a
+  v1.20.4, lo que corrige GO-2026-6809 (crypto/x509), GO-2026-6859 (net/http) y
+  GO-2026-6865 (klauspost/compress) informadas por govulncheck.
+
 ### Corregido
 
 - Las búsquedas web, noticias, YouTube, imágenes, académicas y Reddit mediante
