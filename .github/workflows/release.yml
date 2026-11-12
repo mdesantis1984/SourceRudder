@@ -14,6 +14,8 @@ permissions:
 jobs:
   release:
     if: github.repository == 'mdesantis1984/SourceRudder'
+    # Stays GitHub-hosted: the private runner user has no Docker daemon access
+    # for multi-arch buildx pushes.
     runs-on: ubuntu-latest
     environment: release
     env:

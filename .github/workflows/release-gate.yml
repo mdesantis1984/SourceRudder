@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    # Trusted events run on the private VM102 runner; fork pull requests stay
+    # on GitHub-hosted runners so untrusted code never reaches it.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64","private-sourcerudder"]') }}
     timeout-minutes: 15
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}

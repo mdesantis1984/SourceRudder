@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Trusted events run on the private VM102 runner; fork pull requests stay
+    # on GitHub-hosted runners so untrusted code never reaches it.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64","private-sourcerudder"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
