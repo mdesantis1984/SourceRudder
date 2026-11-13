@@ -37,6 +37,64 @@ The local `BINARY_SHA256` guard detects an accidentally mixed or replaced
 binary after installation. The GitHub attestation is the independent provenance
 anchor; neither control protects a host after root compromise.
 
+## YouTube transcripts
+
+`fetch_youtube_transcript` (and the YouTube delegation in `fetch_url` / `fetch_and_extract`) runs yt-dlp on the host, because YouTube answers direct page scraping with HTTP 429. Without the pieces below the tool returns `youtube_unavailable`. Out of scope by design: Google account cookies, paid or residential proxies, and downloading audio or video (only one subtitle track is fetched).
+
+### Host requirements
+
+- A recent yt-dlp (`yt-dlp[default]`, installed in a venv at `/opt/yt-dlp`), run with IPv4 forced; SourceRudder already passes `--force-ipv4`.
+- A JavaScript runtime for yt-dlp (Node.js 20+ or Deno).
+- The bgutil PO token plugin `bgutil-ytdlp-pot-provider` 2.0.2 for yt-dlp, and the bgutil server of the same version listening on `127.0.0.1:4416` only. The server declares Node.js 22+; Debian 13 ships Node.js 20, so the installer resolves the current Node.js LTS from `https://nodejs.org/dist/index.json` at install time, verifies the official tarball against `SHASUMS256.txt`, extracts it to `/opt/nodejs-<version>`, and atomically repoints the `/opt/nodejs` symlink. It never touches apt's `nodejs` or `/usr/bin/node`.
+
+### Install
+
+Run as root on the Debian/Ubuntu host, from a checkout of this repository:
+
+```bash
+sudo deploy/youtube/install-bgutil.sh   # /opt/nodejs (current LTS), /opt/bgutil-pot-provider, user "bgutil", bgutil-pot-provider.service
+sudo deploy/youtube/install-ytdlp.sh    # /opt/yt-dlp venv, yt-dlp + bgutil plugin 2.0.2, /usr/local/bin/yt-dlp
+sudo install -m 0644 deploy/youtube/yt-dlp-update.service deploy/youtube/yt-dlp-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now yt-dlp-update.timer
+```
+
+Both scripts are idempotent; the unit and `YTDLP_JS_RUNTIMES` use the version-neutral `/opt/nodejs/bin/node` path. The bgutil server runs as the unprivileged `bgutil` user with `--host 127.0.0.1 --port 4416`, basic hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`), and `Restart=on-failure`. `MemoryDenyWriteExecute` is intentionally unset because Node.js needs a JIT. The released `sourcerudder.service` already sets `YTDLP_PATH=/opt/yt-dlp/bin/yt-dlp`, `YTDLP_JS_RUNTIMES=node:/opt/nodejs/bin/node`, and `YOUTUBE_POT_BASE_URL=http://127.0.0.1:4416`; yt-dlp runs with `--no-cache-dir`, so the unit needs no extra writable path.
+
+Docker alternative (when you prefer a container over the native server):
+
+```bash
+docker run -d --init --restart unless-stopped --name bgutil-pot \
+  -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider:2.0.2
+```
+
+The server listens on all interfaces inside the container; the `127.0.0.1:` prefix in the port mapping is what keeps it off the network. Never publish the port without it: the server is unauthenticated and anyone who reaches it can mint tokens. With Compose, use `ports: ["127.0.0.1:4416:4416"]` and `restart: unless-stopped`. Do not run the Docker and native servers at the same time.
+
+### Verify
+
+```bash
+curl -fsS http://127.0.0.1:4416/ping          # JSON with server_uptime and version
+/opt/yt-dlp/bin/yt-dlp --version
+/opt/yt-dlp/bin/yt-dlp -v --ignore-config --skip-download --force-ipv4 \
+  --js-runtimes node:/opt/nodejs/bin/node \
+  "https://www.youtube.com/watch?v=<video-id>" 2>&1 | grep -iE 'pot|bgutil'
+```
+
+The verbose output should list the `bgutil` PO token provider and a PO token request. Run the last command sparingly: every run is a real request to YouTube from the server IP.
+
+### Update yt-dlp
+
+YouTube changes often and old yt-dlp versions stop working. `yt-dlp-update.timer` runs weekly (with a randomized delay) and executes `pip install --upgrade "yt-dlp[default]" "bgutil-ytdlp-pot-provider==2.0.2"`. Do not use `yt-dlp -U`: it cannot update a pip-installed yt-dlp. The plugin stays pinned to the bgutil server version; when you move the server to another tag, change `BGUTIL_VERSION` and the pin in `yt-dlp-update.service` together. The timer covers yt-dlp only. To upgrade the Node.js LTS runtime or bgutil, re-run `install-bgutil.sh` (it installs a newer LTS when one exists and rebuilds the server when the Node.js version changes). To bump bgutil, change `BGUTIL_VERSION` (the server tag and the pip plugin must match) in `install-bgutil.sh` and `install-ytdlp.sh`, change the pin in `yt-dlp-update.service`, reinstall that unit, and re-run both installers. Manual update:
+
+```bash
+sudo systemctl start yt-dlp-update.service
+journalctl -u yt-dlp-update.service -n 20
+```
+
+### Troubleshooting `youtube_blocked`
+
+YouTube rate-limited or bot-checked the server IP. SourceRudder reports it once, does not retry, does not cache the failure, and pauses all YouTube requests for `YOUTUBE_BLOCK_COOLDOWN` (15 minutes by default). Do not retry in a loop and do not try other fetch tools for the same video. Wait, confirm bgutil answers `/ping` and yt-dlp is current, then try a single video again. If the block persists, the IP is flagged; this deployment does not use cookies or proxies.
+
 ## Secrets and release safety
 
 - Keep Compose secrets in an ignored, permission-restricted local environment file; never place credentials in Compose, manifests, or source control.

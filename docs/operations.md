@@ -13,7 +13,7 @@ curl --fail --silent \
   http://127.0.0.1:8080/metrics
 ```
 
-Then initialize an MCP client, run `tools/list` (expect 28 tools), and test one SearXNG-backed search, one direct-provider search such as `search_stackoverflow`, and `search_local_index` when it is required. Review `partial`, `warnings`, `errors`, and `strategy` before treating an empty result as an incident.
+Then initialize an MCP client, run `tools/list` (expect 29 tools), and test one SearXNG-backed search, one direct-provider search such as `search_stackoverflow`, and `search_local_index` when it is required. Review `partial`, `warnings`, `errors`, and `strategy` before treating an empty result as an incident.
 
 ## HTTP surface
 
@@ -59,6 +59,13 @@ curl --fail http://127.0.0.1:8080/healthz
 ```
 
 After an update, verify `initialize`, `tools/list`, and representative searches. To roll back, check out the previous known-good SHA, rebuild `sourcerudder`, start Compose, and repeat those checks. For Kubernetes, restore the prior immutable image reference; for systemd, restore the binary, `BINARY_SHA256`, rendered unit, `VERSION`, and `IMAGE` from the same release bundle.
+
+## YouTube transcripts runbook
+
+- `youtube_blocked`: YouTube rate-limited or bot-checked the server IP. SourceRudder starts a global cooldown (15 minutes by default, `YOUTUBE_BLOCK_COOLDOWN`) and does not cache the failure. Do not retry; wait, then try one video again.
+- `youtube_unavailable`: transcripts are disabled (`YOUTUBE_TRANSCRIPTS=off`) or `YTDLP_PATH` does not resolve to a working yt-dlp.
+- `youtube_timeout` or `youtube_error`: check `journalctl -u sourcerudder`, `systemctl status bgutil-pot-provider`, and `curl -fsS http://127.0.0.1:4416/ping`.
+- A yt-dlp update can break extraction; see "YouTube transcripts" in [deployment](deployment.md) for the timer and a manual update.
 
 ## Incident triage
 
