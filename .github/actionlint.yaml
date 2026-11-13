@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # Custom label of the repository-scoped runner on Proxmox VM102.
+  labels:
+    - private-sourcerudder

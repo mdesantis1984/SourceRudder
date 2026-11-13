@@ -2,7 +2,7 @@
 
 [English](mcp-clients.md) | [Español](mcp-clients.es.md)
 
-Connect each client to SourceRudder through either HTTP or `stdio`, not both for the same server entry. A successful connection exposes 28 tools and the guide resource `agent-guide://sourcerudder/wire-contract`.
+Connect each client to SourceRudder through either HTTP or `stdio`, not both for the same server entry. A successful connection exposes 29 tools and the guide resource `agent-guide://sourcerudder/wire-contract`.
 
 ## HTTP with Compose
 
@@ -149,7 +149,9 @@ curl -fsS \
   http://127.0.0.1:8080/mcp
 ```
 
-The 28 tool names are `search_web`, `search_news`, `search_doc_oficial`, `search_local_index`, `search_github`, `search_github_pr`, `search_github_issue`, `search_stackoverflow`, `search_npm`, `search_nuget`, `search_pypi`, `search_docker_hub`, `search_academic`, `search_reddit`, `search_youtube`, `search_images`, `fetch_url`, `fetch_and_extract`, `extract_structured`, `validate_url`, `check_link_status`, `summarize_results`, `deep_research`, `compare_sources`, `get_cached`, `invalidate_cache`, `get_search_history`, and `get_current_date`.
+The 29 tool names are `search_web`, `search_news`, `search_doc_oficial`, `search_local_index`, `search_github`, `search_github_pr`, `search_github_issue`, `search_stackoverflow`, `search_npm`, `search_nuget`, `search_pypi`, `search_docker_hub`, `search_academic`, `search_reddit`, `search_youtube`, `search_images`, `fetch_url`, `fetch_and_extract`, `fetch_youtube_transcript`, `extract_structured`, `validate_url`, `check_link_status`, `summarize_results`, `deep_research`, `compare_sources`, `get_cached`, `invalidate_cache`, `get_search_history`, and `get_current_date`.
+
+`fetch_url` and `fetch_and_extract` delegate YouTube video URLs to `fetch_youtube_transcript` instead of scraping the watch page; channels, searches, and other URLs are fetched as before. `fetch_youtube_transcript` takes `url`, optional `language`, and optional `maxChars` (default 60000, maximum 400000). A `youtube_blocked` error means YouTube blocked the server IP: do not retry and do not try other fetch tools for that video.
 
 Keep the returned JSON shape, connector names, and strategy IDs intact. In particular, `search_doc_oficial` returns `official_doc_registry_search` or `official_doc_web_fallback`; the optional local index returns `local_index_lexical` or `local_index_unavailable`; and Reddit uses `searxng_reddit_index`. A `401` means the HTTP credential does not match. Empty or `partial:true` search results can indicate provider degradation rather than an MCP connection failure.
 

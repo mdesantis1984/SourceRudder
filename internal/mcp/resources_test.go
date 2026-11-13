@@ -148,6 +148,8 @@ func TestAgentGuideCoversWireContractContent(t *testing.T) {
 		"healthy", "degradado", "local_index_unavailable", "official_doc_web_fallback", "searxng_reddit_index",
 		// Specialized tool limitations.
 		"search_doc_oficial", "search_local_index",
+		// YouTube transcripts.
+		"fetch_youtube_transcript", "youtube_blocked",
 		// Output shapes for each family.
 		"FetchResponse", "valid", "summarize_results", "deep_research", "compare_sources", "get_current_date",
 		// Stable URI for re-reading the guide itself.

@@ -148,8 +148,8 @@ def bootstrap(token, deadline):
         raise RuntimeError(meta)
     tools, meta = rpc("tools-list", "tools/list", {}, token, deadline)
     names = tools.get("tools") if isinstance(tools, dict) else None
-    if not isinstance(names, list) or len(names) != 28:
-        raise RuntimeError("tools/list did not return 28 tools")
+    if not isinstance(names, list) or len(names) != 29:
+        raise RuntimeError("tools/list did not return 29 tools")
     return {"initialize": initialize, "server_version": initialize.get("serverInfo", {}).get("version", ""), "tool_count": len(names), "tool_names": [tool.get("name") for tool in names if isinstance(tool, dict)]}
 
 

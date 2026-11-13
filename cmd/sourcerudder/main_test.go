@@ -13,6 +13,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 )
 
 // TestFetchTimeoutMsPropagatesIntoFetcherService is the Phase 6.4
@@ -176,8 +177,8 @@ func TestToolsCount(t *testing.T) {
 	synthSvc := synthesis.NewService()
 	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	tools := server.Tools()
-	if len(tools) != 28 {
-		t.Errorf("expected 28 tools (restored runtime contract), got %d", len(tools))
+	if len(tools) != 29 {
+		t.Errorf("expected 29 tools (restored runtime contract), got %d", len(tools))
 	}
 }
 
@@ -195,5 +196,84 @@ func TestHandleInitialize(t *testing.T) {
 	m := result.(map[string]interface{})
 	if m["serverInfo"] == nil {
 		t.Error("expected serverInfo in result")
+	}
+}
+
+func TestEnvDuration(t *testing.T) {
+	const name = "SOURCERUDDER_TEST_DURATION"
+	cases := []struct {
+		name  string
+		set   bool
+		value string
+		want  time.Duration
+	}{
+		{"unset", false, "", 5 * time.Minute},
+		{"empty", true, "", 5 * time.Minute},
+		{"valid", true, "90s", 90 * time.Second},
+		{"invalid", true, "soon", 5 * time.Minute},
+		{"zero", true, "0s", 5 * time.Minute},
+		{"negative", true, "-1m", 5 * time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(name, tc.value)
+			}
+			if got := envDuration(name, 5*time.Minute); got != tc.want {
+				t.Fatalf("envDuration = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildYouTubeConfigDefaults(t *testing.T) {
+	for _, name := range []string{"YTDLP_PATH", "YTDLP_JS_RUNTIMES", "YOUTUBE_POT_BASE_URL", "YOUTUBE_FETCH_POT", "YOUTUBE_DEFAULT_LANGUAGE", "YOUTUBE_CACHE_TTL", "YOUTUBE_BLOCK_COOLDOWN", "YTDLP_TIMEOUT", "YOUTUBE_WORK_DIR", "YOUTUBE_TRANSCRIPTS"} {
+		t.Setenv(name, "")
+	}
+	cfg, enabled := buildYouTubeConfig()
+	if !enabled {
+		t.Fatal("YouTube transcripts must be enabled by default")
+	}
+	want := youtube.Config{
+		Binary:        "yt-dlp",
+		CacheTTL:      youtube.DefaultCacheTTL,
+		BlockCooldown: youtube.DefaultBlockCooldown,
+		Timeout:       youtube.DefaultTimeout,
+	}
+	if cfg != want {
+		t.Fatalf("config = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestBuildYouTubeConfigFromEnv(t *testing.T) {
+	t.Setenv("YTDLP_PATH", "/opt/yt-dlp")
+	t.Setenv("YTDLP_JS_RUNTIMES", "node")
+	t.Setenv("YOUTUBE_POT_BASE_URL", "http://127.0.0.1:4416")
+	t.Setenv("YOUTUBE_FETCH_POT", "auto")
+	t.Setenv("YOUTUBE_DEFAULT_LANGUAGE", "es")
+	t.Setenv("YOUTUBE_CACHE_TTL", "48h")
+	t.Setenv("YOUTUBE_BLOCK_COOLDOWN", "30m")
+	t.Setenv("YTDLP_TIMEOUT", "45s")
+	t.Setenv("YOUTUBE_WORK_DIR", "/var/tmp/yt")
+	t.Setenv("YOUTUBE_TRANSCRIPTS", "")
+	cfg, enabled := buildYouTubeConfig()
+	if !enabled {
+		t.Fatal("expected enabled")
+	}
+	want := youtube.Config{
+		Binary: "/opt/yt-dlp", JSRuntimes: "node", POTBaseURL: "http://127.0.0.1:4416", FetchPOT: "auto", DefaultLanguage: "es", WorkDir: "/var/tmp/yt",
+		CacheTTL: 48 * time.Hour, BlockCooldown: 30 * time.Minute, Timeout: 45 * time.Second,
+	}
+	if cfg != want {
+		t.Fatalf("config = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestBuildYouTubeConfigOffDisablesService(t *testing.T) {
+	for _, v := range []string{"off", "OFF", " off "} {
+		t.Setenv("YOUTUBE_TRANSCRIPTS", v)
+		if _, enabled := buildYouTubeConfig(); enabled {
+			t.Fatalf("YOUTUBE_TRANSCRIPTS=%q must disable the service", v)
+		}
 	}
 }

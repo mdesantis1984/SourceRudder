@@ -37,6 +37,16 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `FETCH_MAX_REDIRECTS` | `5` | Máximo de redirecciones validadas. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Máximo de intentos de fetch. |
 | `LOCAL_INDEX_PATH` | vacío | Habilita `search_local_index`. |
+| `YOUTUBE_TRANSCRIPTS` | habilitado | `off` deshabilita `fetch_youtube_transcript` y la delegación de YouTube en `fetch_url` / `fetch_and_extract`. |
+| `YTDLP_PATH` | `yt-dlp` | Ejecutable de yt-dlp. La unidad systemd usa `/opt/yt-dlp/bin/yt-dlp`. |
+| `YTDLP_JS_RUNTIMES` | vacío | Runtime de JavaScript que se pasa a yt-dlp como `RUNTIME[:RUTA]`. La unidad systemd usa `node:/opt/nodejs/bin/node`. |
+| `YOUTUBE_POT_BASE_URL` | vacío (por defecto del plugin `http://127.0.0.1:4416`) | URL del servidor de PO tokens bgutil. |
+| `YOUTUBE_FETCH_POT` | `always` | Política `youtube:fetch_pot` de yt-dlp (`always`, `auto`, `never`). `always` también envía un PO token con la solicitud al reproductor; con `auto`, una IP marcada recibe "Sign in to confirm you're not a bot" antes de que yt-dlp pida un token a bgutil. |
+| `YOUTUBE_DEFAULT_LANGUAGE` | _(vacío)_ | Código de idioma (p. ej. `es`) que se usa como idioma solicitado de la transcripción cuando una llamada lo omite, en particular `fetch_url` y `fetch_and_extract`, que no tienen argumento de idioma. Un `language` explícito siempre tiene prioridad; un valor inválido se ignora. Conviene definirla porque el idioma hablado que declara YouTube puede diferir del idioma del título en videos con doblaje automático (p. ej. un título en español reportado como `ar`). |
+| `YOUTUBE_CACHE_TTL` | `168h` | TTL de la caché de transcripciones por video e idioma. |
+| `YOUTUBE_BLOCK_COOLDOWN` | `15m` | Pausa global de solicitudes a YouTube tras un 429 o verificación anti-bot. |
+| `YTDLP_TIMEOUT` | `2m` | Timeout de cada invocación de yt-dlp. |
+| `YOUTUBE_WORK_DIR` | vacío (`TMPDIR`) | Directorio temporal para la salida de yt-dlp. |
 
 Use un `.env` local, ignorado por Git y con permisos restrictivos.
 

@@ -103,7 +103,7 @@ class DocumentationTests(unittest.TestCase):
                 self.assertNotIn("docs/assets/sourcerudder-social-preview.png", body)
                 self.assertIn("actions/workflows/ci.yml/badge.svg?branch=main", body)
                 self.assertIn("```mermaid", body)
-                self.assertIn("28", body)
+                self.assertIn("29", body)
                 self.assertIn("16", body)
                 self.assertIn(headings[2], body.lower())
                 self.assertLess(body.index(headings[0]), body.index(headings[1]))

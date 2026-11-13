@@ -1,0 +1,19 @@
+[Unit]
+Description=Update yt-dlp in /opt/yt-dlp (bgutil plugin stays pinned)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Use pip, not `yt-dlp -U`: a pip-installed yt-dlp cannot self-update. The
+# plugin pin below must match the bgutil server version (BGUTIL_VERSION in
+# install-ytdlp.sh and install-bgutil.sh).
+Environment=PIP_DISABLE_PIP_VERSION_CHECK=1
+Environment=PIP_NO_CACHE_DIR=1
+ExecStart=/opt/yt-dlp/bin/pip install --upgrade "yt-dlp[default]" "bgutil-ytdlp-pot-provider==2.0.2"
+ExecStartPost=/opt/yt-dlp/bin/yt-dlp --version
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/yt-dlp

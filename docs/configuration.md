@@ -37,6 +37,16 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `FETCH_MAX_REDIRECTS` | `5` | Maximum validated redirects. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Maximum fetch attempts. |
 | `LOCAL_INDEX_PATH` | empty | Enables `search_local_index`. |
+| `YOUTUBE_TRANSCRIPTS` | enabled | `off` disables `fetch_youtube_transcript` and the YouTube delegation in `fetch_url` / `fetch_and_extract`. |
+| `YTDLP_PATH` | `yt-dlp` | yt-dlp executable. The systemd unit sets `/opt/yt-dlp/bin/yt-dlp`. |
+| `YTDLP_JS_RUNTIMES` | empty | JavaScript runtime passed to yt-dlp as `RUNTIME[:PATH]`. The systemd unit sets `node:/opt/nodejs/bin/node`. |
+| `YOUTUBE_POT_BASE_URL` | empty (plugin default `http://127.0.0.1:4416`) | bgutil PO token server URL. |
+| `YOUTUBE_FETCH_POT` | `always` | yt-dlp `youtube:fetch_pot` policy (`always`, `auto`, `never`). `always` also sends a PO token with the player request; with `auto`, a flagged IP gets "Sign in to confirm you're not a bot" before yt-dlp asks bgutil for a token. |
+| `YOUTUBE_DEFAULT_LANGUAGE` | _(empty)_ | Language code (e.g. `es`) used as the requested transcript language when a call omits it, notably `fetch_url` and `fetch_and_extract`, which have no language argument. An explicit `language` always wins; an invalid value is ignored. Set it because YouTube's declared spoken language can differ from the title's language for auto-dubbed videos (e.g. a Spanish title reported as `ar`). |
+| `YOUTUBE_CACHE_TTL` | `168h` | Transcript cache TTL per video and language. |
+| `YOUTUBE_BLOCK_COOLDOWN` | `15m` | Global pause on YouTube requests after a 429 or bot check. |
+| `YTDLP_TIMEOUT` | `2m` | Timeout of each yt-dlp invocation. |
+| `YOUTUBE_WORK_DIR` | empty (`TMPDIR`) | Scratch directory for yt-dlp output. |
 
 Use a local, ignored `.env` file with restrictive permissions.
 
