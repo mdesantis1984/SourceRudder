@@ -11,7 +11,9 @@ permissions:
 jobs:
   policy:
     name: policy
-    runs-on: ubuntu-latest
+    # pull_request_target runs the base-branch workflow without checking out
+    # pull request code, so it is safe on the private runner.
+    runs-on: [self-hosted, Linux, X64, private-sourcerudder]
     steps:
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:

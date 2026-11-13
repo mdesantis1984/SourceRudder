@@ -42,6 +42,13 @@ Environment=FETCH_USER_AGENT=SourceRudder/@VERSION@
 Environment=FETCH_MAX_REDIRECTS=5
 Environment=FETCH_MAX_ATTEMPTS=3
 Environment=LOCAL_INDEX_PATH=
+# YouTube transcripts (see deploy/youtube/). yt-dlp runs with --no-cache-dir and
+# writes under the private /tmp, so no extra write path is needed. MemoryMax is
+# unchanged: yt-dlp (python) and node run inside this cgroup but only briefly.
+# MemoryDenyWriteExecute stays unset because the node JS runtime needs a JIT.
+Environment=YTDLP_PATH=/opt/yt-dlp/bin/yt-dlp
+Environment=YTDLP_JS_RUNTIMES=node:/opt/nodejs/bin/node
+Environment=YOUTUBE_POT_BASE_URL=http://127.0.0.1:4416
 
 [Install]
 WantedBy=multi-user.target

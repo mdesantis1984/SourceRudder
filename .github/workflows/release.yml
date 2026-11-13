@@ -14,6 +14,8 @@ permissions:
 jobs:
   release:
     if: github.repository == 'mdesantis1984/SourceRudder'
+    # Stays GitHub-hosted: the private runner user has no Docker daemon access
+    # for multi-arch buildx pushes.
     runs-on: ubuntu-latest
     environment: release
     env:
@@ -24,7 +26,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: true
       - name: Verify release gates
         run: |

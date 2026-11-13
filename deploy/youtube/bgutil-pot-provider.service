@@ -1,0 +1,34 @@
+[Unit]
+Description=bgutil YouTube PO token provider (loopback only)
+Documentation=https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bgutil
+Group=bgutil
+WorkingDirectory=/opt/bgutil-pot-provider/server
+# --host 127.0.0.1 binds the unauthenticated server to IPv4 loopback only (the
+# server also defaults to localhost, but be explicit). Keep it that way:
+# anyone who can reach this port can mint tokens.
+ExecStart=/opt/nodejs/bin/node build/main.js --host 127.0.0.1 --port 4416
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=5
+
+# Bound the service and prevent privilege expansion. MemoryDenyWriteExecute is
+# deliberately NOT set: Node.js JIT needs writable+executable memory.
+MemoryMax=384M
+TasksMax=128
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/bgutil-pot-provider /opt/nodejs
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

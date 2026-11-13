@@ -19,6 +19,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 )
 
 var (
@@ -62,6 +63,42 @@ func envInt(name string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+// envDuration returns the Go duration (e.g. "90s", "48h") in the named
+// environment variable when it is set, parses cleanly, and is positive;
+// otherwise the fallback.
+func envDuration(name string, fallback time.Duration) time.Duration {
+	v, ok := os.LookupEnv(name)
+	if !ok || v == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+// buildYouTubeConfig returns the transcript service config from the
+// YTDLP_* / YOUTUBE_* env vars and whether the service is enabled.
+// YOUTUBE_TRANSCRIPTS=off disables it so the YouTube tool reports
+// youtube_unavailable and fetch_url keeps its generic behavior.
+func buildYouTubeConfig() (youtube.Config, bool) {
+	if strings.EqualFold(strings.TrimSpace(envDefault("YOUTUBE_TRANSCRIPTS", "")), "off") {
+		return youtube.Config{}, false
+	}
+	return youtube.Config{
+		Binary:          envDefault("YTDLP_PATH", "yt-dlp"),
+		JSRuntimes:      envDefault("YTDLP_JS_RUNTIMES", ""),
+		POTBaseURL:      envDefault("YOUTUBE_POT_BASE_URL", ""),
+		FetchPOT:        envDefault("YOUTUBE_FETCH_POT", ""),
+		DefaultLanguage: envDefault("YOUTUBE_DEFAULT_LANGUAGE", ""),
+		WorkDir:         envDefault("YOUTUBE_WORK_DIR", ""),
+		CacheTTL:        envDuration("YOUTUBE_CACHE_TTL", youtube.DefaultCacheTTL),
+		BlockCooldown:   envDuration("YOUTUBE_BLOCK_COOLDOWN", youtube.DefaultBlockCooldown),
+		Timeout:         envDuration("YTDLP_TIMEOUT", youtube.DefaultTimeout),
+	}, true
 }
 
 // buildFetchConfig returns the FetcherService config, layering the
@@ -168,6 +205,9 @@ func main() {
 	}
 
 	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history)
+	if cfg, enabled := buildYouTubeConfig(); enabled {
+		server.SetYouTubeService(youtube.NewService(cfg, nil))
+	}
 	var trans mcp.Transport
 	switch *transport {
 	case "stdio":

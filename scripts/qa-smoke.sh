@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/qa-smoke.sh — probe the running QA stack. Spec contract:
-#   /healthz 200 {"status":"ok"}  |  /mcp tools/list == 28 entries
+#   /healthz 200 {"status":"ok"}  |  /mcp tools/list == 29 entries
 #   search_web 200 + results:[] + cached:false.
 #
 # Auth: the compose service injects QA_AUTH_KEY into the container as
@@ -13,7 +13,7 @@ set -u
 set -o pipefail
 
 BASE_URL="http://127.0.0.1:8080"
-EXPECTED_TOOLS=28
+EXPECTED_TOOLS=29
 
 log() { printf 'qa-smoke: %s\n' "$*" >&2; }
 fail() { log "$1"; exit 1; }

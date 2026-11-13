@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
+	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
@@ -62,6 +64,8 @@ func (s *Server) registerTools() {
 			t.Handler = s.makeFetchHandler("fetch_and_extract")
 		case "extract_structured":
 			t.Handler = s.makeFetchHandler("extract_structured")
+		case "fetch_youtube_transcript":
+			t.Handler = s.makeYouTubeTranscriptHandler()
 		case "validate_url":
 			t.Handler = s.makeValidateHandler("validate_url")
 		case "check_link_status":
@@ -312,14 +316,23 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 func (s *Server) makeFetchHandler(op string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req struct {
-			URL  string `json:"url"`
-			Mode string `json:"mode"`
+			URL      string `json:"url"`
+			Mode     string `json:"mode"`
+			Language string `json:"language"`
+			MaxChars int    `json:"maxChars"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
 		}
 		if req.Mode == "" {
 			req.Mode = "auto"
+		}
+		if (op == "fetch" || op == "fetch_and_extract") && s.youtube != nil && youtube.IsVideoURL(req.URL) {
+			t, err := s.youtube.Fetch(ctx, youtube.Request{URL: req.URL, Language: req.Language, MaxChars: req.MaxChars})
+			if err != nil {
+				return nil, err
+			}
+			return youtubeFetchResponse(t), nil
 		}
 		switch op {
 		case "fetch":
@@ -330,6 +343,48 @@ func (s *Server) makeFetchHandler(op string) func(ctx context.Context, args json
 			return s.fetcherService.ExtractStructured(ctx, req.URL)
 		}
 		return nil, fmt.Errorf("unknown fetch operation: %s", op)
+	}
+}
+
+// makeYouTubeTranscriptHandler serves fetch_youtube_transcript. Errors are
+// returned as Go errors so the caller sees exactly one JSON-RPC error.
+func (s *Server) makeYouTubeTranscriptHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
+		var req youtube.Request
+		if err := json.Unmarshal(args, &req); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if s.youtube == nil {
+			return nil, youtube.ErrUnavailable
+		}
+		return s.youtube.Fetch(ctx, req)
+	}
+}
+
+// youtubeFetchResponse maps a transcript onto the FetchResponse that
+// fetch_url and fetch_and_extract return for every other page.
+func youtubeFetchResponse(t *youtube.Transcript) *types.FetchResponse {
+	metadata := map[string]string{
+		"source":          "youtube_transcript",
+		"videoId":         t.VideoID,
+		"channel":         t.Channel,
+		"uploadDate":      t.UploadDate,
+		"duration":        t.Duration,
+		"durationSeconds": strconv.Itoa(t.DurationS),
+		"language":        t.Language,
+		"trackType":       t.TrackType,
+		"cached":          strconv.FormatBool(t.Cached),
+		"truncated":       strconv.FormatBool(t.Truncated),
+		"totalChars":      strconv.Itoa(t.TotalChars),
+	}
+	warnings := append([]string{"delegated to fetch_youtube_transcript: YouTube watch pages are not scraped"}, t.Warnings...)
+	return &types.FetchResponse{
+		URL:      t.URL,
+		Title:    t.Title,
+		Content:  t.Transcript,
+		Metadata: metadata,
+		Warnings: warnings,
+		Outcome:  "success",
 	}
 }
 
