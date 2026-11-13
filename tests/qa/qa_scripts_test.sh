@@ -526,9 +526,9 @@ test_qa_smoke_sends_authorization_bearer() {
   assert_grep "Bearer" "$script" "smoke.auth.bearer" || return 1
 }
 
-test_qa_smoke_asserts_twenty_eight_tools() {
-  # B3 gate: the live binary registers exactly 28 tools (post-restore-runtime-contract).
-  # The smoke MUST assert 28 — neither 25 (the pre-restoration count) nor any
+test_qa_smoke_asserts_twenty_nine_tools() {
+  # B3 gate: the live binary registers exactly 29 tools (post-restore-runtime-contract).
+  # The smoke MUST assert 29 — neither 25 (the pre-restoration count) nor any
   # other drift. Drift detection is enforced by the adjacent test that
   # # cross-checks the count against the source.
   local server="$REPO_ROOT/internal/mcp/server.go"
@@ -537,13 +537,13 @@ test_qa_smoke_asserts_twenty_eight_tools() {
   assert_file_exists "$smoke" || return 1
   local live_count
   live_count=$(grep -cE '\{Name:[[:space:]]*"' "$server" || true)
-  if [ "$live_count" -ne 28 ]; then
-    record_fail "live tool count is $live_count, not 28; B3 gate premise broken"
+  if [ "$live_count" -ne 29 ]; then
+    record_fail "live tool count is $live_count, not 29; B3 gate premise broken"
     return 1
   fi
   local smoke_count
   smoke_count=$(grep -E "^EXPECTED_TOOLS=" "$smoke" | head -1 | sed -E 's/^EXPECTED_TOOLS=//')
-  assert_eq "$smoke_count" "28" "smoke EXPECTED_TOOLS vs 28-tool runtime contract" || return 1
+  assert_eq "$smoke_count" "29" "smoke EXPECTED_TOOLS vs 29-tool runtime contract" || return 1
 }
 
 # ---- Phase 4: Makefile and README additive appends -------------------------
@@ -743,7 +743,7 @@ main() {
   run_test test_qa_down_preserves_volumes
   run_test test_qa_smoke_probes_healthz
   run_test test_qa_smoke_probes_tools_list_actual_count
-  run_test test_qa_smoke_asserts_twenty_eight_tools
+  run_test test_qa_smoke_asserts_twenty_nine_tools
   run_test test_qa_smoke_probes_search_web_empty_uncached
   run_test test_qa_smoke_sends_authorization_bearer
 

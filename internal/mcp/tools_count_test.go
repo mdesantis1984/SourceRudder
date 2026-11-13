@@ -8,14 +8,14 @@ import (
 
 // TestToolCountMatchesStaticGrep is a sanity bridge between the
 // runtime registry and the source-of-truth grep guard. The grep guard
-// `grep -cE 'Name:\\s+\"' internal/mcp/server.go` MUST equal 28.
+// `grep -cE 'Name:\\s+\"' internal/mcp/server.go` MUST equal 29.
 // The test encodes the contract directly so a future operator that
 // forgets to re-run the grep still gets the assertion through the
 // test suite.
 func TestToolCountMatchesStaticGrep(t *testing.T) {
 	s := buildTestServer(t)
-	if got := len(s.Tools()); got != 28 {
-		t.Fatalf("registry holds %d tools; expected 28 (grep guard is the source of truth)", got)
+	if got := len(s.Tools()); got != 29 {
+		t.Fatalf("registry holds %d tools; expected 29 (grep guard is the source of truth)", got)
 	}
 	// Round-trip through the public ListTools path so the wire shape
 	// (which strips handler funcs) is asserted instead of the
@@ -28,8 +28,8 @@ func TestToolCountMatchesStaticGrep(t *testing.T) {
 	if err := json.Unmarshal(data, &roundTripped); err != nil {
 		t.Fatalf("Unmarshal registry: %v", err)
 	}
-	if len(roundTripped) != 28 {
-		t.Fatalf("wire-roundtrip count: got %d, want 28", len(roundTripped))
+	if len(roundTripped) != 29 {
+		t.Fatalf("wire-roundtrip count: got %d, want 29", len(roundTripped))
 	}
 }
 
@@ -49,8 +49,8 @@ func TestHandleToolsListWireShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected []map[string]interface{}, got %T", m["tools"])
 	}
-	if len(toolsList) != 28 {
-		t.Fatalf("expected 28 tools, got %d", len(toolsList))
+	if len(toolsList) != 29 {
+		t.Fatalf("expected 29 tools, got %d", len(toolsList))
 	}
 	for _, entry := range toolsList {
 		name, _ := entry["name"].(string)

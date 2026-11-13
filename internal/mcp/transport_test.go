@@ -47,8 +47,8 @@ func TestSTDIOTransportProcessesRequestsAndNotifications(t *testing.T) {
 		t.Fatalf("decode tools response: %v", err)
 	}
 	result := tools["result"].(map[string]interface{})
-	if got := len(result["tools"].([]interface{})); got != 28 {
-		t.Fatalf("tools count = %d, want 28", got)
+	if got := len(result["tools"].([]interface{})); got != 29 {
+		t.Fatalf("tools count = %d, want 29", got)
 	}
 }
 

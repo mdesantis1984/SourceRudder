@@ -19,6 +19,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
+	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 )
 
 const (
@@ -47,7 +48,10 @@ type Server struct {
 	met               *observability.Metrics
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
-	authValidator     *auth.Validator
+	// youtube serves video transcripts. It is injected with
+	// SetYouTubeService; nil keeps the previous fetch behavior.
+	youtube       *youtube.Service
+	authValidator *auth.Validator
 	// history is shared by search handlers and get_search_history.
 	// Production construction supplies it; nil remains valid for
 	// isolated test fixtures.
@@ -131,6 +135,13 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 	return s
 }
 
+// SetYouTubeService enables fetch_youtube_transcript and makes fetch_url /
+// fetch_and_extract delegate YouTube video URLs to it. It must be called
+// before the server starts serving requests.
+func (s *Server) SetYouTubeService(svc *youtube.Service) {
+	s.youtube = svc
+}
+
 // Handler returns the production HTTP handler chain for this Server:
 // /healthz is always open so Kubernetes liveness/readiness probes
 // can hit it without credentials, while /mcp and /metrics stay
@@ -210,6 +221,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "get_cached", Description: "Recupera una entrada de la caché en proceso por clave exacta. Devuelve {cache_hit:bool, entry:CacheEntry|null}. Si no hay entrada o expiró, devuelve cache_hit=false sin error.", InputSchema: cachedEntryInputSchema()},
 		{Name: "invalidate_cache", Description: "Elimina una entrada de la caché en proceso por clave exacta. Devuelve {key:string, invalidated:bool}. Idempotente: cuando la clave no existe, devuelve invalidated=false sin error.", InputSchema: cachedEntryInputSchema()},
 		{Name: "get_search_history", Description: "Lista las últimas invocaciones de búsqueda retenidas en el proceso (newest-first). Argumentos: limit (int, requerido) y query opcional como filtro substring case-sensitive sobre la Query almacenada. Devuelve {history:Entry[], limit:int, query:string}.", InputSchema: historyInputSchema()},
+		{Name: "fetch_youtube_transcript", Description: "Transcripción de un video de YouTube vía yt-dlp (URL o ID de 11 caracteres). Devuelve {url, videoId, title, channel, uploadDate, duration, language, trackType manual|automatic, cached, truncated, totalChars, transcript}. Resultado en caché por video+idioma. Si falla con youtube_blocked (429 o bot check), NO reintentes ni uses fetch_url ni otras tools de fetch para ese video: espera. fetch_url y fetch_and_extract ya delegan aquí las URLs de video.", InputSchema: youtubeTranscriptInputSchema()},
 		{Name: "get_current_date", Description: "Fecha y hora UTC consistente para citación: {date, time, timezone:\"UTC\", timestamp}.", InputSchema: emptyInputSchema()},
 	}
 }
@@ -272,6 +284,18 @@ func fetchURLInputSchema() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"url": map[string]interface{}{"type": "string", "description": "URL http(s) a obtener (requerido). SSRF bloquea localhost, *.local y privadas."},
+		},
+		"required": []string{"url"},
+	}
+}
+
+func youtubeTranscriptInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"url":      map[string]interface{}{"type": "string", "description": "URL de un video de YouTube (watch, youtu.be, shorts, embed, live) o ID de 11 caracteres (requerido)."},
+			"language": map[string]interface{}{"type": "string", "description": "Idioma preferido de la pista, ej: 'es', 'en', 'pt-BR'. Por defecto el idioma hablado del video."},
+			"maxChars": map[string]interface{}{"type": "integer", "description": "Máximo de caracteres de transcripción devueltos (default 60000). El resultado indica si se truncó."},
 		},
 		"required": []string{"url"},
 	}
