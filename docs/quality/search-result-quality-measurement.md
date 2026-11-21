@@ -87,4 +87,4 @@ page 1: it is the same 10-result slice size.
   those conditions; the corpus queries returned results normally.
 - Synthesis tools with `resultSetId` (S10), cursor expiry, lazy page fetch beyond the stored set, concurrency.
 - Compact format over the whole corpus; only the 5 queries above were measured in compact mode.
-- Production, CT201 and any non-loopback endpoint; Pi or codemode token costs.
+- Production and any non-loopback endpoint; Pi or codemode token costs.
