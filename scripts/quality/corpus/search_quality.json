@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "description": "Fixed SourceRudder search quality corpus (S11). expect_any: case-insensitive substrings; a case hits when any result URL in the top k contains one.",
+  "cases": [
+    {
+      "id": "web-go-context",
+      "tool": "search_web",
+      "arguments": {
+        "query": "Go context package cancellation",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "pkg.go.dev/context",
+        "go.dev/blog/context"
+      ],
+      "note": "Official Go package docs or the Go blog post."
+    },
+    {
+      "id": "web-docker-healthcheck",
+      "tool": "search_web",
+      "arguments": {
+        "query": "Dockerfile HEALTHCHECK instruction",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "docs.docker.com"
+      ],
+      "note": "Official Docker reference."
+    },
+    {
+      "id": "web-python-asyncio",
+      "tool": "search_web",
+      "arguments": {
+        "query": "python asyncio documentation",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "docs.python.org/3/library/asyncio"
+      ],
+      "note": "Official asyncio library docs."
+    },
+    {
+      "id": "web-postgres-create-index",
+      "tool": "search_web",
+      "arguments": {
+        "query": "PostgreSQL CREATE INDEX",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "postgresql.org/docs"
+      ],
+      "note": "Official PostgreSQL manual."
+    },
+    {
+      "id": "github-kubernetes",
+      "tool": "search_github",
+      "arguments": {
+        "query": "kubernetes",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "github.com/kubernetes/kubernetes"
+      ],
+      "note": "Canonical Kubernetes repository."
+    },
+    {
+      "id": "github-golang-go",
+      "tool": "search_github",
+      "arguments": {
+        "query": "golang go programming language",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "github.com/golang/go"
+      ],
+      "note": "Canonical Go repository."
+    },
+    {
+      "id": "github-searxng",
+      "tool": "search_github",
+      "arguments": {
+        "query": "searxng",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "github.com/searxng/searxng"
+      ],
+      "note": "Canonical SearXNG repository."
+    },
+    {
+      "id": "so-undo-git-commits",
+      "tool": "search_stackoverflow",
+      "arguments": {
+        "query": "undo the most recent local commits in git",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "stackoverflow.com/questions/927358"
+      ],
+      "note": "Canonical question 927358."
+    },
+    {
+      "id": "so-exit-vim",
+      "tool": "search_stackoverflow",
+      "arguments": {
+        "query": "how do I exit the vim editor",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "stackoverflow.com/questions/11828270"
+      ],
+      "note": "Canonical question 11828270."
+    },
+    {
+      "id": "so-python-yield",
+      "tool": "search_stackoverflow",
+      "arguments": {
+        "query": "what does the yield keyword do in python",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "stackoverflow.com/questions/231767"
+      ],
+      "note": "Canonical question 231767."
+    },
+    {
+      "id": "npm-express",
+      "tool": "search_npm",
+      "arguments": {
+        "query": "express",
+        "maxResults": 10
+      },
+      "k": 3,
+      "expect_any": [
+        "npmjs.com/package/express"
+      ],
+      "note": "The express package itself, not a plugin."
+    },
+    {
+      "id": "npm-react",
+      "tool": "search_npm",
+      "arguments": {
+        "query": "react",
+        "maxResults": 10
+      },
+      "k": 3,
+      "expect_any": [
+        "npmjs.com/package/react"
+      ],
+      "note": "The react package itself."
+    },
+    {
+      "id": "npm-typescript",
+      "tool": "search_npm",
+      "arguments": {
+        "query": "typescript",
+        "maxResults": 10
+      },
+      "k": 3,
+      "expect_any": [
+        "npmjs.com/package/typescript"
+      ],
+      "note": "The typescript package itself."
+    },
+    {
+      "id": "pypi-requests",
+      "tool": "search_pypi",
+      "arguments": {
+        "query": "requests",
+        "maxResults": 10
+      },
+      "k": 3,
+      "expect_any": [
+        "pypi.org/project/requests"
+      ],
+      "note": "The requests package itself."
+    },
+    {
+      "id": "pypi-numpy",
+      "tool": "search_pypi",
+      "arguments": {
+        "query": "numpy",
+        "maxResults": 10
+      },
+      "k": 3,
+      "expect_any": [
+        "pypi.org/project/numpy"
+      ],
+      "note": "The numpy package itself."
+    },
+    {
+      "id": "doc-python-json",
+      "tool": "search_doc_oficial",
+      "arguments": {
+        "query": "Python json module",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "docs.python.org/3/library/json"
+      ],
+      "note": "Official Python json docs."
+    },
+    {
+      "id": "doc-go-net-http",
+      "tool": "search_doc_oficial",
+      "arguments": {
+        "query": "Go net http package",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "pkg.go.dev/net/http"
+      ],
+      "note": "Official Go net/http docs."
+    },
+    {
+      "id": "doc-docker-compose",
+      "tool": "search_doc_oficial",
+      "arguments": {
+        "query": "Docker Compose reference",
+        "maxResults": 10
+      },
+      "k": 5,
+      "expect_any": [
+        "docs.docker.com/compose",
+        "docs.docker.com/reference/compose"
+      ],
+      "note": "Official Docker Compose docs."
+    },
+    {
+      "id": "news-kubernetes",
+      "tool": "search_news",
+      "arguments": {
+        "query": "Kubernetes release",
+        "maxResults": 10
+      },
+      "k": 10,
+      "expect_any": [
+        "kubernetes.io",
+        "cncf.io",
+        "thenewstack.io",
+        "infoq.com",
+        "theregister.com",
+        "lwn.net"
+      ],
+      "note": "Volatile topic: expectation is a trusted-outlet domain, audit manually when it misses."
+    },
+    {
+      "id": "news-linux-kernel",
+      "tool": "search_news",
+      "arguments": {
+        "query": "Linux kernel release",
+        "maxResults": 10
+      },
+      "k": 10,
+      "expect_any": [
+        "kernel.org",
+        "lwn.net",
+        "phoronix.com",
+        "theregister.com",
+        "arstechnica.com"
+      ],
+      "note": "Volatile topic: expectation is a trusted-outlet domain, audit manually when it misses."
+    }
+  ]
+}
