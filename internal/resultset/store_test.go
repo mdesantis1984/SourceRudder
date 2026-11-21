@@ -205,3 +205,29 @@ func TestResultSetStoreConcurrentAccess(t *testing.T) {
 		t.Fatalf("bounds exceeded under concurrency: %+v", st)
 	}
 }
+
+func TestResultSetStoreNeverSharesSlicesWithCallers(t *testing.T) {
+	store := New(DefaultConfig())
+	warnings := make([]string, 1, 8)
+	warnings[0] = "w0"
+	in := items(1)
+	in[0].Tags = make([]string, 1, 4)
+	in[0].Tags[0] = "tag"
+	id, _ := store.Put(Set{Query: "q", Meta: types.SearchResponse{Warnings: warnings, SourcesUsed: []string{"a"}}, Results: in})
+
+	warnings[0] = "changed by caller"
+	in[0].Tags[0] = "changed by caller"
+	got, _ := store.Get(id)
+	if got.Meta.Warnings[0] != "w0" || got.Results[0].Tags[0] != "tag" {
+		t.Fatalf("store must copy slices on Put: %v %v", got.Meta.Warnings, got.Results[0].Tags)
+	}
+	if cap(got.Meta.Warnings) != len(got.Meta.Warnings) || cap(got.Meta.SourcesUsed) != len(got.Meta.SourcesUsed) {
+		t.Fatalf("Get must return clipped slices: cap=%d len=%d", cap(got.Meta.Warnings), len(got.Meta.Warnings))
+	}
+	got.Meta.Warnings[0] = "changed by reader"
+	got.Results[0].Tags[0] = "changed by reader"
+	again, _ := store.Get(id)
+	if again.Meta.Warnings[0] != "w0" || again.Results[0].Tags[0] != "tag" {
+		t.Fatalf("store must copy slices on Get: %v %v", again.Meta.Warnings, again.Results[0].Tags)
+	}
+}

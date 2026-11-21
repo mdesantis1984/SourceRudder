@@ -76,6 +76,9 @@ type fakeResultsConnector struct {
 	name     string
 	n        int
 	strategy string
+	// warnings, when set, is returned as the response Warnings slice as is
+	// (including its spare capacity) so tests can probe slice aliasing.
+	warnings []string
 	calls    int32
 }
 
@@ -92,7 +95,7 @@ func (f *fakeResultsConnector) build(req *types.SearchRequest) *types.SearchResp
 			Score:  float64(f.n - i),
 		}
 	}
-	return &types.SearchResponse{Query: req.Query, Results: items, SourcesUsed: []string{f.name}, Strategy: f.strategy}
+	return &types.SearchResponse{Query: req.Query, Results: items, SourcesUsed: []string{f.name}, Strategy: f.strategy, Warnings: f.warnings}
 }
 
 func (f *fakeResultsConnector) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
@@ -501,5 +504,58 @@ func TestResultSetWebDefaultWindowIsTwentyAndRestIsPageable(t *testing.T) {
 	}
 	if fake.requestCount() != 2 {
 		t.Fatalf("upstream requests=%d want 2 (page 1 and page 2 only)", fake.requestCount())
+	}
+}
+
+// Concurrent paging with a mismatched query appends a warning to every
+// response. The store must never hand out a slice whose spare capacity is
+// shared, or those appends race on one backing array (run with -race).
+func TestResultSetConcurrentMismatchedQueryPagingDoesNotShareWarningStorage(t *testing.T) {
+	warnings := make([]string, 3, 8)
+	for i := range warnings {
+		warnings[i] = fmt.Sprintf("connector warning %d", i)
+	}
+	fake := &fakeResultsConnector{name: "web", n: 12, warnings: warnings}
+	s := newResultSetServer(t, fake)
+	first := mustPaged(t, s, "search_web", map[string]interface{}{"query": "original query", "maxResults": 5})
+
+	const workers = 8
+	var wg sync.WaitGroup
+	errs := make(chan string, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			q := fmt.Sprintf("other query %d", i)
+			resp, err := callPaged(t, s, "search_web", map[string]interface{}{"query": q, "maxResults": 5, "offset": 5, "resultSetId": first.ResultSetID})
+			if err != nil {
+				errs <- err.Error()
+				return
+			}
+			// 3 connector warnings + "intent: ..." (added by the fresh search) + the mismatch warning.
+			if n := len(resp.Warnings); n != 5 || !strings.Contains(resp.Warnings[n-1], "query ignored") {
+				errs <- fmt.Sprintf("warnings=%v", resp.Warnings)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+	if fake.callCount() != 1 {
+		t.Fatalf("connector calls=%d want 1", fake.callCount())
+	}
+}
+
+func TestResultSetLocalIndexCapsMaxResultsAtFifty(t *testing.T) {
+	fake := &fakeResultsConnector{name: "local_index", n: 80}
+	s := newResultSetServer(t, fake)
+	resp := mustPaged(t, s, "search_local_index", map[string]interface{}{"query": "q", "maxResults": 60})
+	if len(resp.Results) != 50 {
+		t.Fatalf("results=%d want 50 (local_index cap)", len(resp.Results))
+	}
+	if resp.Total == nil || *resp.Total != 80 || resp.HasMore == nil || !*resp.HasMore {
+		t.Fatalf("full set must stay pageable: %+v", resp)
 	}
 }

@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
@@ -68,12 +69,25 @@ func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResu
 		end = total
 	}
 	out := meta
+	// meta may alias slices owned by a connector or the response cache;
+	// clip-clone them so appending a warning never writes into shared storage.
+	out.KeyFindings = cloneStrings(meta.KeyFindings)
+	out.SourcesUsed = cloneStrings(meta.SourcesUsed)
+	out.Warnings = cloneStrings(meta.Warnings)
+	out.Errors = cloneStrings(meta.Errors)
 	out.Results = append([]types.SearchResultItem{}, full[start:end]...)
 	out.ResultSetID = id
 	out.Total = total
 	out.Offset = offset
 	out.HasMore = end < total
 	return &out
+}
+
+func cloneStrings(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	return slices.Clip(slices.Clone(in))
 }
 
 // storeAndPage keeps the full result list of a completed search under an

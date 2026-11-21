@@ -7,6 +7,7 @@ package resultset
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"slices"
 	"sync"
 	"time"
 
@@ -104,7 +105,8 @@ func (s *Store) Put(set Set) (string, int) {
 	if len(results) > s.cfg.MaxResults {
 		results = results[:s.cfg.MaxResults]
 	}
-	set.Results = append([]types.SearchResultItem(nil), results...)
+	set.Results = cloneItems(results)
+	set.Meta = cloneMeta(set.Meta)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -132,8 +134,43 @@ func (s *Store) Get(id string) (Set, bool) {
 		return Set{}, false
 	}
 	out := e.set
-	out.Results = append([]types.SearchResultItem(nil), e.set.Results...)
+	out.Results = cloneItems(e.set.Results)
+	out.Meta = cloneMeta(e.set.Meta)
 	return out, true
+}
+
+// cloneItems deep-copies the slice and each item's mutable fields (Tags and
+// PublishedAt) so neither the store nor a caller can write through the other.
+func cloneItems(in []types.SearchResultItem) []types.SearchResultItem {
+	out := make([]types.SearchResultItem, len(in))
+	for i, it := range in {
+		it.Tags = cloneStrings(it.Tags)
+		if it.PublishedAt != nil {
+			t := *it.PublishedAt
+			it.PublishedAt = &t
+		}
+		out[i] = it
+	}
+	return out
+}
+
+// cloneMeta copies every slice of the response metadata. Clones have
+// cap == len, so a caller's append always reallocates instead of writing into
+// storage shared with the store or with another caller.
+func cloneMeta(m types.SearchResponse) types.SearchResponse {
+	m.Results = nil
+	m.KeyFindings = cloneStrings(m.KeyFindings)
+	m.SourcesUsed = cloneStrings(m.SourcesUsed)
+	m.Warnings = cloneStrings(m.Warnings)
+	m.Errors = cloneStrings(m.Errors)
+	return m
+}
+
+func cloneStrings(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	return slices.Clip(slices.Clone(in))
 }
 
 // Stats reports how many sets and results are currently held, including
