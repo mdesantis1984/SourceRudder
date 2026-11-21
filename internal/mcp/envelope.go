@@ -102,3 +102,18 @@ func asSearchResponse(v interface{}) *types.SearchResponse {
 func appendWarning(warnings []string, w string) []string {
 	return append(slices.Clip(slices.Clone(warnings)), w)
 }
+
+// errorResult is the tools/call result of a failed tool execution:
+// {"content":[{"type":"text","text":<message>}],"isError":true}, without
+// structuredContent. The text is never empty, because clients substitute a
+// generic message for an empty one.
+func errorResult(err error) map[string]interface{} {
+	text := err.Error()
+	if text == "" {
+		text = "tool execution failed"
+	}
+	return map[string]interface{}{
+		"content": []map[string]interface{}{{"type": "text", "text": text}},
+		"isError": true,
+	}
+}

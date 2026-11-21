@@ -665,15 +665,7 @@ func (s *Server) makeGetSearchHistoryHandler() func(ctx context.Context, args js
 }
 
 func (s *Server) ListTools() []map[string]interface{} {
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
-	return tools
+	return describeTools(s.toolsRegistry)
 }
 
 // recordSearch appends one entry to the in-process HistoryService so

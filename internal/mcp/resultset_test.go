@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,12 @@ func callPaged(t *testing.T, s *Server, tool string, args map[string]interface{}
 	if err != nil {
 		return nil, err
 	}
-	content := res.(map[string]interface{})["content"].([]map[string]interface{})
+	result := res.(map[string]interface{})
+	content := result["content"].([]map[string]interface{})
+	if result["isError"] == true {
+		// a tool execution error is an isError result (MCP 2025-11-25).
+		return nil, errors.New(content[0]["text"].(string))
+	}
 	var out pagedResponse
 	if err := json.Unmarshal([]byte(content[0]["text"].(string)), &out); err != nil {
 		t.Fatalf("decode %s response: %v", tool, err)

@@ -37,7 +37,7 @@ var (
 	localIndexPath  = flag.String("local-index-path", "", "Read-only local index corpus path (env: LOCAL_INDEX_PATH)")
 
 	// Result-set store: every search keeps its full result list server-side
-	// so callers can page it with offset/resultSetId.
+	// so callers can page it with cursor/nextCursor.
 	resultSetTTL        = flag.Int("result-set-ttl", envInt("RESULT_SET_TTL", 900), "Seconds a stored result set stays pageable (env: RESULT_SET_TTL)")
 	resultSetMaxSets    = flag.Int("result-set-max-sets", envInt("RESULT_SET_MAX_SETS", resultset.DefaultMaxSets), "Maximum stored result sets; oldest are evicted first (env: RESULT_SET_MAX_SETS)")
 	resultSetMaxResults = flag.Int("result-set-max-results", envInt("RESULT_SET_MAX_RESULTS", resultset.DefaultMaxResults), "Maximum results stored across all sets (env: RESULT_SET_MAX_RESULTS)")

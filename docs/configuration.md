@@ -24,7 +24,7 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` or `30000` | Fetch timeout in milliseconds. |
 | `-auth-key` | empty | Overrides `SOURCERUDDER_AUTH_KEY`. |
 | `-local-index-path` | empty | Overrides `LOCAL_INDEX_PATH`. |
-| `-result-set-ttl` | `RESULT_SET_TTL` or `900` | Seconds a stored search result set stays pageable by `resultSetId`. |
+| `-result-set-ttl` | `RESULT_SET_TTL` or `900` | Seconds a stored search result set stays pageable by `cursor`. |
 | `-result-set-max-sets` | `RESULT_SET_MAX_SETS` or `64` | Maximum stored result sets; the oldest are evicted first. |
 | `-result-set-max-results` | `RESULT_SET_MAX_RESULTS` or `2000` | Maximum results held across all stored sets; the oldest sets are evicted first. |
 
@@ -63,6 +63,10 @@ Every search tool keeps the full list of results it obtained in an in-process st
 ### Result format
 
 Every `tools/call` result carries `structuredContent` (the full typed response, always a JSON object) and exactly one text block. The search tools accept two optional arguments for that text: `format` is `json` (default; the same value as `structuredContent`, minified) or `compact` (one line per result, `title | url | snippet`, with `resultSetId`, `total` and `nextCursor` in a header line), and `detail` (only with `format=compact`) is `titles`, `snippets` (default) or `full`. `structuredContent` is the full response in both formats. Some clients show the model only the text and cut text over about 20 KB, so for large pages use `format=compact` with `detail=titles`. An unknown `format` or `detail` value is rejected with an argument error that lists the allowed values.
+
+Tool metadata and errors follow MCP 2025-11-25. `tools/list` gives every tool a short `title` and `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`; clients treat them as hints, not guarantees). Search and fetch tools are read-only and open-world; the synthesis tools (`summarize_results`, `deep_research`, `compare_sources`), `search_local_index` and the local state tools (`get_cached`, `invalidate_cache`, `get_search_history`, `get_current_date`) are closed-world. The 16 search tools share one `outputSchema` (the search response: `query`, `results[]` with required `title`, `url` and `source`, `total`, and the optional `resultSetId`, `nextCursor`, `cached`, `partial`, `warnings`, `errors`, `strategy`, `confidence`, ...) and the three synthesis tools share another; every `structuredContent` they return conforms to it, so clients can type it (Pi codemode scripts can filter it before anything reaches the model). The other tools declare no `outputSchema`.
+
+A failed tool call is a normal result, `{"content":[{"type":"text","text":"<message>"}],"isError":true}` with no `structuredContent`, so the model can read the message and retry. This covers argument validation (unknown `format` or `detail`, `invalid_cursor: <reason>`, wrong argument types), business errors (`result_set_not_found: <id> ...`) and upstream or handler failures. JSON-RPC errors remain only for protocol failures: an unknown tool (`-32602`), malformed JSON or malformed `tools/call` params, and an unsupported protocol version.
 
 ## HTTP authentication
 

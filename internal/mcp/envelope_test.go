@@ -17,6 +17,7 @@ import (
 type envelope struct {
 	Content           []envelopeContent `json:"content"`
 	StructuredContent json.RawMessage   `json:"structuredContent"`
+	IsError           bool              `json:"isError"`
 }
 
 type envelopeContent struct {
@@ -271,13 +272,10 @@ func TestEnvelopeRejectsUnknownFormatAndDetailBeforeSearching(t *testing.T) {
 			{map[string]interface{}{"query": "q", "detail": "nope"}, []string{"detail", `"nope"`, `"titles"`, `"snippets"`, `"full"`}},
 		}
 		for _, tc := range cases {
-			_, err := call(t, s, "search_web", tc.args)
-			if err == nil {
-				t.Fatalf("%v must be rejected", tc.args)
-			}
+			msg := mustToolError(t, call, s, "search_web", tc.args)
 			for _, w := range tc.want {
-				if !strings.Contains(err.Error(), w) {
-					t.Fatalf("%v: error %q must contain %q", tc.args, err, w)
+				if !strings.Contains(msg, w) {
+					t.Fatalf("%v: error %q must contain %q", tc.args, msg, w)
 				}
 			}
 		}
@@ -389,11 +387,11 @@ func TestEnvelopeInvalidCursorIsRejectedWithoutTouchingTheStore(t *testing.T) {
 		_ = seed
 		before := s.resultSets.Stats()
 		for name, cursor := range cases {
-			_, err := call(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": cursor})
-			if err == nil || !strings.HasPrefix(err.Error(), "invalid_cursor: ") || len(err.Error()) <= len("invalid_cursor: ") {
-				t.Errorf("%s: want invalid_cursor: <reason>, got %v", name, err)
+			msg := mustToolError(t, call, s, "search_web", map[string]interface{}{"query": "q", "cursor": cursor})
+			if !strings.HasPrefix(msg, "invalid_cursor: ") || len(msg) <= len("invalid_cursor: ") {
+				t.Errorf("%s: want invalid_cursor: <reason>, got %q", name, msg)
 			}
-			if err != nil && strings.HasPrefix(err.Error(), "result_set_not_found") {
+			if strings.HasPrefix(msg, "result_set_not_found") {
 				t.Errorf("%s: a malformed cursor must not reach the store lookup", name)
 			}
 		}
@@ -410,10 +408,10 @@ func TestEnvelopeWellFormedCursorOfUnknownSetKeepsTheExactNotFoundText(t *testin
 	forEachPath(t, func(t *testing.T, call toolCaller) {
 		fake := &fakeResultsConnector{name: "web", n: 3}
 		s := newResultSetServer(t, fake)
-		_, err := call(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("rs_AAAAAAAAAAAAAAAA", 0)})
+		msg := mustToolError(t, call, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("rs_AAAAAAAAAAAAAAAA", 0)})
 		want := "result_set_not_found: rs_AAAAAAAAAAAAAAAA (expired or unknown; run the search again)"
-		if err == nil || err.Error() != want {
-			t.Fatalf("error=%v want %q", err, want)
+		if msg != want {
+			t.Fatalf("error=%q want %q", msg, want)
 		}
 	})
 }

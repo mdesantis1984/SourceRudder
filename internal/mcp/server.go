@@ -77,9 +77,14 @@ type Server struct {
 
 type Tool struct {
 	Name        string
+	Title       string
 	Description string
 	InputSchema map[string]interface{}
-	Handler     func(ctx context.Context, args json.RawMessage) (interface{}, error)
+	// Annotations and OutputSchema are advertised in tools/list; see
+	// tool_metadata.go.
+	Annotations  map[string]interface{}
+	OutputSchema map[string]interface{}
+	Handler      func(ctx context.Context, args json.RawMessage) (interface{}, error)
 }
 
 type metricsResponseWriter struct {
@@ -229,6 +234,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "fetch_youtube_transcript", Description: "Transcripción de un video de YouTube vía yt-dlp (URL o ID de 11 caracteres). Devuelve {url, videoId, title, channel, uploadDate, duration, language, trackType manual|automatic, cached, truncated, totalChars, transcript}. Resultado en caché por video+idioma. Si falla con youtube_blocked (429 o bot check), NO reintentes ni uses fetch_url ni otras tools de fetch para ese video: espera. fetch_url y fetch_and_extract ya delegan aquí las URLs de video.", InputSchema: youtubeTranscriptInputSchema()},
 		{Name: "get_current_date", Description: "Fecha y hora UTC consistente para citación: {date, time, timezone:\"UTC\", timestamp}.", InputSchema: emptyInputSchema()},
 	}
+	decorateTools(s.toolsRegistry)
 }
 
 func searchInputSchema() map[string]interface{} {
@@ -482,15 +488,7 @@ func (s *Server) HandleToolsList(ctx context.Context, params json.RawMessage) (i
 		} `json:"filter"`
 	}
 	_ = json.Unmarshal(params, &req)
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
-	return map[string]interface{}{"tools": tools}, nil
+	return map[string]interface{}{"tools": describeTools(s.toolsRegistry)}, nil
 }
 
 func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -504,14 +502,26 @@ func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (i
 	for _, t := range s.toolsRegistry {
 		if t.Name == req.Name {
 			inputJSON, _ := json.Marshal(req.Arguments)
-			result, err := s.invokeTool(ctx, t, inputJSON)
-			if err != nil {
-				return nil, err
-			}
-			return toolResult(inputJSON, result)
+			return s.runTool(ctx, t, inputJSON), nil
 		}
 	}
 	return nil, fmt.Errorf("tool not found: %s", req.Name)
+}
+
+// runTool executes a tool and returns its tools/call result for every call
+// path. Handler failures, argument validation and business errors come back
+// as isError results the model can read and act on; JSON-RPC errors are left
+// to unknown tools and malformed requests (MCP 2025-11-25).
+func (s *Server) runTool(ctx context.Context, tool Tool, args json.RawMessage) map[string]interface{} {
+	result, err := s.invokeTool(ctx, tool, args)
+	if err != nil {
+		return errorResult(err)
+	}
+	res, err := toolResult(args, result)
+	if err != nil {
+		return errorResult(err)
+	}
+	return res
 }
 
 func (s *Server) invokeTool(ctx context.Context, tool Tool, args json.RawMessage) (interface{}, error) {
@@ -711,18 +721,10 @@ func (s *Server) handleMCPResourcesRead(id interface{}, params json.RawMessage) 
 }
 
 func (s *Server) handleMCPToolsList(id interface{}) map[string]interface{} {
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      id,
-		"result":  map[string]interface{}{"tools": tools},
+		"result":  map[string]interface{}{"tools": describeTools(s.toolsRegistry)},
 	}
 }
 
@@ -748,23 +750,7 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 	for _, t := range s.toolsRegistry {
 		if t.Name == reqParams.Name {
 			inputJSON, _ := json.Marshal(reqParams.Arguments)
-			result, err := s.invokeTool(ctx, t, inputJSON)
-			if err != nil {
-				return map[string]interface{}{
-					"jsonrpc": "2.0",
-					"id":      id,
-					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
-				}
-			}
-			res, err := toolResult(inputJSON, result)
-			if err != nil {
-				return map[string]interface{}{
-					"jsonrpc": "2.0",
-					"id":      id,
-					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
-				}
-			}
-			return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": res}
+			return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": s.runTool(ctx, t, inputJSON)}
 		}
 	}
 	return map[string]interface{}{
