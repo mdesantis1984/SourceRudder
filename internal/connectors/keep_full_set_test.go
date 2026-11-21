@@ -18,15 +18,12 @@ func TestOfficialDocsConnectorKeepsEveryApprovedResult(t *testing.T) {
 		results = append(results, types.SearchResultItem{URL: fmt.Sprintf("https://go.dev/doc/%d", i), Source: "searxng"})
 	}
 	backend := &officialDocsBackendStub{responses: []*types.SearchResponse{{Results: results}}}
-	resp, err := NewOfficialDocsConnector(backend).Search(context.Background(), &types.SearchRequest{Query: "golang documentation", MaxResults: 5, Offset: 3})
+	resp, err := NewOfficialDocsConnector(backend).Search(context.Background(), &types.SearchRequest{Query: "golang documentation", MaxResults: 5})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	if len(resp.Results) != 15 || resp.Results[0].URL != "https://go.dev/doc/0" || resp.Results[14].URL != "https://go.dev/doc/14" {
 		t.Fatalf("expected all 15 approved results in order, got %d", len(resp.Results))
-	}
-	if backend.requests[0].Offset != 3 {
-		t.Fatalf("offset must reach the backend, got %d", backend.requests[0].Offset)
 	}
 }
 

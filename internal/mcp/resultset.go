@@ -28,7 +28,7 @@ type pageArgs struct {
 
 // parseSearchArgs decodes the common search arguments and validates paging
 // and rendering (format/detail) before any search or store access happens.
-func parseSearchArgs(args json.RawMessage) (types.SearchRequest, pageArgs, error) {
+func parseSearchArgs(ctx context.Context, args json.RawMessage) (types.SearchRequest, pageArgs, error) {
 	var req types.SearchRequest
 	if err := json.Unmarshal(args, &req); err != nil {
 		return req, pageArgs{}, fmt.Errorf("invalid args: %w", err)
@@ -44,9 +44,12 @@ func parseSearchArgs(args json.RawMessage) (types.SearchRequest, pageArgs, error
 		return req, pg, err
 	}
 	if pg.Cursor != "" {
-		id, offset, err := decodeCursor(pg.Cursor)
+		issuer, id, offset, err := decodeCursor(pg.Cursor)
 		if err != nil {
 			return req, pg, fmt.Errorf("invalid_cursor: %w", err)
+		}
+		if tool := toolNameFrom(ctx); tool != "" && issuer != tool {
+			return req, pg, fmt.Errorf("invalid_cursor: cursor was issued by %s", issuer)
 		}
 		pg.setID, pg.offset = id, offset
 	}
@@ -118,7 +121,7 @@ func (s *Server) extendSet(ctx context.Context, id string, offset int) (resultse
 // sliceResponse returns the slice [offset, offset+limit) of full, plus the
 // paging fields. It never reorders results. more says the set can still grow
 // upstream, which keeps nextCursor present at the end of the stored results.
-func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResultItem, offset, limit int, more bool) *types.SearchResponse {
+func sliceResponse(tool string, meta types.SearchResponse, id string, full []types.SearchResultItem, offset, limit int, more bool) *types.SearchResponse {
 	total := len(full)
 	start := offset
 	if start > total {
@@ -142,7 +145,7 @@ func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResu
 	out.SearxngPages = 0
 	out.NextCursor = ""
 	if end < total || more {
-		out.NextCursor = encodeCursor(id, end)
+		out.NextCursor = encodeCursor(tool, id, end)
 	}
 	return &out
 }
@@ -157,7 +160,7 @@ func cloneStrings(in []string) []string {
 // storeAndPage keeps the full result list of a completed search under an
 // opaque ID and returns the requested slice. limitSource selects the page-size
 // rules (search_web defaults to 20, the rest to 10).
-func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp *types.SearchResponse) *types.SearchResponse {
+func (s *Server) storeAndPage(ctx context.Context, limitSource string, req *types.SearchRequest, resp *types.SearchResponse) *types.SearchResponse {
 	pages := 0
 	if resp != nil {
 		pages = resp.SearxngPages
@@ -190,7 +193,7 @@ func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp
 		}
 	}
 	id, stored := s.resultSets.Put(set)
-	out := sliceResponse(meta, id, resp.Results[:stored], 0, connectors.ResolveMaxResults(limitSource, req.MaxResults), s.canExtend(set.Continuation))
+	out := sliceResponse(toolNameFrom(ctx), meta, id, resp.Results[:stored], 0, connectors.ResolveMaxResults(limitSource, req.MaxResults), s.canExtend(set.Continuation))
 	if stored < len(resp.Results) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("result set truncated: only the first %d of %d results are stored and pageable", stored, len(resp.Results)))
 	}
@@ -232,7 +235,7 @@ func (s *Server) serveResultSet(ctx context.Context, req *types.SearchRequest, p
 			limit = maxPageSize
 		}
 	}
-	out := sliceResponse(set.Meta, pg.setID, set.Results, pg.offset, limit, s.canExtend(set.Continuation))
+	out := sliceResponse(toolNameFrom(ctx), set.Meta, pg.setID, set.Results, pg.offset, limit, s.canExtend(set.Continuation))
 	out.Warnings = append(out.Warnings, extra...)
 	if q := strings.TrimSpace(req.Query); q != "" && q != strings.TrimSpace(set.Query) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("query ignored: result set %s was created for query %q; the search was not re-run", pg.setID, set.Query))

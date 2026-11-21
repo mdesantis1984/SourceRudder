@@ -239,7 +239,7 @@ func TestResultSetPagingByIDIsLocalAndCoversTheWholeSet(t *testing.T) {
 		}
 	}
 
-	beyond := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor(first.ResultSetID, 99)})
+	beyond := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("search_web", first.ResultSetID, 99)})
 	if len(beyond.Results) != 0 || *beyond.Total != 25 || beyond.NextCursor != "" {
 		t.Fatalf("offset past the end must be an empty page: %+v", beyond)
 	}
@@ -292,7 +292,7 @@ func TestResultSetDifferentQueryAddsWarning(t *testing.T) {
 func TestResultSetUnknownIDIsAToolError(t *testing.T) {
 	fake := &fakeResultsConnector{name: "web", n: 3}
 	s := newResultSetServer(t, fake)
-	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("rs_AAAAAAAAAAAAAAAA", 0)})
+	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("search_web", "rs_AAAAAAAAAAAAAAAA", 0)})
 	if err == nil {
 		t.Fatal("unknown resultSetId must be an error")
 	}

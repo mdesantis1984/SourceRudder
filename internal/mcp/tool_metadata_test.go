@@ -140,7 +140,7 @@ func TestToolsListSearchToolsShareOneOutputSchemaWithTheRequiredFields(t *testin
 			}
 		}
 		props := first["properties"].(map[string]interface{})
-		for _, f := range []string{"query", "results", "total", "resultSetId", "nextCursor", "cached", "partial", "warnings", "errors", "strategy", "confidence", "sourcesUsed", "summary", "keyFindings"} {
+		for _, f := range []string{"query", "results", "total", "resultSetId", "nextCursor", "partial", "warnings", "errors"} {
 			if _, ok := props[f]; !ok {
 				t.Errorf("outputSchema lacks property %q", f)
 			}
@@ -160,12 +160,13 @@ func TestToolsListSizeStaysUnderTheTokenBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 37,604 bytes before title/annotations/outputSchema (T15 baseline).
+	// 37,604 bytes before title/annotations/outputSchema; 61,530 with the full
+	// search outputSchema (ac1671c); 53,498 with the slim one (+~5% guard).
 	t.Logf("tools/list bytes: %d", len(wire))
-	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 1200 {
+	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 610 {
 		t.Fatalf("the shared search outputSchema is %d bytes (16 tools repeat it); keep it lean", len(schema))
 	}
-	if len(wire) > 62000 {
+	if len(wire) > 56200 {
 		t.Fatalf("tools/list is %d bytes; keep titles and schema descriptions short", len(wire))
 	}
 }

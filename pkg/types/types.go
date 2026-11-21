@@ -16,12 +16,6 @@ type SearchRequest struct {
 	CachePolicy  string            `json:"cachePolicy,omitempty"`
 	DeepResearch bool              `json:"deepResearch,omitempty"`
 	Filters      map[string]string `json:"filters,omitempty"`
-
-	// Offset is the index of the first result the caller wants. It is set
-	// in-process by the MCP handler (never decoded from or encoded to JSON,
-	// so it does not change cache keys) so connectors that fetch lazily can
-	// decide whether the stored page already covers offset+MaxResults.
-	Offset int `json:"-"`
 }
 
 type SearchResultItem struct {

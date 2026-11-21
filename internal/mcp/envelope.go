@@ -117,3 +117,28 @@ func errorResult(err error) map[string]interface{} {
 		"isError": true,
 	}
 }
+
+// usesRetiredPagingArgs reports whether a search call still carries offset or
+// resultSetId, the arguments that cursor paging replaced. Synthesis tools
+// accept resultSetId legitimately and never reach this check.
+func usesRetiredPagingArgs(args json.RawMessage) bool {
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(args, &keys) != nil {
+		return false
+	}
+	_, offset := keys["offset"]
+	_, setID := keys["resultSetId"]
+	return offset || setID
+}
+
+// withRetiredArgsWarning adds the replacement warning to a search response
+// without writing into storage the response may share.
+func withRetiredArgsWarning(v interface{}) interface{} {
+	sr := asSearchResponse(v)
+	if sr == nil {
+		return v
+	}
+	cp := *sr
+	cp.Warnings = appendWarning(cp.Warnings, retiredArgsWarning)
+	return &cp
+}

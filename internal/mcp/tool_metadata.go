@@ -118,25 +118,19 @@ func stringArray() map[string]interface{} {
 	return map[string]interface{}{"type": "array", "items": jsonType("string")}
 }
 
-// searchOutputSchema is the structuredContent of every search_* tool
-// (types.SearchResponse). Extra properties are allowed.
+// searchOutputSchema is the lean structuredContent contract of every
+// search_* tool (16 tools repeat it in tools/list, so it declares only what a
+// caller or codemode script needs to type). The response carries more fields;
+// additional properties are allowed.
 func searchOutputSchema() map[string]interface{} {
 	item := map[string]interface{}{
 		"type":     "object",
 		"required": []string{"title", "url", "source"},
 		"properties": map[string]interface{}{
-			"title":        jsonType("string"),
-			"url":          jsonType("string"),
-			"source":       jsonType("string"),
-			"snippet":      jsonType("string"),
-			"engine":       jsonType("string"),
-			"type":         jsonType("string"),
-			"score":        jsonType("number"),
-			"publishedAt":  jsonType("string"),
-			"author":       jsonType("string"),
-			"tags":         stringArray(),
-			"citationId":   jsonType("string"),
-			"canonicalUrl": jsonType("string"),
+			"title":   jsonType("string"),
+			"url":     jsonType("string"),
+			"snippet": jsonType("string"),
+			"source":  jsonType("string"),
 		},
 	}
 	return map[string]interface{}{
@@ -145,15 +139,9 @@ func searchOutputSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"query":       jsonType("string"),
 			"results":     map[string]interface{}{"type": "array", "items": item},
-			"total":       jsonType("integer"),
 			"resultSetId": jsonType("string"),
-			"nextCursor":  jsonType("string", "Present only when more results remain; send as cursor"),
-			"summary":     jsonType("string"),
-			"keyFindings": stringArray(),
-			"sourcesUsed": stringArray(),
-			"strategy":    jsonType("string"),
-			"confidence":  jsonType("number"),
-			"cached":      jsonType("boolean"),
+			"total":       jsonType("integer"),
+			"nextCursor":  jsonType("string", "Send as cursor for the next page"),
 			"partial":     jsonType("boolean"),
 			"warnings":    stringArray(),
 			"errors":      stringArray(),

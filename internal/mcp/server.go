@@ -245,7 +245,7 @@ func searchInputSchema() map[string]interface{} {
 			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página que elige quien llama (default 10; 20 en search_web; tope 100). No limita lo que se guarda: la respuesta trae total y nextCursor para pedir el resto."},
 			"cursor": map[string]interface{}{
 				"type":        "string",
-				"description": "Valor de nextCursor de una llamada anterior: devuelve la página siguiente de la lista guardada, sin petición de red (válido unos 15 minutos). query sigue siendo requerido; si difiere de la original se añade un warning. Cursor vencido: error result_set_not_found.",
+				"description": "Valor de nextCursor de una llamada anterior a esta misma tool (otra tool lo rechaza con invalid_cursor): devuelve la página siguiente de la lista guardada, sin petición de red (válido unos 15 minutos). query sigue siendo requerido; si difiere de la original se añade un warning. Cursor vencido: error result_set_not_found.",
 			},
 			"format": map[string]interface{}{
 				"type":        "string",
@@ -530,9 +530,12 @@ func (s *Server) runTool(ctx context.Context, tool Tool, args json.RawMessage) m
 
 func (s *Server) invokeTool(ctx context.Context, tool Tool, args json.RawMessage) (interface{}, error) {
 	started := time.Now()
-	result, err := tool.Handler(ctx, args)
+	result, err := tool.Handler(withToolName(ctx, tool.Name), args)
 	if strings.HasPrefix(tool.Name, "search_") {
 		s.met.RecordSearchLatency(strings.TrimPrefix(tool.Name, "search_"), time.Since(started).Seconds())
+		if err == nil && usesRetiredPagingArgs(args) {
+			result = withRetiredArgsWarning(result)
+		}
 	}
 	if err == nil {
 		s.met.IncrToolCall(tool.Name)

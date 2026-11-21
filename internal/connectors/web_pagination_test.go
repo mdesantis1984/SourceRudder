@@ -160,23 +160,6 @@ func TestWebSearchNoPageTwoWhenPageOneIsEnough(t *testing.T) {
 	assertStrictlyDescending(t, resp)
 }
 
-// Paging happens in the MCP result-set store (cursor); the connector never
-// widens its target by an in-process offset.
-func TestWebSearchIgnoresRequestOffset(t *testing.T) {
-	srv := newPagedSearxng(t, map[string][]string{"1": urlRange("a", 0, 5), "2": urlRange("b", 0, 5)})
-	c := NewWebConnector(srv.URL, cache.NewService(300))
-	resp, err := c.Search(context.Background(), &types.SearchRequest{Query: "offset ignored", MaxResults: 3, Offset: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := srv.requests(); len(got) != 1 {
-		t.Fatalf("offset must not trigger page 2 when page 1 covers maxResults, got requests %v", got)
-	}
-	if len(resp.Results) != 5 {
-		t.Fatalf("connector keeps every unique result it fetched: got %d", len(resp.Results))
-	}
-}
-
 func TestWebSearchExplicitMaxResultsHonored(t *testing.T) {
 	srv := newPagedSearxng(t, map[string][]string{"1": urlRange("a", 0, 8), "2": urlRange("b", 0, 8)})
 	c := NewWebConnector(srv.URL, cache.NewService(300))

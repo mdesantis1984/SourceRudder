@@ -410,7 +410,7 @@ func TestEnvelopeWellFormedCursorOfUnknownSetKeepsTheExactNotFoundText(t *testin
 	forEachPath(t, func(t *testing.T, call toolCaller) {
 		fake := &fakeResultsConnector{name: "web", n: 3}
 		s := newResultSetServer(t, fake)
-		msg := mustToolError(t, call, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("rs_AAAAAAAAAAAAAAAA", 0)})
+		msg := mustToolError(t, call, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("search_web", "rs_AAAAAAAAAAAAAAAA", 0)})
 		want := "result_set_not_found: rs_AAAAAAAAAAAAAAAA (expired or unknown; run the search again)"
 		if msg != want {
 			t.Fatalf("error=%q want %q", msg, want)
@@ -419,13 +419,13 @@ func TestEnvelopeWellFormedCursorOfUnknownSetKeepsTheExactNotFoundText(t *testin
 }
 
 func TestEnvelopeCursorIsOpaqueButRoundTrips(t *testing.T) {
-	c := encodeCursor("rs_ABCDEFGHIJKLMNOP", 20)
+	c := encodeCursor("search_web", "rs_ABCDEFGHIJKLMNOP", 20)
 	if strings.ContainsAny(c, "=+/ ") || strings.Contains(c, "rs_ABC") {
 		t.Fatalf("cursor must be opaque base64url without padding: %q", c)
 	}
-	id, off, err := decodeCursor(c)
-	if err != nil || id != "rs_ABCDEFGHIJKLMNOP" || off != 20 {
-		t.Fatalf("decode = %q %d %v", id, off, err)
+	tool, id, off, err := decodeCursor(c)
+	if err != nil || tool != "search_web" || id != "rs_ABCDEFGHIJKLMNOP" || off != 20 {
+		t.Fatalf("decode = %q %q %d %v", tool, id, off, err)
 	}
 }
 
