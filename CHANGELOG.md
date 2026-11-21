@@ -51,6 +51,9 @@ All notable SourceRudder changes are documented here.
 - The default fetch User-Agent is now a desktop Chrome string
   (`fetch.DefaultUserAgent`) instead of `SourceRudder/3.0.0`, because many sites
   reject self-identified bot agents. An explicit `FETCH_USER_AGENT` is used unchanged.
+- The systemd and Kubernetes deployment templates no longer pin `FETCH_USER_AGENT`,
+  so the browser default applies; `scripts/release-readiness.sh` now fails if a
+  template sets it. Operators can still set `FETCH_USER_AGENT` explicitly.
 - Tool descriptions no longer mislead callers: `search_news` does not claim a
   `timeRange=week` filter, `deep_research`, `summarize_results`, and
   `compare_sources` state that they only synthesize the `results` passed in, and

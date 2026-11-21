@@ -55,6 +55,10 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 - El User-Agent predeterminado del fetcher ahora es el de Chrome de escritorio
   (`fetch.DefaultUserAgent`) en lugar de `SourceRudder/3.0.0`, porque muchos sitios
   rechazan agentes que se identifican como bot. Un `FETCH_USER_AGENT` explícito se usa sin cambios.
+- Las plantillas de despliegue de systemd y Kubernetes ya no fijan
+  `FETCH_USER_AGENT`, por lo que se aplica el valor por defecto de navegador;
+  `scripts/release-readiness.sh` ahora falla si una plantilla lo define. Los
+  operadores pueden seguir definiendo `FETCH_USER_AGENT` explícitamente.
 - Las descripciones de las herramientas ya no confunden: `search_news` no promete un
   filtro `timeRange=week`, `deep_research`, `summarize_results` y `compare_sources`
   aclaran que solo sintetizan los `results` recibidos, y `maxResults` indica su
