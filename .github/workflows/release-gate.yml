@@ -50,8 +50,8 @@ jobs:
           # Carve-out only matches this exact branch name; empty by
           # default. Branch-exact expression: RELEASE_GATE_SIZE_EXCEPTION
           # evaluates to the literal branch name ONLY when github.head_ref
-          # equals `feat/local-index-provider`, and to '' otherwise. The
-          # previous exception expired with its merged branch. The bash validator's fail-closed check
+          # equals `feat/search-result-quality`, and to '' otherwise. The
+          # previous exception (feat/local-index-provider, PR #23) expired with its merged branch. The bash validator's fail-closed check
           # at scripts/release-gate.sh:496 stays the authoritative seam;
           # the empty-string fallback keeps it active for every other
           # branch. Replaces the previous ${{ vars.
@@ -61,6 +61,6 @@ jobs:
           # for the wrong reason). The activation contract is pinned by
           # releaseGateSizeExceptionEnvRegex in
           # internal/mcp/release_gate_test.go (R6-NEW-001).
-          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == 'feat/local-index-provider' && 'feat/local-index-provider' || '' }}
-          SIZE_EXCEPTIONS_RECEIPT: docs/release/size-exceptions/local-index-provider.md
+          RELEASE_GATE_SIZE_EXCEPTION: ${{ github.head_ref == 'feat/search-result-quality' && 'feat/search-result-quality' || '' }}
+          SIZE_EXCEPTIONS_RECEIPT: docs/release/size-exceptions/search-result-quality.md
         run: bash scripts/release-gate.sh
