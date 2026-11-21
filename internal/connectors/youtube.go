@@ -117,11 +117,7 @@ func (c *YouTubeConnector) searchSearxng(ctx context.Context, query string, maxR
 	}
 
 	results := make([]types.SearchResultItem, 0, len(searxngResp.Results))
-	for i, item := range searxngResp.Results {
-		if i >= maxResults {
-			break
-		}
-
+	for _, item := range searxngResp.Results {
 		if !isVideoURL(item.URL) {
 			continue
 		}

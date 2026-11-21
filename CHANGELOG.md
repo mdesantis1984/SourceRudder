@@ -21,10 +21,76 @@ All notable SourceRudder changes are documented here.
   `YTDLP_PATH`, `YTDLP_JS_RUNTIMES`, `YOUTUBE_POT_BASE_URL`, `YOUTUBE_FETCH_POT`, `YOUTUBE_DEFAULT_LANGUAGE`, `YOUTUBE_CACHE_TTL`,
   `YOUTUBE_BLOCK_COOLDOWN`, `YTDLP_TIMEOUT`, `YOUTUBE_WORK_DIR`, and
   `YOUTUBE_TRANSCRIPTS` settings documented in the deployment and configuration guides.
+- Result sets: every search tool keeps the full list of results it fetched in an
+  in-process store and returns one page plus `resultSetId`, `total` and, only while
+  results remain, an opaque `nextCursor`. Send `cursor` (the previous `nextCursor`)
+  to read the next page with no upstream request; a cursor only works with the tool
+  that issued it. New flags `-result-set-ttl` (`RESULT_SET_TTL`, default `900`
+  seconds), `-result-set-max-sets` (`RESULT_SET_MAX_SETS`, default `64`) and
+  `-result-set-max-results` (`RESULT_SET_MAX_RESULTS`, default `2000`) bound the store.
+- `summarize_results`, `deep_research` and `compare_sources` accept `resultSetId`
+  instead of `results`, so the list is not sent back. If both are given, `results`
+  wins with a warning; an unknown or expired ID returns `result_set_not_found`.
+- Lazy next-page fetch for `search_web`: paging past the stored set requests the next
+  SearXNG page (at most one extra request per call, at most 5 SearXNG pages per set,
+  only URLs not already stored are added).
+- Search tools accept `format` (`json` default, or `compact`: one `title | url | snippet`
+  line per result) and `detail` (`titles`, `snippets` default, or `full`; only with
+  `format=compact`) to save tokens.
+- Every `tools/call` result carries `structuredContent` (the full typed response) next
+  to one text block. Tools now declare a `title` and `annotations`, and the search
+  and synthesis tools declare an `outputSchema` that `structuredContent` conforms to.
+- Search quality corpus (`scripts/quality/corpus/search_quality.json`) and
+  `scripts/quality/measure_corpus.py` (`validate`, `run`, `compare`) to compare
+  bytes, estimated tokens, latency and top-result quality before and after a change;
+  results are in `docs/quality/search-result-quality-measurement.md`.
 
 ### Changed
 
 - The server now registers 29 MCP tools (was 28).
+- The default fetch User-Agent is now a desktop Chrome string
+  (`fetch.DefaultUserAgent`) instead of `SourceRudder/3.0.0`, because many sites
+  reject self-identified bot agents. An explicit `FETCH_USER_AGENT` is used unchanged.
+- The systemd and Kubernetes deployment templates no longer pin `FETCH_USER_AGENT`,
+  so the browser default applies; `scripts/release-readiness.sh` now fails if a
+  template sets it. Operators can still set `FETCH_USER_AGENT` explicitly.
+- Tool descriptions no longer mislead callers: `search_news` does not claim a
+  `timeRange=week` filter, `deep_research`, `summarize_results`, and
+  `compare_sources` state that they only synthesize the `results` passed in, and
+  `maxResults` states its real default and cap.
+- GitHub (repositories, pull requests, issues) and StackOverflow searches that
+  succeed with zero results retry once with a shortened query: qualifiers such as
+  `repo:` are kept, English and Spanish stopwords are dropped, and the first four
+  terms remain. The response keeps the original `query` and adds the warning
+  `query relaxed: <shortened query>`. Errors (429, 4xx, 5xx, transport) are never
+  retried. Empty or partial GitHub and StackOverflow responses are cached for at
+  most 30 seconds.
+- `search_web` returns up to 20 results when `maxResults` is omitted (was 10;
+  explicit values are honored, capped at 100), removes duplicate URLs, and
+  requests SearXNG page 2 once when page 1 has fewer results than requested. A
+  failed page 2 keeps the page-1 results with a warning.
+- SearXNG-backed searches cache zero-result responses for at most 30 seconds,
+  like degraded ones, so a transient empty answer is not served for the full TTL.
+- Search tools no longer truncate on the caller's behalf: `maxResults` is the page
+  size, and connectors keep every unique result they fetched. `academic` and
+  `youtube` now fill up to `maxResults` after filtering. Result order is unchanged.
+- The default text of a result is minified JSON (the same value as before, without
+  indentation), about 13% smaller on a 20-result `search_web` response.
+- **Breaking:** tool execution, argument and business errors (for example
+  `invalid_cursor: ...`, `result_set_not_found: ...`, unknown `format`, upstream
+  failures) now return a normal result with `isError: true` and an actionable text
+  message instead of JSON-RPC error `-32603`. JSON-RPC errors remain only for unknown
+  tools and malformed requests.
+- **Breaking:** `offset` and `resultSetId` on search tools are retired in favor of
+  `cursor` and `nextCursor`; `offset` and `hasMore` are not returned. The call still
+  runs as a new search and the response warns
+  `offset and resultSetId are no longer supported; page with cursor=<nextCursor>`.
+  `resultSetId` stays valid on the synthesis tools. `SearchRequest.Offset` was removed
+  from `pkg/types`.
+- Paging a `search_web` set to its end may return one extra empty page, because the
+  last SearXNG page is only known to be empty after it is fetched.
+- `tools/list` is larger (about 22.9 KB to 43.1 KB) because of `title`, `annotations`
+  and `outputSchema`; clients that load every schema up front pay for it once.
 
 ### Security
 
@@ -51,6 +117,9 @@ All notable SourceRudder changes are documented here.
 - HTTP shutdown now ends open `GET /mcp` Server-Sent Events streams immediately
   instead of waiting for the shutdown timeout, while in-flight POST requests
   still finish.
+- Stored result sets no longer share mutable slices with callers (a data race when
+  concurrent paging with a different query appended warnings into the same array),
+  and the `intent:` warning no longer aliases the connector response's warnings.
 
 ### Security
 

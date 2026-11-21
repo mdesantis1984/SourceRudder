@@ -24,7 +24,8 @@ func TestLocalIndexSearchRanksDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if resp.Strategy != "local_index_lexical" || len(resp.Results) != 1 {
+	// S8: both matching documents are kept; the handler applies maxResults=1.
+	if resp.Strategy != "local_index_lexical" || len(resp.Results) != 2 {
 		t.Fatalf("unexpected response: strategy=%q results=%d", resp.Strategy, len(resp.Results))
 	}
 	result := resp.Results[0]

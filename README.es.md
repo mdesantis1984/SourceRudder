@@ -141,7 +141,7 @@ nunca es `null`.
 | Superficie | Estado verificado |
 |---|---|
 | Servidor MCP | 29 herramientas registradas sobre `stdio` y HTTP autenticado. |
-| Búsqueda | 16 herramientas específicas con cantidad de resultados acotada. |
+| Búsqueda | 16 herramientas específicas con tamaño de página elegido por quien llama y paginación por cursor. |
 | Recuperación | Validación de URL, controles de redirects/DNS, extracción, reintentos y estados explícitos de bloqueo o fallo. |
 | Investigación local | Corpus JSON inmutable y curado por el operador, sin crawling ni fallback de red. |
 | Operaciones | Métricas Prometheus, health endpoint, Docker Compose, Kubernetes y systemd. |
@@ -152,6 +152,25 @@ Docker Hub y el registro de documentación oficial. Los strategy IDs permanecen
 estables, incluidos `official_doc_registry_search`,
 `official_doc_web_fallback`, `local_index_lexical` y
 `local_index_unavailable`.
+
+### Paginación y ahorro de tokens
+
+Cada búsqueda guarda su set completo de resultados en el servidor y devuelve una
+página con `resultSetId`, `total` y, mientras quedan resultados, un `nextCursor`
+opaco. Envíalo como `cursor` para leer la página siguiente sin otra petición al
+proveedor (un cursor solo sirve con la herramienta que lo emitió). Elige
+`format=compact` con `detail=titles`, `snippets` o `full` para recibir una línea
+`title | url | snippet` por resultado en lugar de JSON; `structuredContent`
+siempre trae la respuesta completa. Las llamadas fallidas devuelven `isError: true`
+con un mensaje legible.
+
+```json
+{"name": "search_web", "arguments": {"query": "golang context cancellation", "maxResults": 20, "format": "compact", "detail": "titles"}}
+{"name": "search_web", "arguments": {"query": "golang context cancellation", "cursor": "<nextCursor>", "format": "compact"}}
+```
+
+Consulta [Configuración](docs/configuration.es.md#sets-de-resultados-y-paginación) y la
+[medición antes/después](docs/quality/search-result-quality-measurement.md).
 
 ## Control sin promesas de caja negra
 

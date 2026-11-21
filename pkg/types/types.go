@@ -52,6 +52,25 @@ type SearchResponse struct {
 	Partial     bool               `json:"partial,omitempty"`
 	Warnings    []string           `json:"warnings,omitempty"`
 	Errors      []string           `json:"errors,omitempty"`
+
+	// ResultSetID names the server-side copy of the full result list of this
+	// search and Total is the number of stored results. NextCursor, present
+	// only when results remain after this slice, is the opaque value a caller
+	// sends back as `cursor` to page the stored set without a new search.
+	// They are filled by the MCP search handlers.
+	ResultSetID string `json:"resultSetId,omitempty"`
+	Total       int    `json:"total"`
+	NextCursor  string `json:"nextCursor,omitempty"`
+
+	// Offset is the index of Results[0] inside the stored set. It is
+	// in-process only (never on the wire); the compact text uses it to number
+	// result lines.
+	Offset int `json:"-"`
+
+	// SearxngPages is how many SearXNG pages a web search read. It is set by
+	// the web connector (and kept in its cache) so the MCP layer knows where
+	// lazy paging resumes; the MCP handlers clear it before replying.
+	SearxngPages int `json:"searxngPages,omitempty"`
 }
 
 type FetchResponse struct {

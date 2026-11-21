@@ -144,9 +144,6 @@ func (c *RedditConnector) searchSearxng(ctx context.Context, query string, maxRe
 	results := make([]types.SearchResultItem, 0, maxResults)
 	seen := make(map[string]struct{})
 	for _, item := range data.Results {
-		if len(results) >= maxResults {
-			break
-		}
 		canonicalURL, ok := canonicalRedditPostURL(item.URL)
 		if !ok {
 			continue

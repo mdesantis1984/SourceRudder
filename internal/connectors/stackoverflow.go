@@ -53,15 +53,19 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 		}
 	}
 
-	values := url.Values{}
-	values.Set("order", "desc")
-	values.Set("sort", "relevance")
-	values.Set("site", "stackoverflow")
-	values.Set("pagesize", fmt.Sprintf("%d", maxResults))
+	buildURL := func(q string) string {
+		values := url.Values{}
+		values.Set("order", "desc")
+		values.Set("sort", "relevance")
+		values.Set("site", "stackoverflow")
+		values.Set("pagesize", fmt.Sprintf("%d", maxResults))
+		return fmt.Sprintf("%s/search/advanced?%s&q=%s", c.baseURL, values.Encode(), url.QueryEscape(q))
+	}
 
-	apiURL := fmt.Sprintf("%s/search/advanced?%s&q=%s", c.baseURL, values.Encode(), url.QueryEscape(query))
-
-	results, err := c.doStackOverflowRequest(ctx, apiURL)
+	results, err := c.doStackOverflowRequest(ctx, buildURL(query))
+	results, relaxed, err := relaxedRetry(query, results, err, func(q string) ([]types.SearchResultItem, error) {
+		return c.doStackOverflowRequest(ctx, buildURL(q))
+	})
 	if err != nil {
 		log.Printf("[stackoverflow] search error: %v", err)
 	}
@@ -72,6 +76,7 @@ func (c *StackOverflowConnector) Search(ctx context.Context, req *types.SearchRe
 		SourcesUsed: []string{"stackoverflow"},
 		Cached:      false,
 	}
+	applyRelaxWarning(resp, relaxed)
 	if len(results) == 0 && err != nil {
 		recordDegraded("stackoverflow", "transport", resp, err)
 	}
@@ -150,5 +155,5 @@ func (c *StackOverflowConnector) cacheResults(ctx context.Context, cacheKey stri
 	if err != nil {
 		return
 	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	c.cacheSvc.SetWithMaxTTL(ctx, cacheKey, data, resp.SourcesUsed, searchCacheCap(resp))
 }

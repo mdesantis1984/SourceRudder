@@ -29,8 +29,10 @@ func TestImagesConnectorRanksQualifiedCandidatesBeforeLimiting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
-	if got, want := imageTitles(resp.Results), []string{"Docker Container Architecture", "C4 Container Diagram"}; !sameStrings(got, want) {
-		t.Fatalf("selected titles = %v, want %v", got, want)
+	// S8: the connector keeps every ranked candidate; the MCP handler applies
+	// maxResults. Ranking must still put the qualified candidates first.
+	if got, want := imageTitles(resp.Results), []string{"Docker Container Architecture", "C4 Container Diagram"}; len(got) < 2 || !sameStrings(got[:2], want) {
+		t.Fatalf("top ranked titles = %v, want prefix %v", got, want)
 	}
 }
 
@@ -66,8 +68,8 @@ func TestImagesConnectorUsesWholeWordsWithoutDiscardingValidFallbacks(t *testing
 	if err != nil {
 		t.Fatalf("cat Search() error = %v", err)
 	}
-	if got, want := imageTitles(cat.Results), []string{"Cat portrait", "Education diagram"}; !sameStrings(got, want) {
-		t.Fatalf("whole-word ranking = %v, want %v", got, want)
+	if got, want := imageTitles(cat.Results), []string{"Cat portrait", "Education diagram"}; len(got) < 2 || !sameStrings(got[:2], want) {
+		t.Fatalf("whole-word ranking = %v, want prefix %v", got, want)
 	}
 
 	lights, err := connector.Search(context.Background(), &types.SearchRequest{Query: "northern lights", MaxResults: 4})

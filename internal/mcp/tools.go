@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
@@ -90,9 +91,12 @@ func (s *Server) registerTools() {
 
 func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.Cursor != "" {
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -117,7 +121,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 				resp.SourcesUsed = []string{source}
 			}
 			if plan.Intent != "" {
-				resp.Warnings = append(resp.Warnings, "intent: "+plan.Intent)
+				resp.Warnings = appendWarning(resp.Warnings, "intent: "+plan.Intent)
 			}
 		}
 
@@ -129,7 +133,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 		// what the operator actually saw, not what we tried.
 		s.recordSearch(ctx, source, resp)
 
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage(ctx, source, &req, resp), nil
 	}
 }
 
@@ -137,9 +141,12 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 // a library resolves unambiguously, while preserving the typed web fallback.
 func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.Cursor != "" {
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -164,7 +171,7 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 
 		if resp.Strategy == "" {
 			resp.Strategy = "official_doc_web_fallback"
-			resp.Warnings = append(resp.Warnings,
+			resp.Warnings = appendWarning(resp.Warnings,
 				"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from the authoritative documentation registry")
 		}
 
@@ -175,7 +182,8 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 		}
 		s.recordSearch(ctx, source, resp)
 
-		return normalizeSearchResponse(resp), nil
+		// The fallback is a web search, so it pages with search_web's rules.
+		return s.storeAndPage(ctx, source, &req, resp), nil
 	}
 }
 
@@ -184,9 +192,12 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 // silently routes to generic web search.
 func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.Cursor != "" {
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager != nil {
 			if _, ok := s.connectorManager.GetConnector("local_index"); ok {
@@ -195,7 +206,7 @@ func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.Raw
 					return nil, err
 				}
 				s.recordSearch(ctx, "local_index", resp)
-				return normalizeSearchResponse(resp), nil
+				return s.storeAndPage(ctx, "local_index", &req, resp), nil
 			}
 		}
 
@@ -243,9 +254,12 @@ func normalizeSearchResponse(resp *types.SearchResponse) *types.SearchResponse {
 
 func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.Cursor != "" {
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -273,15 +287,18 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 		// search_github / search_github_issue handlers and the simple
 		// search_* handlers (which already record the connector name).
 		s.recordSearch(ctx, "github", resp)
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage(ctx, "github", &req, resp), nil
 	}
 }
 
 func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.Cursor != "" {
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -309,7 +326,7 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 		// search_github / search_github_pr handlers and the simple
 		// search_* handlers.
 		s.recordSearch(ctx, "github", resp)
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage(ctx, "github", &req, resp), nil
 	}
 }
 
@@ -473,13 +490,34 @@ func (s *Server) stubValidateHandler(ctx context.Context, args json.RawMessage) 
 func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req struct {
-			Query   string                   `json:"query"`
-			Results []types.SearchResultItem `json:"results"`
-			Goal    string                   `json:"goal"`
-			Style   string                   `json:"style"`
+			Query       string                   `json:"query"`
+			Results     []types.SearchResultItem `json:"results"`
+			ResultSetID string                   `json:"resultSetId"`
+			Goal        string                   `json:"goal"`
+			Style       string                   `json:"style"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+
+		// resultSetId lets the caller skip resending the results of a search:
+		// the stored set is read locally (no network). When both are given,
+		// `results` wins and the call says so.
+		var warnings []string
+		if req.ResultSetID != "" {
+			if len(req.Results) > 0 {
+				warnings = append(warnings, "resultSetId ignored: results were provided in the same call; results win")
+			} else {
+				var set resultset.Set
+				ok := false
+				if s.resultSets != nil {
+					set, ok = s.resultSets.Get(req.ResultSetID)
+				}
+				if !ok {
+					return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", req.ResultSetID)
+				}
+				req.Results = set.Results
+			}
 		}
 
 		if s.synthesisService == nil {
@@ -498,22 +536,41 @@ func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		case "deep_research":
 			result, err := s.synthesisService.DeepResearch(ctx, req.Query, req.Results)
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		case "compare_sources":
 			result, err := s.synthesisService.CompareSources(ctx, req.Results, req.Query)
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		}
 		return nil, fmt.Errorf("unknown synthesis operation: %s", op)
 	}
+}
+
+// withWarnings returns v unchanged when there is nothing to report; otherwise
+// it adds a "warnings" array to v's JSON object, so the typed synthesis
+// results keep their shape.
+func withWarnings(v interface{}, warnings []string) (interface{}, error) {
+	if len(warnings) == 0 {
+		return v, nil
+	}
+	body, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("encode result: %w", err)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("encode result: %w", err)
+	}
+	obj["warnings"] = warnings
+	return obj, nil
 }
 
 func (s *Server) getCurrentDateHandler(ctx context.Context, args json.RawMessage) (interface{}, error) {
@@ -649,15 +706,7 @@ func (s *Server) makeGetSearchHistoryHandler() func(ctx context.Context, args js
 }
 
 func (s *Server) ListTools() []map[string]interface{} {
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
-	return tools
+	return describeTools(s.toolsRegistry)
 }
 
 // recordSearch appends one entry to the in-process HistoryService so

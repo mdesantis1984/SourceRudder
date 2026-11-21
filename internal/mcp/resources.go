@@ -69,7 +69,10 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 ` + "```json" + `
 {
   "query": "<string, requerido>",
-  "maxResults": <integer, default 10>,
+  "maxResults": <integer, tamaño de página: default 10 (20 en search_web), tope 100>,
+  "cursor": "<string, nextCursor de una llamada anterior, opcional>",
+  "format": "<enum: 'json' (default) | 'compact'>",
+  "detail": "<enum: 'titles' | 'snippets' (default) | 'full'; solo con format=compact>",
   "language": "<string BCP-47, ej: 'en', 'es'>",
   "safeSearch": <boolean, default false>,
   "timeRange": "<enum: '' | 'day' | 'week' | 'month' | 'year'>"
@@ -89,6 +92,13 @@ timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran
 | partial    | bool, opcional     | true cuando hubo degradación upstream (timeouts, 5xx, 429). Distingue "el upstream nos dio una respuesta incompleta" de "todo OK". |
 | warnings   | string[], opcional | Lista de advertencias accionables (configuración, intent del planner, etc.). |
 | errors     | string[], opcional | Lista de errores que impidieron recuperar datos. Se omite cuando está vacía. |
+| resultSetId | string, opcional  | ID opaco (rs_ + 16 caracteres) de la copia completa de los resultados de esta búsqueda, guardada en el servidor unos 15 minutos. |
+| total      | integer            | Cantidad de resultados guardados en el set (puede superar maxResults). |
+| nextCursor | string, opcional   | Cursor opaco para la página siguiente. Solo aparece cuando quedan resultados. |
+
+Paginación sin recortar: maxResults es el tamaño de página que elige quien llama, no un límite de lo que se obtiene. Para ver el resto, repite la tool con cursor = nextCursor (y el maxResults que prefieras): no hace ninguna petición de red. query sigue siendo requerido; si difiere de la original se añade un warning y se usa el set guardado. Un cursor mal formado devuelve invalid_cursor: <motivo>. Un set desconocido o vencido devuelve el error result_set_not_found: <id> (expired or unknown; run the search again); en ese caso vuelve a buscar.
+
+Resultado de tools/call: structuredContent trae siempre la respuesta completa (objeto JSON); content trae un único bloque de texto. Con format=json (default) el texto es ese mismo JSON minificado. Con format=compact es texto de una línea por resultado (título | url | snippet), con detail=titles|snippets|full. Algunos clientes truncan el texto largo: para páginas grandes usa format=compact con detail=titles.
 
 summary, keyFindings, sourcesUsed, confidence siguen presentes para compatibilidad pero NO son la fuente de verdad. La síntesis real se hace con las tools dedicadas de la familia 5.
 
@@ -210,7 +220,7 @@ Los tools fetch, fetch_and_extract, extract_structured, validate_url y check_lin
 Configuración expuesta al operador:
 
 - --fetch-timeout-ms (default 30000) — timeout del ciclo completo. También leíble vía env var FETCH_TIMEOUT_MS; el flag CLI gana cuando ambos están configurados.
-- Variable de entorno FETCH_USER_AGENT (default: SourceRudder/3.0.0).
+- Variable de entorno FETCH_USER_AGENT (default: User-Agent de Chrome de escritorio; un valor explícito se respeta sin cambios).
 - FETCH_MAX_REDIRECTS (default 5).
 - FETCH_MAX_ATTEMPTS (default 3).
 - Backoff: exponencial con jitter determinístico, base 200ms.

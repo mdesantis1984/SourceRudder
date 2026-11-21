@@ -39,8 +39,8 @@ func TestRedditSearchForwardsSearxngOptionsAndReturnsOnlyCanonicalPosts(t *testi
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if calls != 1 || len(resp.Results) != 3 {
-		t.Fatalf("expected one SearXNG call and three bounded posts, calls=%d results=%d", calls, len(resp.Results))
+	if calls != 1 || len(resp.Results) != 5 {
+		t.Fatalf("expected one SearXNG call and all five thread posts (the handler applies maxResults=3), calls=%d results=%d", calls, len(resp.Results))
 	}
 	wantURLs := []string{
 		"https://www.reddit.com/r/golang/comments/a1b2/",

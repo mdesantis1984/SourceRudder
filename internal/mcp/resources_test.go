@@ -362,3 +362,24 @@ func postWithKey(url, contentType string, body []byte, key string) (*http.Respon
 	req.Header.Set("X-Api-Key", key)
 	return http.DefaultClient.Do(req)
 }
+
+// The guide documents the cursor paging and the text formats, and no longer
+// mentions the retired T7 fields.
+func TestAgentGuideDocumentsCursorPagingAndFormats(t *testing.T) {
+	s := buildResourcesTestServer(t)
+	res, err := s.HandleResourcesRead(context.Background(), json.RawMessage(`{"uri":"`+AgentGuideURI+`"}`))
+	if err != nil {
+		t.Fatalf("HandleResourcesRead: %v", err)
+	}
+	body, _ := res.(map[string]interface{})["contents"].([]map[string]interface{})[0]["text"].(string)
+	for _, want := range []string{"nextCursor", "cursor", "format", "compact", "detail=titles", "invalid_cursor", "structuredContent", "result_set_not_found: <id> (expired or unknown; run the search again)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("guide must mention %q", want)
+		}
+	}
+	for _, gone := range []string{"hasMore", "resultSetId y offset", "offset = offset", `"offset"`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("guide must not mention the retired %q", gone)
+		}
+	}
+}

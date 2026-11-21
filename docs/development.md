@@ -78,6 +78,8 @@ python3 scripts/quality/live_baseline.py manifest
 python3 scripts/quality/live_baseline.py run --output /tmp/sourcerudder-quality/baseline.json
 ```
 
+To compare the cost (bytes, estimated tokens, latency) and top-result quality (hit@K) of search responses before and after a change, use the fixed corpus runner `scripts/quality/measure_corpus.py` (`validate`, `run`, `compare`); see [`deploy/quality/README.md`](../deploy/quality/README.md).
+
 ## Release gates and review
 
 Before merge, run the applicable checks and record the commands actually run in the pull request. `make release-gate` verifies a clean worktree, the authored line budget, and `go build`, `go vet`, full tests, and race tests. It is a merge-quality gate, not a deployment command.

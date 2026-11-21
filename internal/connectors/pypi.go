@@ -176,6 +176,11 @@ func (c *PyPIConnector) searchByPrefix(ctx context.Context, query string, maxRes
 	return c.parseSimpleIndex(string(body), query, maxResults)
 }
 
+// pypiStoredResults bounds how many prefix matches search_pypi keeps for
+// paging. The simple index can hold thousands of names for a short prefix, so
+// the connector stops after this many instead of keeping every match.
+const pypiStoredResults = 200
+
 func (c *PyPIConnector) parseSimpleIndex(html string, query string, maxResults int) ([]types.SearchResultItem, error) {
 	results := make([]types.SearchResultItem, 0)
 
@@ -186,7 +191,7 @@ func (c *PyPIConnector) parseSimpleIndex(html string, query string, maxResults i
 	seen := make(map[string]bool)
 
 	for _, match := range matches {
-		if len(results) >= maxResults {
+		if len(results) >= max(maxResults, pypiStoredResults) {
 			break
 		}
 

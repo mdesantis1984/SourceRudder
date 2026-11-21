@@ -22,10 +22,86 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   `YOUTUBE_POT_BASE_URL`, `YOUTUBE_FETCH_POT`, `YOUTUBE_DEFAULT_LANGUAGE`, `YOUTUBE_CACHE_TTL`, `YOUTUBE_BLOCK_COOLDOWN`,
   `YTDLP_TIMEOUT`, `YOUTUBE_WORK_DIR` y `YOUTUBE_TRANSCRIPTS`, documentadas en las
   guías de despliegue y configuración.
+- Sets de resultados: cada herramienta de búsqueda guarda en un almacén en proceso
+  la lista completa de resultados que obtuvo y devuelve una página con `resultSetId`,
+  `total` y, solo mientras quedan resultados, un `nextCursor` opaco. Enviar `cursor`
+  (el `nextCursor` anterior) lee la página siguiente sin ninguna petición al
+  proveedor; un cursor solo sirve con la herramienta que lo emitió. Nuevos flags
+  `-result-set-ttl` (`RESULT_SET_TTL`, por defecto `900` segundos),
+  `-result-set-max-sets` (`RESULT_SET_MAX_SETS`, por defecto `64`) y
+  `-result-set-max-results` (`RESULT_SET_MAX_RESULTS`, por defecto `2000`) acotan el almacén.
+- `summarize_results`, `deep_research` y `compare_sources` aceptan `resultSetId` en
+  lugar de `results`, así no hay que reenviar la lista. Si se pasan ambos, gana
+  `results` con una advertencia; un ID desconocido o vencido devuelve `result_set_not_found`.
+- Carga perezosa de la página siguiente en `search_web`: paginar más allá del set
+  guardado pide la siguiente página de SearXNG (como máximo una petición extra por
+  llamada, como máximo 5 páginas de SearXNG por set, y solo se agregan URLs que no estaban guardadas).
+- Las herramientas de búsqueda aceptan `format` (`json` por defecto, o `compact`: una
+  línea `title | url | snippet` por resultado) y `detail` (`titles`, `snippets` por
+  defecto, o `full`; solo con `format=compact`) para ahorrar tokens.
+- Cada resultado de `tools/call` trae `structuredContent` (la respuesta tipada
+  completa) junto a un bloque de texto. Las herramientas declaran `title` y
+  `annotations`, y las de búsqueda y síntesis un `outputSchema` que cumple
+  `structuredContent`.
+- Corpus de calidad de búsqueda (`scripts/quality/corpus/search_quality.json`) y
+  `scripts/quality/measure_corpus.py` (`validate`, `run`, `compare`) para comparar
+  bytes, tokens estimados, latencia y calidad de los primeros resultados antes y
+  después de un cambio; los resultados están en
+  `docs/quality/search-result-quality-measurement.md`.
 
 ### Cambiado
 
 - El servidor ahora registra 29 herramientas MCP (antes 28).
+- El User-Agent predeterminado del fetcher ahora es el de Chrome de escritorio
+  (`fetch.DefaultUserAgent`) en lugar de `SourceRudder/3.0.0`, porque muchos sitios
+  rechazan agentes que se identifican como bot. Un `FETCH_USER_AGENT` explícito se usa sin cambios.
+- Las plantillas de despliegue de systemd y Kubernetes ya no fijan
+  `FETCH_USER_AGENT`, por lo que se aplica el valor por defecto de navegador;
+  `scripts/release-readiness.sh` ahora falla si una plantilla lo define. Los
+  operadores pueden seguir definiendo `FETCH_USER_AGENT` explícitamente.
+- Las descripciones de las herramientas ya no confunden: `search_news` no promete un
+  filtro `timeRange=week`, `deep_research`, `summarize_results` y `compare_sources`
+  aclaran que solo sintetizan los `results` recibidos, y `maxResults` indica su
+  valor predeterminado y su tope reales.
+- Las búsquedas de GitHub (repositorios, pull requests, issues) y StackOverflow
+  que responden bien pero con cero resultados se reintentan una vez con una consulta
+  más corta: se conservan los calificadores como `repo:`, se quitan las palabras
+  vacías en inglés y español, y quedan los primeros cuatro términos. La respuesta
+  conserva la `query` original y agrega la advertencia
+  `query relaxed: <consulta acortada>`. Los errores (429, 4xx, 5xx, transporte)
+  nunca se reintentan. Las respuestas vacías o parciales de GitHub y StackOverflow
+  se cachean como máximo 30 segundos.
+- `search_web` devuelve hasta 20 resultados cuando se omite `maxResults` (antes
+  10; los valores explícitos se respetan, con tope de 100), quita URLs duplicadas y
+  pide una vez la página 2 de SearXNG cuando la página 1 trae menos resultados de
+  los pedidos. Si la página 2 falla, se conservan los resultados de la página 1 con
+  una advertencia.
+- Las búsquedas mediante SearXNG cachean las respuestas sin resultados como máximo
+  30 segundos, igual que las degradadas, para no servir un vacío transitorio
+  durante todo el TTL.
+- Las herramientas de búsqueda ya no recortan por quien llama: `maxResults` es el
+  tamaño de página y los conectores conservan cada resultado único que obtuvieron.
+  `academic` y `youtube` ahora completan hasta `maxResults` después de filtrar. El
+  orden de los resultados no cambia.
+- El texto predeterminado de un resultado es JSON minificado (el mismo valor que
+  antes, sin indentación), cerca de un 13 % menor en una respuesta de `search_web`
+  con 20 resultados.
+- **Incompatible:** los errores de ejecución, de argumentos y de negocio de las
+  herramientas (por ejemplo `invalid_cursor: ...`, `result_set_not_found: ...`,
+  `format` desconocido, fallos del proveedor) ahora devuelven un resultado normal
+  con `isError: true` y un mensaje de texto accionable en lugar del error JSON-RPC
+  `-32603`. Los errores JSON-RPC quedan solo para herramientas desconocidas y
+  solicitudes mal formadas.
+- **Incompatible:** `offset` y `resultSetId` en las herramientas de búsqueda quedan
+  retirados a favor de `cursor` y `nextCursor`; `offset` y `hasMore` ya no se
+  devuelven. La llamada igual se ejecuta como una búsqueda nueva y la respuesta avisa
+  `offset and resultSetId are no longer supported; page with cursor=<nextCursor>`.
+  `resultSetId` sigue siendo válido en las herramientas de síntesis.
+  `SearchRequest.Offset` se eliminó de `pkg/types`.
+- Paginar un set de `search_web` hasta el final puede devolver una página vacía
+  extra, porque solo al pedir la última página de SearXNG se sabe que está vacía.
+- `tools/list` es más grande (de unos 22,9 KB a 43,1 KB) por `title`, `annotations`
+  y `outputSchema`; los clientes que cargan todos los esquemas de entrada lo pagan una vez.
 
 ### Seguridad
 
@@ -54,6 +130,10 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 - El apagado HTTP ahora cierra de inmediato los flujos Server-Sent Events
   abiertos de `GET /mcp` en lugar de esperar el tiempo límite de apagado; las
   solicitudes POST en curso siguen completándose.
+- Los sets de resultados guardados ya no comparten slices mutables con quien llama
+  (una carrera de datos cuando la paginación concurrente con otra consulta agregaba
+  advertencias al mismo array), y la advertencia `intent:` ya no comparte memoria
+  con las advertencias de la respuesta del conector.
 
 ### Seguridad
 

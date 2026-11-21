@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"reflect"
 	"strconv"
 	"testing"
@@ -274,6 +275,37 @@ func TestBuildYouTubeConfigOffDisablesService(t *testing.T) {
 		t.Setenv("YOUTUBE_TRANSCRIPTS", v)
 		if _, enabled := buildYouTubeConfig(); enabled {
 			t.Fatalf("YOUTUBE_TRANSCRIPTS=%q must disable the service", v)
+		}
+	}
+}
+
+func TestBuildResultSetConfig(t *testing.T) {
+	cfg := buildResultSetConfig(900, 64, 2000)
+	if cfg.TTL != 15*time.Minute || cfg.MaxSets != 64 || cfg.MaxResults != 2000 {
+		t.Fatalf("defaults wrong: %+v", cfg)
+	}
+	cfg = buildResultSetConfig(60, 8, 100)
+	if cfg.TTL != time.Minute || cfg.MaxSets != 8 || cfg.MaxResults != 100 {
+		t.Fatalf("explicit values must be honored: %+v", cfg)
+	}
+	cfg = buildResultSetConfig(0, -1, 0)
+	if cfg.TTL != 15*time.Minute || cfg.MaxSets != 64 || cfg.MaxResults != 2000 {
+		t.Fatalf("non-positive values must fall back to the defaults: %+v", cfg)
+	}
+}
+
+func TestResultSetFlagsAreRegisteredWithDocumentedDefaults(t *testing.T) {
+	for name, want := range map[string]string{
+		"result-set-ttl":         "900",
+		"result-set-max-sets":    "64",
+		"result-set-max-results": "2000",
+	} {
+		f := flag.Lookup(name)
+		if f == nil {
+			t.Fatalf("flag -%s is not registered", name)
+		}
+		if f.DefValue != want {
+			t.Errorf("flag -%s default = %q, want %q", name, f.DefValue, want)
 		}
 	}
 }

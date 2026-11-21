@@ -153,6 +153,8 @@ The 29 tool names are `search_web`, `search_news`, `search_doc_oficial`, `search
 
 `fetch_url` and `fetch_and_extract` delegate YouTube video URLs to `fetch_youtube_transcript` instead of scraping the watch page; channels, searches, and other URLs are fetched as before. `fetch_youtube_transcript` takes `url`, optional `language`, and optional `maxChars` (default 60000, maximum 400000). A `youtube_blocked` error means YouTube blocked the server IP: do not retry and do not try other fetch tools for that video.
 
+Each `tools/list` entry also carries `title` and `annotations`, and the search and synthesis tools an `outputSchema` that their `structuredContent` conforms to. A failed call returns `isError: true` with an actionable text message instead of a JSON-RPC error; JSON-RPC errors are reserved for unknown tools and malformed requests. Details are in [configuration](configuration.md). In Pi, `exposure: "codemode"` scripts receive `structuredContent` typed from the `outputSchema`, so filter it in the script and return only what the model needs.
+
 Keep the returned JSON shape, connector names, and strategy IDs intact. In particular, `search_doc_oficial` returns `official_doc_registry_search` or `official_doc_web_fallback`; the optional local index returns `local_index_lexical` or `local_index_unavailable`; and Reddit uses `searxng_reddit_index`. A `401` means the HTTP credential does not match. Empty or `partial:true` search results can indicate provider degradation rather than an MCP connection failure.
 
 ## Client references

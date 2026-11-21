@@ -153,6 +153,8 @@ Las 29 herramientas son `search_web`, `search_news`, `search_doc_oficial`, `sear
 
 `fetch_url` y `fetch_and_extract` delegan las URLs de video de YouTube a `fetch_youtube_transcript` en lugar de scrapear la página de visualización; los canales, las búsquedas y las demás URLs se obtienen como antes. `fetch_youtube_transcript` recibe `url`, `language` opcional y `maxChars` opcional (60000 por defecto, máximo 400000). Un error `youtube_blocked` significa que YouTube bloqueó la IP del servidor: no reintente ni pruebe otras herramientas de fetch para ese video.
 
+Cada entrada de `tools/list` trae además `title` y `annotations`, y las herramientas de búsqueda y de síntesis un `outputSchema` que su `structuredContent` cumple. Una llamada fallida devuelve `isError: true` con un mensaje de texto accionable en lugar de un error JSON-RPC; los errores JSON-RPC quedan para herramientas desconocidas y solicitudes mal formadas. El detalle está en [configuration](configuration.es.md). En Pi, los scripts con `exposure: "codemode"` reciben `structuredContent` tipado desde el `outputSchema`: fíltrelo en el script y devuelva solo lo que el modelo necesita.
+
 Conserve el formato JSON devuelto, los nombres de conectores y los strategy IDs. En particular, `search_doc_oficial` devuelve `official_doc_registry_search` u `official_doc_web_fallback`; el índice local opcional devuelve `local_index_lexical` o `local_index_unavailable`; y Reddit usa `searxng_reddit_index`. Un `401` indica que la credencial HTTP no coincide. Resultados vacíos o `partial:true` pueden señalar degradación de proveedor, no una falla de conexión MCP.
 
 ## Referencias de clientes

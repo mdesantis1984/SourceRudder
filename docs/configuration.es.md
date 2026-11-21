@@ -24,6 +24,9 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` o `30000` | Timeout de fetch, en milisegundos. |
 | `-auth-key` | vacío | Reemplaza `SOURCERUDDER_AUTH_KEY`. |
 | `-local-index-path` | vacío | Reemplaza `LOCAL_INDEX_PATH`. |
+| `-result-set-ttl` | `RESULT_SET_TTL` o `900` | Segundos durante los que un set de resultados guardado se puede paginar con `cursor`. |
+| `-result-set-max-sets` | `RESULT_SET_MAX_SETS` o `64` | Máximo de sets guardados; se expulsan primero los más antiguos. |
+| `-result-set-max-results` | `RESULT_SET_MAX_RESULTS` o `2000` | Máximo de resultados guardados entre todos los sets; se expulsan primero los sets más antiguos. |
 
 ## Entorno y Compose
 
@@ -32,11 +35,14 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `SOURCERUDDER_AUTH_KEY` | vacío | Credencial para `/mcp` y `/metrics`. Vacía implica rechazo total de rutas protegidas. |
 | `SOURCERUDDER_PORT` | `8080` en Compose | Puerto host loopback publicado por Compose; no reemplaza `-http-addr`. |
 | `SEARXNG_URL` | `http://localhost:8888` | URL backend de SearXNG. |
-| `FETCH_USER_AGENT` | `SourceRudder/3.0.0 (anonymous-only)` | User-Agent del fetcher. |
+| `FETCH_USER_AGENT` | User-Agent de Chrome de escritorio (`fetch.DefaultUserAgent`) | User-Agent del fetcher. Muchos sitios rechazan agentes que se identifican como bot; un valor explícito se usa sin cambios. |
 | `FETCH_TIMEOUT_MS` | `30000` | Timeout de fetch; un `-fetch-timeout-ms` positivo tiene prioridad. |
 | `FETCH_MAX_REDIRECTS` | `5` | Máximo de redirecciones validadas. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Máximo de intentos de fetch. |
 | `LOCAL_INDEX_PATH` | vacío | Habilita `search_local_index`. |
+| `RESULT_SET_TTL` | `900` | Vida del set de resultados en segundos; `-result-set-ttl` tiene prioridad. Un valor no positivo vuelve al predeterminado. |
+| `RESULT_SET_MAX_SETS` | `64` | Máximo de sets de resultados guardados; `-result-set-max-sets` tiene prioridad. |
+| `RESULT_SET_MAX_RESULTS` | `2000` | Máximo total de resultados guardados; `-result-set-max-results` tiene prioridad. |
 | `YOUTUBE_TRANSCRIPTS` | habilitado | `off` deshabilita `fetch_youtube_transcript` y la delegación de YouTube en `fetch_url` / `fetch_and_extract`. |
 | `YTDLP_PATH` | `yt-dlp` | Ejecutable de yt-dlp. La unidad systemd usa `/opt/yt-dlp/bin/yt-dlp`. |
 | `YTDLP_JS_RUNTIMES` | vacío | Runtime de JavaScript que se pasa a yt-dlp como `RUNTIME[:RUTA]`. La unidad systemd usa `node:/opt/nodejs/bin/node`. |
@@ -88,4 +94,20 @@ Use un archivo regular, sin symlink y no escribible por grupo u otros. El loader
 
 ## Estado
 
-La caché tiene un TTL predeterminado de 300 segundos. Las búsquedas mediante SearXNG limitan el TTL de respuestas degradadas (`partial: true`, incluidos motores sin respuesta) a 30 segundos, sin extender un TTL configurado menor; las respuestas sanas conservan el TTL configurado. Sus claves versionadas incluyen los parámetros de solicitud, como idioma, búsqueda segura, rango temporal y límite efectivo de resultados, y no reutilizan claves anteriores. El historial conserva las 100 búsquedas más recientes. Ambos viven en proceso, no se comparten entre réplicas y se pierden al reiniciar. No los use como auditoría durable.
+La caché tiene un TTL predeterminado de 300 segundos. Las búsquedas mediante SearXNG, GitHub y StackOverflow limitan a 30 segundos el TTL de respuestas degradadas (`partial: true`, incluidos motores sin respuesta) y vacías (sin resultados), sin extender un TTL configurado menor; las respuestas sanas con resultados conservan el TTL configurado. `search_web` devuelve hasta 20 resultados cuando se omite `maxResults` (los valores explícitos se respetan, con tope de 100), quita URLs duplicadas y pide una vez la página 2 de SearXNG cuando la página 1 trae menos resultados de los pedidos. Sus claves versionadas incluyen los parámetros de solicitud, como idioma, búsqueda segura, rango temporal y límite efectivo de resultados, y no reutilizan claves anteriores. El historial conserva las 100 búsquedas más recientes. Ambos viven en proceso, no se comparten entre réplicas y se pierden al reiniciar. No los use como auditoría durable.
+
+## Sets de resultados y paginación
+
+Cada herramienta de búsqueda guarda en un almacén en proceso la lista completa de resultados que obtuvo y devuelve una página con `resultSetId`, `total` y, solo mientras quedan resultados, `nextCursor`. `maxResults` es el tamaño de página que elige quien llama, no un tope de lo que se conserva. Envía `cursor` (el `nextCursor` de una respuesta anterior, con el `query` y el `maxResults` que quieras) para leer la página siguiente sin ninguna petición al proveedor; un cursor solo sirve con la herramienta que lo emitió (otra herramienta devuelve `invalid_cursor: cursor was issued by <tool>`), uno mal formado devuelve `invalid_cursor: <motivo>`, `offset` y `resultSetId` están retirados en las herramientas de búsqueda (la llamada se ejecuta igual y la respuesta avisa `offset and resultSetId are no longer supported; page with cursor=<nextCursor>`) y un set desconocido o vencido devuelve `result_set_not_found`. El almacén es por proceso y no es durable: un reinicio o una expulsión invalida los IDs. El uso de memoria está acotado por `-result-set-max-results` (2.000 resultados por defecto); dimensiónalo para la réplica.
+
+En `search_web`, paginar más allá del final del set guardado puede traer más: cuando `cursor` apunta al final de un set cuya fuente SearXNG puede tener más resultados, el servidor pide la página siguiente de SearXNG (`pageno`), agrega solo las URL que no estaban guardadas y las devuelve. Cada llamada así hace como máximo una petición extra al proveedor, nunca al buscar, y un set lee como máximo 5 páginas de SearXNG en total (contando las del momento de la búsqueda). `nextCursor` se omite al leer la 5.ª página, cuando una página no aporta URL nuevas o cuando se llenó el presupuesto de resultados (un warning lo indica). Se reutilizan la consulta, `language`, `timeRange` y `safeSearch` de la búsqueda original. Si la página extra falla, la respuesta viene vacía con un warning y se puede reintentar el mismo cursor. Las demás herramientas de búsqueda nunca piden más: su `nextCursor` se omite al final del set guardado.
+
+`summarize_results`, `deep_research` y `compare_sources` aceptan `resultSetId` (el valor que devolvió una herramienta de búsqueda) en lugar de `results`, así no hay que reenviar la lista. El set guardado se lee localmente, sin petición de red. Si se pasan ambos, gana `results` y la respuesta trae el warning `resultSetId ignored: results were provided in the same call; results win`. Un ID desconocido o vencido devuelve un resultado de error: `result_set_not_found: <id> (expired or unknown; run the search again)`.
+
+### Formato del resultado
+
+Todo resultado de `tools/call` trae `structuredContent` (la respuesta tipada completa, siempre un objeto JSON) y exactamente un bloque de texto. Las herramientas de búsqueda aceptan dos argumentos opcionales para ese texto: `format` es `json` (por defecto; el mismo valor que `structuredContent`, minificado) o `compact` (una línea por resultado, `título | url | snippet`, con `resultSetId`, `total` y `nextCursor` en una línea de cabecera), y `detail` (solo con `format=compact`) es `titles`, `snippets` (por defecto) o `full`. `structuredContent` es la respuesta completa en ambos formatos. Algunos clientes muestran al modelo solo el texto y cortan el texto de más de unos 20 KB; para páginas grandes usa `format=compact` con `detail=titles`. Un valor desconocido de `format` o `detail` se rechaza con un error de argumentos que lista los valores permitidos.
+
+Los metadatos y errores de las herramientas siguen MCP 2025-11-25. `tools/list` da a cada herramienta un `title` corto y `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`; los clientes las tratan como pistas, no como garantías). Las herramientas de búsqueda y de fetch son de solo lectura y de mundo abierto; las de síntesis (`summarize_results`, `deep_research`, `compare_sources`), `search_local_index` y las de estado local (`get_cached`, `invalidate_cache`, `get_search_history`, `get_current_date`) son de mundo cerrado. Las 16 herramientas de búsqueda comparten un único `outputSchema` (la respuesta de búsqueda: `query`, `results[]` con `title`, `url` y `source` obligatorios más `snippet`, `total` y, opcionales, `resultSetId`, `nextCursor`, `partial`, `warnings`, `errors`; es mínimo a propósito para ahorrar tokens en `tools/list`, y `structuredContent` conserva sus demás campos) y las tres de síntesis comparten otro; todo `structuredContent` que devuelven lo cumple, así que los clientes pueden tiparlo (los scripts de codemode de Pi pueden filtrarlo antes de que algo llegue al modelo). Las demás herramientas no declaran `outputSchema`.
+
+Una llamada fallida es un resultado normal, `{"content":[{"type":"text","text":"<mensaje>"}],"isError":true}` sin `structuredContent`, para que el modelo lea el mensaje y reintente. Cubre la validación de argumentos (`format` o `detail` desconocido, `invalid_cursor: <motivo>`, tipos de argumento incorrectos), los errores de negocio (`result_set_not_found: <id> ...`) y los fallos del proveedor o del handler. Los errores JSON-RPC quedan solo para fallos de protocolo: una herramienta desconocida (`-32602`), JSON mal formado o `params` mal formados en `tools/call`, y una versión de protocolo no admitida.

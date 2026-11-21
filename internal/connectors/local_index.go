@@ -30,13 +30,6 @@ func (c *LocalIndexConnector) Name() string { return "local_index" }
 
 func (c *LocalIndexConnector) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
 	terms := localIndexTerms(req.Query)
-	maxResults := req.MaxResults
-	if maxResults <= 0 {
-		maxResults = 10
-	}
-	if maxResults > maxLocalIndexResults {
-		maxResults = maxLocalIndexResults
-	}
 
 	type rankedDocument struct {
 		doc   localIndexDocument
@@ -58,9 +51,6 @@ func (c *LocalIndexConnector) Search(ctx context.Context, req *types.SearchReque
 		}
 		return ranked[i].score > ranked[j].score
 	})
-	if len(ranked) > maxResults {
-		ranked = ranked[:maxResults]
-	}
 
 	results := make([]types.SearchResultItem, 0, len(ranked))
 	for _, item := range ranked {

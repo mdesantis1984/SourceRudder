@@ -59,12 +59,19 @@ func (c *GitHubConnector) searchRepositories(ctx context.Context, req *types.Sea
 		}
 	}
 
-	apiURL := fmt.Sprintf("%s/search/repositories?q=%s&per_page=%d", c.baseURL, query, maxResults)
-	if req.Language != "" {
-		apiURL += "&language=" + url.QueryEscape(req.Language)
+	buildURL := func(q string) string {
+		apiURL := fmt.Sprintf("%s/search/repositories?q=%s&per_page=%d", c.baseURL, sanitizeQuery(q), maxResults)
+		if req.Language != "" {
+			apiURL += "&language=" + url.QueryEscape(req.Language)
+		}
+		return apiURL
 	}
 
-	results, err = c.doGitHubRequest(ctx, apiURL, "repo")
+	results, err = c.doGitHubRequest(ctx, buildURL(req.Query), "repo")
+	var relaxed string
+	results, relaxed, err = relaxedRetry(req.Query, results, err, func(q string) ([]types.SearchResultItem, error) {
+		return c.doGitHubRequest(ctx, buildURL(q), "repo")
+	})
 	if err != nil {
 		log.Printf("[github] search error: %v", err)
 	}
@@ -75,6 +82,7 @@ func (c *GitHubConnector) searchRepositories(ctx context.Context, req *types.Sea
 		SourcesUsed: []string{"github"},
 		Cached:      false,
 	}
+	applyRelaxWarning(resp, relaxed)
 	if len(results) == 0 && err != nil {
 		recordDegraded("github", "transport", resp, err)
 	}
@@ -107,10 +115,15 @@ func (c *GitHubConnector) SearchPR(ctx context.Context, req *types.SearchRequest
 		}
 	}
 
-	apiURL := fmt.Sprintf("%s/search/issues?q=%s+is:pr&state=%s&per_page=%d",
-		c.baseURL, query, state, maxResults)
+	buildURL := func(q string) string {
+		return fmt.Sprintf("%s/search/issues?q=%s+is:pr&state=%s&per_page=%d",
+			c.baseURL, sanitizeQuery(q), state, maxResults)
+	}
 
-	results, err := c.doGitHubRequest(ctx, apiURL, "pr")
+	results, err := c.doGitHubRequest(ctx, buildURL(req.Query), "pr")
+	results, relaxed, err := relaxedRetry(req.Query, results, err, func(q string) ([]types.SearchResultItem, error) {
+		return c.doGitHubRequest(ctx, buildURL(q), "pr")
+	})
 	if err != nil {
 		log.Printf("[github] PR search error: %v", err)
 	}
@@ -121,6 +134,7 @@ func (c *GitHubConnector) SearchPR(ctx context.Context, req *types.SearchRequest
 		SourcesUsed: []string{"github"},
 		Cached:      false,
 	}
+	applyRelaxWarning(resp, relaxed)
 	if len(results) == 0 && err != nil {
 		recordDegraded("github", "transport", resp, err)
 	}
@@ -153,10 +167,15 @@ func (c *GitHubConnector) SearchIssue(ctx context.Context, req *types.SearchRequ
 		}
 	}
 
-	apiURL := fmt.Sprintf("%s/search/issues?q=%s+is:issue&state=%s&per_page=%d",
-		c.baseURL, query, state, maxResults)
+	buildURL := func(q string) string {
+		return fmt.Sprintf("%s/search/issues?q=%s+is:issue&state=%s&per_page=%d",
+			c.baseURL, sanitizeQuery(q), state, maxResults)
+	}
 
-	results, err := c.doGitHubRequest(ctx, apiURL, "issue")
+	results, err := c.doGitHubRequest(ctx, buildURL(req.Query), "issue")
+	results, relaxed, err := relaxedRetry(req.Query, results, err, func(q string) ([]types.SearchResultItem, error) {
+		return c.doGitHubRequest(ctx, buildURL(q), "issue")
+	})
 	if err != nil {
 		log.Printf("[github] issue search error: %v", err)
 	}
@@ -167,6 +186,7 @@ func (c *GitHubConnector) SearchIssue(ctx context.Context, req *types.SearchRequ
 		SourcesUsed: []string{"github"},
 		Cached:      false,
 	}
+	applyRelaxWarning(resp, relaxed)
 	if len(results) == 0 && err != nil {
 		recordDegraded("github", "transport", resp, err)
 	}
@@ -267,7 +287,7 @@ func (c *GitHubConnector) cacheResults(ctx context.Context, cacheKey string, res
 	if err != nil {
 		return
 	}
-	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+	c.cacheSvc.SetWithMaxTTL(ctx, cacheKey, data, resp.SourcesUsed, searchCacheCap(resp))
 }
 
 func sanitizeQuery(q string) string {

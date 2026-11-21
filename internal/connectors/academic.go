@@ -122,9 +122,6 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 
 	results := make([]types.SearchResultItem, 0, len(searxngResp.Results))
 	for i, item := range searxngResp.Results {
-		if i >= maxResults {
-			break
-		}
 		if !isAcademicURL(item.URL) {
 			continue
 		}

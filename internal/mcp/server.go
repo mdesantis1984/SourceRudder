@@ -17,6 +17,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
@@ -48,6 +49,9 @@ type Server struct {
 	met               *observability.Metrics
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
+	// resultSets keeps the full result list of every search so callers can
+	// page it by cursor without repeating the upstream search.
+	resultSets *resultset.Store
 	// youtube serves video transcripts. It is injected with
 	// SetYouTubeService; nil keeps the previous fetch behavior.
 	youtube       *youtube.Service
@@ -73,9 +77,14 @@ type Server struct {
 
 type Tool struct {
 	Name        string
+	Title       string
 	Description string
 	InputSchema map[string]interface{}
-	Handler     func(ctx context.Context, args json.RawMessage) (interface{}, error)
+	// Annotations and OutputSchema are advertised in tools/list; see
+	// tool_metadata.go.
+	Annotations  map[string]interface{}
+	OutputSchema map[string]interface{}
+	Handler      func(ctx context.Context, args json.RawMessage) (interface{}, error)
 }
 
 type metricsResponseWriter struct {
@@ -128,6 +137,7 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 		synthesisService: synthSvc,
 		authValidator:    authValidator,
 		history:          history,
+		resultSets:       resultset.New(resultset.DefaultConfig()),
 	}
 	s.buildToolsRegistry()
 	s.registerTools()
@@ -195,9 +205,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
-		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
-		{Name: "search_doc_oficial", Description: "Official documentation for the bounded SourceRudder registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
-		{Name: "search_local_index", Description: "Searches an operator-curated read-only corpus with deterministic lexical ranking and strategy=\"local_index_lexical\". When LOCAL_INDEX_PATH is unset, returns strategy=\"local_index_unavailable\" without web fallback.", InputSchema: searchInputSchema()},
+		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
+		{Name: "search_doc_oficial", Description: "Official docs from the SourceRudder registry; filters.library picks the library, filters.version is requested, not verified. Validated hits: strategy=\"official_doc_registry_search\"; otherwise \"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
+		{Name: "search_local_index", Description: "Operator-curated read-only corpus, lexical ranking, strategy=\"local_index_lexical\". Without LOCAL_INDEX_PATH: strategy=\"local_index_unavailable\", without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
 		{Name: "search_github_issue", Description: "Issues en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -207,37 +217,52 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
 		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
-		{Name: "search_reddit", Description: "Discusiones y experiencias reales en Reddit. Backend: SearXNG local, con posts públicos indexados y filtro reddit.com. Devuelve strategy=\"searxng_reddit_index\"; los fallos del proveedor se señalan como partial con warnings.", InputSchema: searchInputSchema()},
+		{Name: "search_reddit", Description: "Discusiones en Reddit. Backend: SearXNG local (posts públicos, filtro reddit.com). strategy=\"searxng_reddit_index\"; los fallos salen como partial con warnings.", InputSchema: searchInputSchema()},
 		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
-		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by bounded whole-word lexical hints in title and content before applying maxResults; this does not infer semantic relevance, and partial upstream warnings remain visible.", InputSchema: searchInputSchema()},
-		{Name: "fetch_url", Description: "Obtener el HTML de una URL con extracción básica de title y metadata. Usa fetch_and_extract si necesitas el contenido principal. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
+		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by whole-word lexical hints in title and content (no semantic relevance); partial warnings stay visible.", InputSchema: searchInputSchema()},
+		{Name: "fetch_url", Description: "HTML de una URL con title y metadata básicos. Para el contenido principal usa fetch_and_extract. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},
-		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
+		{Name: "extract_structured", Description: "Tablas, metadata y estructura de una URL como JSON en Content. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
 		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad (no SSRF) de una URL. Devuelve {url, valid, error}.", InputSchema: urlInputSchema()},
-		{Name: "check_link_status", Description: "Validar hasta 100 URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
-		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
-		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
-		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
-		{Name: "get_cached", Description: "Recupera una entrada de la caché en proceso por clave exacta. Devuelve {cache_hit:bool, entry:CacheEntry|null}. Si no hay entrada o expiró, devuelve cache_hit=false sin error.", InputSchema: cachedEntryInputSchema()},
-		{Name: "invalidate_cache", Description: "Elimina una entrada de la caché en proceso por clave exacta. Devuelve {key:string, invalidated:bool}. Idempotente: cuando la clave no existe, devuelve invalidated=false sin error.", InputSchema: cachedEntryInputSchema()},
-		{Name: "get_search_history", Description: "Lista las últimas invocaciones de búsqueda retenidas en el proceso (newest-first). Argumentos: limit (int, requerido) y query opcional como filtro substring case-sensitive sobre la Query almacenada. Devuelve {history:Entry[], limit:int, query:string}.", InputSchema: historyInputSchema()},
-		{Name: "fetch_youtube_transcript", Description: "Transcripción de un video de YouTube vía yt-dlp (URL o ID de 11 caracteres). Devuelve {url, videoId, title, channel, uploadDate, duration, language, trackType manual|automatic, cached, truncated, totalChars, transcript}. Resultado en caché por video+idioma. Si falla con youtube_blocked (429 o bot check), NO reintentes ni uses fetch_url ni otras tools de fetch para ese video: espera. fetch_url y fetch_and_extract ya delegan aquí las URLs de video.", InputSchema: youtubeTranscriptInputSchema()},
+		{Name: "check_link_status", Description: "Valida hasta 100 URLs en paralelo. Devuelve [{url, valid, status, error}] en el orden del input.", InputSchema: urlListInputSchema()},
+		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. No busca: solo sintetiza los `results` de una tool search_* (o su resultSetId). Devuelve {summary, keyFindings, citations, confidence}.", InputSchema: synthesisInputSchema()},
+		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. No busca: solo sintetiza los `results` de una tool search_* (o su resultSetId). Devuelve {summary, themes[], keyFindings, comparison{}, confidence}.", InputSchema: synthesisInputSchema()},
+		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. No busca: solo sintetiza los `results` de una tool search_* (o su resultSetId). Devuelve {sources[], consensus, divergences[]}.", InputSchema: synthesisInputSchema()},
+		{Name: "get_cached", Description: "Entrada de la caché en proceso por clave exacta. Devuelve {cache_hit:bool, entry:CacheEntry|null}; sin entrada o vencida: cache_hit=false, sin error.", InputSchema: cachedEntryInputSchema()},
+		{Name: "invalidate_cache", Description: "Elimina una entrada de la caché por clave exacta. Devuelve {key, invalidated:bool}; idempotente: clave inexistente = invalidated=false, sin error.", InputSchema: cachedEntryInputSchema()},
+		{Name: "get_search_history", Description: "Últimas búsquedas retenidas en el proceso (newest-first); query filtra por substring case-sensitive. Devuelve {history:Entry[], limit, query}.", InputSchema: historyInputSchema()},
+		{Name: "fetch_youtube_transcript", Description: "Transcripción de un video de YouTube vía yt-dlp, en caché por video+idioma. Devuelve {url, videoId, title, channel, uploadDate, duration, language, trackType manual|automatic, cached, truncated, totalChars, transcript}. Si falla con youtube_blocked (429 o bot check), NO reintentes ni uses fetch_url ni otras tools de fetch para ese video: espera. fetch_url y fetch_and_extract ya delegan aquí las URLs de video.", InputSchema: youtubeTranscriptInputSchema()},
 		{Name: "get_current_date", Description: "Fecha y hora UTC consistente para citación: {date, time, timezone:\"UTC\", timestamp}.", InputSchema: emptyInputSchema()},
 	}
+	decorateTools(s.toolsRegistry)
 }
 
 func searchInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda (requerido)"},
-			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados (default 10, lo aplica el planner)"},
-			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47, ej: 'en', 'es'. Solo se reenvía a SearxNG."},
-			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Activar safesearch en SearxNG (default false)"},
+			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda"},
+			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página que elige quien llama (default 10; 20 en search_web; tope 100)."},
+			"cursor": map[string]interface{}{
+				"type":        "string",
+				"description": "nextCursor de esta misma tool: página siguiente de la lista guardada, sin red (~15 min).",
+			},
+			"format": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"json", "compact"},
+				"description": "Formato del texto (structuredContent siempre es completo). Páginas grandes: format=compact con detail=titles, porque algunos clientes truncan el texto largo.",
+			},
+			"detail": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"titles", "snippets", "full"},
+				"description": "Solo con format=compact; default snippets.",
+			},
+			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47 ('en', 'es'), para SearxNG."},
+			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Safesearch de SearxNG (default false)"},
 			"timeRange": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"", "day", "week", "month", "year"},
-				"description": "Rango temporal que se reenvía a SearxNG. Vacío = sin restricción.",
+				"description": "Rango temporal en SearxNG; vacío = sin límite.",
 			},
 		},
 		"required": []string{"query"},
@@ -253,12 +278,12 @@ func githubFiltersInputSchema() map[string]interface{} {
 	props := schema["properties"].(map[string]interface{})
 	props["filters"] = map[string]interface{}{
 		"type":        "object",
-		"description": "Filtros específicos del conector. Solo search_github_pr / search_github_issue leen filters.state ('open' | 'closed').",
+		"description": "Filtros del conector; solo filters.state.",
 		"properties": map[string]interface{}{
 			"state": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"open", "closed"},
-				"description": "Estado del PR o issue (solo search_github_pr / search_github_issue)",
+				"description": "Estado del PR o issue",
 			},
 		},
 	}
@@ -368,8 +393,12 @@ func synthesisInputSchema() map[string]interface{} {
 			"query": map[string]interface{}{"type": "string", "description": "Consulta original (requerido)"},
 			"results": map[string]interface{}{
 				"type":        "array",
-				"description": "Resultados a sintetizar (requerido). Cada elemento sigue el schema SearchResultItem; usa el campo citationId si necesitas enlazar con un SearchResponse cacheado.",
+				"description": "Resultados a sintetizar (SearchResultItem). Requerido salvo que pases resultSetId.",
 				"items":       searchResultItemSchema(),
+			},
+			"resultSetId": map[string]interface{}{
+				"type":        "string",
+				"description": "resultSetId de una tool search_*: sintetiza la lista guardada, sin red. Si pasas ambos, gana results.",
 			},
 		},
 		"required": []string{"query"},
@@ -463,15 +492,7 @@ func (s *Server) HandleToolsList(ctx context.Context, params json.RawMessage) (i
 		} `json:"filter"`
 	}
 	_ = json.Unmarshal(params, &req)
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
-	return map[string]interface{}{"tools": tools}, nil
+	return map[string]interface{}{"tools": describeTools(s.toolsRegistry)}, nil
 }
 
 func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -485,35 +506,41 @@ func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (i
 	for _, t := range s.toolsRegistry {
 		if t.Name == req.Name {
 			inputJSON, _ := json.Marshal(req.Arguments)
-			result, err := s.invokeTool(ctx, t, inputJSON)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{
-				"content": []map[string]interface{}{
-					{"type": "text", "text": formatResult(result)},
-				},
-			}, nil
+			return s.runTool(ctx, t, inputJSON), nil
 		}
 	}
 	return nil, fmt.Errorf("tool not found: %s", req.Name)
 }
 
+// runTool executes a tool and returns its tools/call result for every call
+// path. Handler failures, argument validation and business errors come back
+// as isError results the model can read and act on; JSON-RPC errors are left
+// to unknown tools and malformed requests (MCP 2025-11-25).
+func (s *Server) runTool(ctx context.Context, tool Tool, args json.RawMessage) map[string]interface{} {
+	result, err := s.invokeTool(ctx, tool, args)
+	if err != nil {
+		return errorResult(err)
+	}
+	res, err := toolResult(args, result)
+	if err != nil {
+		return errorResult(err)
+	}
+	return res
+}
+
 func (s *Server) invokeTool(ctx context.Context, tool Tool, args json.RawMessage) (interface{}, error) {
 	started := time.Now()
-	result, err := tool.Handler(ctx, args)
+	result, err := tool.Handler(withToolName(ctx, tool.Name), args)
 	if strings.HasPrefix(tool.Name, "search_") {
 		s.met.RecordSearchLatency(strings.TrimPrefix(tool.Name, "search_"), time.Since(started).Seconds())
+		if err == nil && usesRetiredPagingArgs(args) {
+			result = withRetiredArgsWarning(result)
+		}
 	}
 	if err == nil {
 		s.met.IncrToolCall(tool.Name)
 	}
 	return result, err
-}
-
-func formatResult(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
 }
 
 func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
@@ -701,18 +728,10 @@ func (s *Server) handleMCPResourcesRead(id interface{}, params json.RawMessage) 
 }
 
 func (s *Server) handleMCPToolsList(id interface{}) map[string]interface{} {
-	tools := make([]map[string]interface{}, 0, len(s.toolsRegistry))
-	for _, t := range s.toolsRegistry {
-		tools = append(tools, map[string]interface{}{
-			"name":        t.Name,
-			"description": t.Description,
-			"inputSchema": t.InputSchema,
-		})
-	}
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      id,
-		"result":  map[string]interface{}{"tools": tools},
+		"result":  map[string]interface{}{"tools": describeTools(s.toolsRegistry)},
 	}
 }
 
@@ -738,23 +757,7 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 	for _, t := range s.toolsRegistry {
 		if t.Name == reqParams.Name {
 			inputJSON, _ := json.Marshal(reqParams.Arguments)
-			result, err := s.invokeTool(ctx, t, inputJSON)
-			if err != nil {
-				return map[string]interface{}{
-					"jsonrpc": "2.0",
-					"id":      id,
-					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
-				}
-			}
-			return map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      id,
-				"result": map[string]interface{}{
-					"content": []map[string]interface{}{
-						{"type": "text", "text": formatResult(result)},
-					},
-				},
-			}
+			return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": s.runTool(ctx, t, inputJSON)}
 		}
 	}
 	return map[string]interface{}{

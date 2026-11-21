@@ -105,13 +105,18 @@ func resultJSON(t *testing.T, resp map[string]interface{}, into interface{}) {
 	}
 }
 
+// errorMessage returns the text of a failed tool call: an isError result
+// (MCP 2025-11-25: tool execution errors are results, not JSON-RPC errors).
 func errorMessage(t *testing.T, resp map[string]interface{}) string {
 	t.Helper()
-	e, ok := resp["error"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected a JSON-RPC error, got %v", resp)
+	res, ok := resp["result"].(map[string]interface{})
+	if !ok || res["isError"] != true {
+		t.Fatalf("expected an isError tool result, got %v", resp)
 	}
-	return e["message"].(string)
+	if _, has := res["structuredContent"]; has {
+		t.Fatalf("an error result must not carry structuredContent: %v", resp)
+	}
+	return res["content"].([]map[string]interface{})[0]["text"].(string)
 }
 
 func TestFetchYouTubeTranscriptToolRegisteredWithSchema(t *testing.T) {

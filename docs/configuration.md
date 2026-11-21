@@ -24,6 +24,9 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` or `30000` | Fetch timeout in milliseconds. |
 | `-auth-key` | empty | Overrides `SOURCERUDDER_AUTH_KEY`. |
 | `-local-index-path` | empty | Overrides `LOCAL_INDEX_PATH`. |
+| `-result-set-ttl` | `RESULT_SET_TTL` or `900` | Seconds a stored search result set stays pageable by `cursor`. |
+| `-result-set-max-sets` | `RESULT_SET_MAX_SETS` or `64` | Maximum stored result sets; the oldest are evicted first. |
+| `-result-set-max-results` | `RESULT_SET_MAX_RESULTS` or `2000` | Maximum results held across all stored sets; the oldest sets are evicted first. |
 
 ## Environment and Compose
 
@@ -32,11 +35,14 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `SOURCERUDDER_AUTH_KEY` | empty | Credential for HTTP `/mcp` and `/metrics`. An empty key fails closed: every protected request is rejected. |
 | `SOURCERUDDER_PORT` | `8080` in Compose | Loopback host port published by Compose. It does not replace `-http-addr`. |
 | `SEARXNG_URL` | `http://localhost:8888` | SearXNG backend URL. |
-| `FETCH_USER_AGENT` | `SourceRudder/3.0.0 (anonymous-only)` | Fetch User-Agent. |
+| `FETCH_USER_AGENT` | Desktop Chrome User-Agent (`fetch.DefaultUserAgent`) | Fetch User-Agent. Many sites reject self-identified bot agents; an explicit value is used unchanged. |
 | `FETCH_TIMEOUT_MS` | `30000` | Fetch timeout; `-fetch-timeout-ms` wins when positive. |
 | `FETCH_MAX_REDIRECTS` | `5` | Maximum validated redirects. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Maximum fetch attempts. |
 | `LOCAL_INDEX_PATH` | empty | Enables `search_local_index`. |
+| `RESULT_SET_TTL` | `900` | Result-set lifetime in seconds; `-result-set-ttl` wins when set. Non-positive values fall back to the default. |
+| `RESULT_SET_MAX_SETS` | `64` | Maximum stored result sets; `-result-set-max-sets` wins when set. |
+| `RESULT_SET_MAX_RESULTS` | `2000` | Maximum stored results in total; `-result-set-max-results` wins when set. |
 | `YOUTUBE_TRANSCRIPTS` | enabled | `off` disables `fetch_youtube_transcript` and the YouTube delegation in `fetch_url` / `fetch_and_extract`. |
 | `YTDLP_PATH` | `yt-dlp` | yt-dlp executable. The systemd unit sets `/opt/yt-dlp/bin/yt-dlp`. |
 | `YTDLP_JS_RUNTIMES` | empty | JavaScript runtime passed to yt-dlp as `RUNTIME[:PATH]`. The systemd unit sets `node:/opt/nodejs/bin/node`. |
@@ -49,6 +55,22 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `YOUTUBE_WORK_DIR` | empty (`TMPDIR`) | Scratch directory for yt-dlp output. |
 
 Use a local, ignored `.env` file with restrictive permissions.
+
+## Result sets and paging
+
+Every search tool keeps the full list of results it obtained in an in-process store and returns one page with `resultSetId`, `total` and, only while results remain, `nextCursor`. `maxResults` is the page size chosen by the caller, not a cap on what is kept. Send `cursor` (the `nextCursor` of a previous response, plus the `query` and any `maxResults` you want) to read the next page without any upstream request; a cursor only works with the tool that issued it (another tool returns `invalid_cursor: cursor was issued by <tool>`), a malformed one returns `invalid_cursor: <reason>`, `offset` and `resultSetId` are retired on search tools (the call still runs and the response warns `offset and resultSetId are no longer supported; page with cursor=<nextCursor>`), and an unknown or expired set returns `result_set_not_found`. The store is per process and not durable: a restart or an eviction invalidates IDs. Memory use is bounded by `-result-set-max-results` (2,000 results by default), so size it for the replica.
+
+For `search_web`, paging past the end of the stored set can fetch more: when `cursor` points at the end of a set whose SearXNG source may have more results, the server requests the next SearXNG page (`pageno`), appends only URLs not already stored, and returns them. Each such call makes at most one extra upstream request, never at search time, and a set reads at most 5 SearXNG pages in total (search-time pages included). `nextCursor` is omitted once the 5th page is read, when a page adds no new URLs, or when the result budget is full (a warning says so). The query, `language`, `timeRange` and `safeSearch` of the original search are reused. If the extra page fails, the response is empty with a warning and the same cursor can be retried. Other search tools never fetch lazily: their `nextCursor` is omitted at the end of the stored set.
+
+`summarize_results`, `deep_research` and `compare_sources` accept `resultSetId` (the value a search tool returned) instead of `results`, so the list is not sent back. The stored set is read locally, with no network request. If both are given, `results` wins and the response carries the warning `resultSetId ignored: results were provided in the same call; results win`. An unknown or expired ID returns an error result: `result_set_not_found: <id> (expired or unknown; run the search again)`.
+
+### Result format
+
+Every `tools/call` result carries `structuredContent` (the full typed response, always a JSON object) and exactly one text block. The search tools accept two optional arguments for that text: `format` is `json` (default; the same value as `structuredContent`, minified) or `compact` (one line per result, `title | url | snippet`, with `resultSetId`, `total` and `nextCursor` in a header line), and `detail` (only with `format=compact`) is `titles`, `snippets` (default) or `full`. `structuredContent` is the full response in both formats. Some clients show the model only the text and cut text over about 20 KB, so for large pages use `format=compact` with `detail=titles`. An unknown `format` or `detail` value is rejected with an argument error that lists the allowed values.
+
+Tool metadata and errors follow MCP 2025-11-25. `tools/list` gives every tool a short `title` and `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`; clients treat them as hints, not guarantees). Search and fetch tools are read-only and open-world; the synthesis tools (`summarize_results`, `deep_research`, `compare_sources`), `search_local_index` and the local state tools (`get_cached`, `invalidate_cache`, `get_search_history`, `get_current_date`) are closed-world. The 16 search tools share one `outputSchema` (the search response: `query`, `results[]` with required `title`, `url` and `source` plus `snippet`, `total`, and the optional `resultSetId`, `nextCursor`, `partial`, `warnings`, `errors`; it is deliberately slim to save tokens in `tools/list`, and `structuredContent` keeps its other fields) and the three synthesis tools share another; every `structuredContent` they return conforms to it, so clients can type it (Pi codemode scripts can filter it before anything reaches the model). The other tools declare no `outputSchema`.
+
+A failed tool call is a normal result, `{"content":[{"type":"text","text":"<message>"}],"isError":true}` with no `structuredContent`, so the model can read the message and retry. This covers argument validation (unknown `format` or `detail`, `invalid_cursor: <reason>`, wrong argument types), business errors (`result_set_not_found: <id> ...`) and upstream or handler failures. JSON-RPC errors remain only for protocol failures: an unknown tool (`-32602`), malformed JSON or malformed `tools/call` params, and an unsupported protocol version.
 
 ## HTTP authentication
 
@@ -88,4 +110,4 @@ Use a regular, non-symlink file that is not group- or world-writable. The loader
 
 ## State
 
-Cache entries have a default 300-second TTL. SearXNG-backed searches cap degraded (`partial: true`, including unresponsive engines) response TTLs at 30 seconds, without extending a shorter configured TTL; healthy responses keep the configured TTL. Their versioned keys include request parameters, including language, safe search, time range, and effective result limit, and cannot reuse legacy keys. Search history retains the newest 100 searches. Both are in-process only, are not shared by replicas, and disappear on restart. Do not treat either as durable audit storage.
+Cache entries have a default 300-second TTL. SearXNG-backed, GitHub, and StackOverflow searches cap the TTL of degraded (`partial: true`, including unresponsive engines) and empty (zero-result) responses at 30 seconds, without extending a shorter configured TTL; healthy non-empty responses keep the configured TTL. `search_web` returns up to 20 results when `maxResults` is omitted (explicit values are honored, capped at 100), removes duplicate URLs, and requests SearXNG page 2 once when page 1 has fewer results than requested. Their versioned keys include request parameters, including language, safe search, time range, and effective result limit, and cannot reuse legacy keys. Search history retains the newest 100 searches. Both are in-process only, are not shared by replicas, and disappear on restart. Do not treat either as durable audit storage.
