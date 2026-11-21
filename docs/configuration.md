@@ -58,7 +58,11 @@ Use a local, ignored `.env` file with restrictive permissions.
 
 ## Result sets and paging
 
-Every search tool keeps the full list of results it obtained in an in-process store and returns the requested slice with `resultSetId`, `total`, `offset` and `hasMore`. `maxResults` is the page size, not a cap on what is kept. Send `resultSetId` and `offset` to read the rest of the set without any upstream request; an unknown or expired ID returns `result_set_not_found`. The store is per process and not durable: a restart or an eviction invalidates IDs. Memory use is bounded by `-result-set-max-results` (2,000 results by default), so size it for the replica.
+Every search tool keeps the full list of results it obtained in an in-process store and returns one page with `resultSetId`, `total` and, only while results remain, `nextCursor`. `maxResults` is the page size chosen by the caller, not a cap on what is kept. Send `cursor` (the `nextCursor` of a previous response, plus the `query` and any `maxResults` you want) to read the next page without any upstream request; a malformed cursor returns `invalid_cursor: <reason>`, and an unknown or expired set returns `result_set_not_found`. The store is per process and not durable: a restart or an eviction invalidates IDs. Memory use is bounded by `-result-set-max-results` (2,000 results by default), so size it for the replica.
+
+### Result format
+
+Every `tools/call` result carries `structuredContent` (the full typed response, always a JSON object) and exactly one text block. The search tools accept two optional arguments for that text: `format` is `json` (default; the same value as `structuredContent`, minified) or `compact` (one line per result, `title | url | snippet`, with `resultSetId`, `total` and `nextCursor` in a header line), and `detail` (only with `format=compact`) is `titles`, `snippets` (default) or `full`. `structuredContent` is the full response in both formats. Some clients show the model only the text and cut text over about 20 KB, so for large pages use `format=compact` with `detail=titles`. An unknown `format` or `detail` value is rejected with an argument error that lists the allowed values.
 
 ## HTTP authentication
 

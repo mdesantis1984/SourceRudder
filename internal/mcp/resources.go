@@ -70,8 +70,9 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 {
   "query": "<string, requerido>",
   "maxResults": <integer, tamaño de página: default 10 (20 en search_web), tope 100>,
-  "offset": <integer >= 0, default 0>,
-  "resultSetId": "<string rs_..., opcional>",
+  "cursor": "<string, nextCursor de una llamada anterior, opcional>",
+  "format": "<enum: 'json' (default) | 'compact'>",
+  "detail": "<enum: 'titles' | 'snippets' (default) | 'full'; solo con format=compact>",
   "language": "<string BCP-47, ej: 'en', 'es'>",
   "safeSearch": <boolean, default false>,
   "timeRange": "<enum: '' | 'day' | 'week' | 'month' | 'year'>"
@@ -93,10 +94,11 @@ timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran
 | errors     | string[], opcional | Lista de errores que impidieron recuperar datos. Se omite cuando está vacía. |
 | resultSetId | string, opcional  | ID opaco (rs_ + 16 caracteres) de la copia completa de los resultados de esta búsqueda, guardada en el servidor unos 15 minutos. |
 | total      | integer            | Cantidad de resultados guardados en el set (puede superar maxResults). |
-| offset     | integer            | Índice dentro del set del primer elemento de results. |
-| hasMore    | bool               | true si quedan resultados después de esta porción. |
+| nextCursor | string, opcional   | Cursor opaco para la página siguiente. Solo aparece cuando quedan resultados. |
 
-Paginación sin recortar: maxResults es el tamaño de página, no un límite de lo que se obtiene. Para ver el resto, repite la tool con el mismo resultSetId y offset = offset + results.length: no hace ninguna petición de red. query sigue siendo requerido; si difiere de la original se añade un warning y se usa el set guardado. Un ID desconocido o vencido devuelve el error result_set_not_found: <id> (expired or unknown; run the search again); en ese caso vuelve a buscar.
+Paginación sin recortar: maxResults es el tamaño de página que elige quien llama, no un límite de lo que se obtiene. Para ver el resto, repite la tool con cursor = nextCursor (y el maxResults que prefieras): no hace ninguna petición de red. query sigue siendo requerido; si difiere de la original se añade un warning y se usa el set guardado. Un cursor mal formado devuelve invalid_cursor: <motivo>. Un set desconocido o vencido devuelve el error result_set_not_found: <id> (expired or unknown; run the search again); en ese caso vuelve a buscar.
+
+Resultado de tools/call: structuredContent trae siempre la respuesta completa (objeto JSON); content trae un único bloque de texto. Con format=json (default) el texto es ese mismo JSON minificado. Con format=compact es texto de una línea por resultado (título | url | snippet), con detail=titles|snippets|full. Algunos clientes truncan el texto largo: para páginas grandes usa format=compact con detail=titles.
 
 summary, keyFindings, sourcesUsed, confidence siguen presentes para compatibilidad pero NO son la fuente de verdad. La síntesis real se hace con las tools dedicadas de la familia 5.
 

@@ -46,8 +46,11 @@ func ParseDetail(s string) (Detail, error) {
 type Page struct {
 	ResultSetID string
 	Total       int
-	Offset      int
-	HasMore     bool
+	// Offset is the index of the first result in the stored set. It only
+	// numbers the lines; it is not printed in the header.
+	Offset int
+	// NextCursor is shown in the header when more results remain.
+	NextCursor string
 }
 
 // Format renders resp as compact text without a trailing newline. An unknown
@@ -99,16 +102,13 @@ func header(resp types.SearchResponse, page Page) string {
 	if page.ResultSetID != "" {
 		parts = append(parts, "resultSetId="+clean(page.ResultSetID))
 	}
-	// Total and offset are shown when a result set is addressable or when the
-	// values carry information; hasMore only when true.
+	// Total is shown when a result set is addressable or when the value
+	// carries information; nextCursor only when more results remain.
 	if page.ResultSetID != "" || page.Total > 0 {
 		parts = append(parts, "total="+strconv.Itoa(page.Total))
 	}
-	if page.ResultSetID != "" || page.Offset > 0 {
-		parts = append(parts, "offset="+strconv.Itoa(page.Offset))
-	}
-	if page.HasMore {
-		parts = append(parts, "hasMore=true")
+	if page.NextCursor != "" {
+		parts = append(parts, "nextCursor="+clean(page.NextCursor))
 	}
 	if resp.Cached {
 		parts = append(parts, "cached=true")

@@ -60,14 +60,18 @@ type SearchResponse struct {
 	Errors      []string           `json:"errors,omitempty"`
 
 	// ResultSetID names the server-side copy of the full result list of this
-	// search; pass it back as resultSetId to page it without a new search.
-	// Total is the number of stored results, Offset the index of Results[0]
-	// inside them, and HasMore reports whether results exist after this slice.
+	// search and Total is the number of stored results. NextCursor, present
+	// only when results remain after this slice, is the opaque value a caller
+	// sends back as `cursor` to page the stored set without a new search.
 	// They are filled by the MCP search handlers.
 	ResultSetID string `json:"resultSetId,omitempty"`
 	Total       int    `json:"total"`
-	Offset      int    `json:"offset"`
-	HasMore     bool   `json:"hasMore"`
+	NextCursor  string `json:"nextCursor,omitempty"`
+
+	// Offset is the index of Results[0] inside the stored set. It is
+	// in-process only (never on the wire); the compact text uses it to number
+	// result lines.
+	Offset int `json:"-"`
 }
 
 type FetchResponse struct {

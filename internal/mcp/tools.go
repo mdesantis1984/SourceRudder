@@ -94,7 +94,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 		if err != nil {
 			return nil, err
 		}
-		if pg.ResultSetID != "" {
+		if pg.Cursor != "" {
 			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager == nil {
@@ -120,7 +120,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 				resp.SourcesUsed = []string{source}
 			}
 			if plan.Intent != "" {
-				resp.Warnings = append(resp.Warnings, "intent: "+plan.Intent)
+				resp.Warnings = appendWarning(resp.Warnings, "intent: "+plan.Intent)
 			}
 		}
 
@@ -144,7 +144,7 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 		if err != nil {
 			return nil, err
 		}
-		if pg.ResultSetID != "" {
+		if pg.Cursor != "" {
 			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager == nil {
@@ -170,7 +170,7 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 
 		if resp.Strategy == "" {
 			resp.Strategy = "official_doc_web_fallback"
-			resp.Warnings = append(resp.Warnings,
+			resp.Warnings = appendWarning(resp.Warnings,
 				"strategy: official_doc_web_fallback — results came from general web search (SearxNG), not from the authoritative documentation registry")
 		}
 
@@ -195,7 +195,7 @@ func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.Raw
 		if err != nil {
 			return nil, err
 		}
-		if pg.ResultSetID != "" {
+		if pg.Cursor != "" {
 			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager != nil {
@@ -257,7 +257,7 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		if pg.ResultSetID != "" {
+		if pg.Cursor != "" {
 			return s.serveResultSet(&req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
@@ -296,7 +296,7 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 		if err != nil {
 			return nil, err
 		}
-		if pg.ResultSetID != "" {
+		if pg.Cursor != "" {
 			return s.serveResultSet(&req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")

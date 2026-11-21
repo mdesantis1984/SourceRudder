@@ -18,7 +18,7 @@ func TestResultSetExpiredIDIsAToolErrorAndLeavesStoreUnchanged(t *testing.T) {
 	now = now.Add(2 * time.Minute)
 	before := s.resultSets.Stats()
 
-	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "offset": 5, "resultSetId": first.ResultSetID})
+	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": first.NextCursor})
 	want := "result_set_not_found: " + first.ResultSetID + " (expired or unknown; run the search again)"
 	if err == nil || err.Error() != want {
 		t.Fatalf("expired id error = %v, want %q", err, want)
@@ -35,17 +35,17 @@ func TestResultSetStoreBoundsApplyThroughTheHandler(t *testing.T) {
 	fake := &fakeResultsConnector{name: "web", n: 3}
 	s := newResultSetServer(t, fake)
 	s.SetResultSetStore(resultset.New(resultset.Config{TTL: time.Hour, MaxSets: 2, MaxResults: 100}))
-	var ids []string
+	var cursors []string
 	for _, q := range []string{"a", "b", "c"} {
-		ids = append(ids, mustPaged(t, s, "search_web", map[string]interface{}{"query": q, "maxResults": 1}).ResultSetID)
+		cursors = append(cursors, mustPaged(t, s, "search_web", map[string]interface{}{"query": q, "maxResults": 1}).NextCursor)
 	}
 	if st := s.resultSets.Stats(); st.Sets != 2 {
 		t.Fatalf("sets=%d want 2", st.Sets)
 	}
-	if _, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "a", "resultSetId": ids[0]}); err == nil || !strings.HasPrefix(err.Error(), "result_set_not_found:") {
+	if _, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "a", "cursor": cursors[0]}); err == nil || !strings.HasPrefix(err.Error(), "result_set_not_found:") {
 		t.Fatalf("oldest set must be evicted, got %v", err)
 	}
-	if _, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "c", "resultSetId": ids[2]}); err != nil {
+	if _, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "c", "cursor": cursors[2]}); err != nil {
 		t.Fatalf("newest set must survive: %v", err)
 	}
 }

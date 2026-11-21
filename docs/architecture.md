@@ -10,7 +10,7 @@ SourceRudder 2.0 is **unreleased**. It is an MCP research service that keeps its
 2. The server validates the stable JSON-RPC/MCP contract and sends the request to the planner.
 3. The planner selects a connector through the connector manager; connector results may use the in-process cache.
 4. Results are normalized to stable result envelopes, recorded in bounded in-process history, and optionally passed to synthesis.
-5. The search handler stores the connector's full result list in the result-set store and returns the requested slice (`offset`, `maxResults`) plus `resultSetId`, `total`, `offset` and `hasMore`. A call that carries `resultSetId` skips steps 2-4 and reads the stored set locally.
+5. The search handler stores the connector's full result list in the result-set store and returns the requested page (`maxResults`, chosen by the caller) plus `resultSetId`, `total` and, only while results remain, an opaque `nextCursor`. A call that carries `cursor` skips steps 2-4 and reads the stored set locally. Every `tools/call` result is built by one helper: `structuredContent` holds the full typed response (a JSON object) and `content` holds one text block, minified JSON by default or compact text with `format=compact`.
 
 ## Components
 
@@ -31,7 +31,7 @@ SourceRudder 2.0 is **unreleased**. It is an MCP research service that keeps its
 - MCP tools use stable wire envelopes; clients must inspect `strategy`, `partial`, `warnings`, and `errors` instead of treating an empty result as a transport failure.
 - SearXNG-backed results expose an optional `engine` field containing the upstream engine name when provided. This adds provenance without changing existing `source` values; absent engine names are omitted.
 - Cache and history are in-process operational aids, not a distributed audit system. SearXNG response caching uses versioned request-aware keys and caps degraded and empty response lifetimes at 30 seconds or the configured TTL, whichever is shorter.
-- Connectors do not truncate on the caller's behalf: they keep every unique result they already fetched and the handler applies the page size. Result order is never changed by paging. A search makes the same upstream requests as before; `search_web` keeps its single page-2 fill, evaluated against `offset + maxResults`.
+- Connectors do not truncate on the caller's behalf: they keep every unique result they already fetched and the handler applies the page size. Result order is never changed by paging. A search makes the same upstream requests as before; `search_web` keeps its single page-2 fill, evaluated against `maxResults`.
 - Fetching is deliberately separate from search. SSRF protections apply before network access and across redirects.
 - Local-index input is validated at startup and remains operator-owned data.
 

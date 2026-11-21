@@ -50,7 +50,7 @@ type Server struct {
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
 	// resultSets keeps the full result list of every search so callers can
-	// page it by resultSetId without repeating the upstream search.
+	// page it by cursor without repeating the upstream search.
 	resultSets *resultset.Store
 	// youtube serves video transcripts. It is injected with
 	// SetYouTubeService; nil keeps the previous fetch behavior.
@@ -236,15 +236,20 @@ func searchInputSchema() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda (requerido)"},
-			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página: cuántos resultados devolver (default 10; 20 en search_web; tope 100). No limita lo que se guarda: la respuesta trae total, offset, hasMore y resultSetId para pedir el resto."},
-			"offset": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     0,
-				"description": "Índice del primer resultado a devolver (default 0). Cada búsqueda guarda su lista completa en el servidor (resultSetId); con offset pides la siguiente página sin recortar nada.",
-			},
-			"resultSetId": map[string]interface{}{
+			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página que elige quien llama (default 10; 20 en search_web; tope 100). No limita lo que se guarda: la respuesta trae total y nextCursor para pedir el resto."},
+			"cursor": map[string]interface{}{
 				"type":        "string",
-				"description": "ID devuelto por una búsqueda anterior (rs_...). Si se envía, no se hace ninguna petición de red: se devuelve la porción [offset, offset+maxResults) de la lista guardada (válida unos 15 minutos). query sigue siendo requerido; si difiere de la original se añade un warning. ID desconocido o vencido: error result_set_not_found.",
+				"description": "Valor de nextCursor de una llamada anterior: devuelve la página siguiente de la lista guardada, sin petición de red (válido unos 15 minutos). query sigue siendo requerido; si difiere de la original se añade un warning. Cursor vencido: error result_set_not_found.",
+			},
+			"format": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"json", "compact"},
+				"description": "Formato del texto: json (default, minificado) o compact (una línea por resultado, menos tokens). structuredContent siempre trae la respuesta completa. Páginas grandes: usa format=compact con detail=titles, porque algunos clientes truncan el texto largo.",
+			},
+			"detail": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"titles", "snippets", "full"},
+				"description": "Solo con format=compact: titles (título y URL), snippets (default, añade el extracto) o full (todos los campos).",
 			},
 			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47, ej: 'en', 'es'. Solo se reenvía a SearxNG."},
 			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Activar safesearch en SearxNG (default false)"},
@@ -503,11 +508,7 @@ func (s *Server) HandleToolsCall(ctx context.Context, params json.RawMessage) (i
 			if err != nil {
 				return nil, err
 			}
-			return map[string]interface{}{
-				"content": []map[string]interface{}{
-					{"type": "text", "text": formatResult(result)},
-				},
-			}, nil
+			return toolResult(inputJSON, result)
 		}
 	}
 	return nil, fmt.Errorf("tool not found: %s", req.Name)
@@ -523,11 +524,6 @@ func (s *Server) invokeTool(ctx context.Context, tool Tool, args json.RawMessage
 		s.met.IncrToolCall(tool.Name)
 	}
 	return result, err
-}
-
-func formatResult(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
 }
 
 func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
@@ -760,15 +756,15 @@ func (s *Server) handleMCPToolsCall(ctx context.Context, id interface{}, params 
 					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
 				}
 			}
-			return map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      id,
-				"result": map[string]interface{}{
-					"content": []map[string]interface{}{
-						{"type": "text", "text": formatResult(result)},
-					},
-				},
+			res, err := toolResult(inputJSON, result)
+			if err != nil {
+				return map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"error":   map[string]interface{}{"code": -32603, "message": err.Error()},
+				}
 			}
+			return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": res}
 		}
 	}
 	return map[string]interface{}{

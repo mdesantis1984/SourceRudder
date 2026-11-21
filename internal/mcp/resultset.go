@@ -14,38 +14,42 @@ import (
 // maxPageSize is the largest page a paging call may ask for.
 const maxPageSize = 100
 
-// pageArgs are the paging arguments shared by every search tool. They are
-// decoded next to types.SearchRequest so the connector-facing request (and
-// therefore every cache key) is unchanged by them.
+// pageArgs are the paging and rendering arguments shared by every search
+// tool. They are decoded next to types.SearchRequest so the connector-facing
+// request (and therefore every cache key) is unchanged by them.
 type pageArgs struct {
-	Offset      *int   `json:"offset"`
-	ResultSetID string `json:"resultSetId"`
+	// Cursor is the nextCursor of a previous response; setID and offset are
+	// its validated contents.
+	Cursor string `json:"cursor"`
+	setID  string
+	offset int
 }
 
-// parseSearchArgs decodes the common search arguments and validates paging.
+// parseSearchArgs decodes the common search arguments and validates paging
+// and rendering (format/detail) before any search or store access happens.
 func parseSearchArgs(args json.RawMessage) (types.SearchRequest, pageArgs, error) {
 	var req types.SearchRequest
 	if err := json.Unmarshal(args, &req); err != nil {
 		return req, pageArgs{}, fmt.Errorf("invalid args: %w", err)
 	}
+	// format only selects the text rendering; it never reaches a connector
+	// (or a cache key).
+	req.Format = ""
 	var pg pageArgs
 	if err := json.Unmarshal(args, &pg); err != nil {
 		return req, pg, fmt.Errorf("invalid args: %w", err)
 	}
-	if pg.Offset != nil {
-		if *pg.Offset < 0 {
-			return req, pg, fmt.Errorf("invalid args: offset must be >= 0")
+	if _, _, err := parseRender(args); err != nil {
+		return req, pg, err
+	}
+	if pg.Cursor != "" {
+		id, offset, err := decodeCursor(pg.Cursor)
+		if err != nil {
+			return req, pg, fmt.Errorf("invalid_cursor: %w", err)
 		}
-		req.Offset = *pg.Offset
+		pg.setID, pg.offset = id, offset
 	}
 	return req, pg, nil
-}
-
-func (p pageArgs) offset() int {
-	if p.Offset == nil {
-		return 0
-	}
-	return *p.Offset
 }
 
 // SetResultSetStore replaces the store that keeps full result sets. It must
@@ -79,7 +83,10 @@ func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResu
 	out.ResultSetID = id
 	out.Total = total
 	out.Offset = offset
-	out.HasMore = end < total
+	out.NextCursor = ""
+	if end < total {
+		out.NextCursor = encodeCursor(id, end)
+	}
 	return &out
 }
 
@@ -100,30 +107,30 @@ func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp
 	}
 	meta := *resp
 	meta.Results = nil
-	meta.ResultSetID, meta.Total, meta.Offset, meta.HasMore = "", 0, 0, false
+	meta.ResultSetID, meta.Total, meta.Offset, meta.NextCursor = "", 0, 0, ""
 	id, stored := s.resultSets.Put(resultset.Set{
 		Query:        resp.Query,
 		DefaultLimit: connectors.ResolveMaxResults(limitSource, 0),
 		Meta:         meta,
 		Results:      resp.Results,
 	})
-	out := sliceResponse(meta, id, resp.Results[:stored], req.Offset, connectors.ResolveMaxResults(limitSource, req.MaxResults))
+	out := sliceResponse(meta, id, resp.Results[:stored], 0, connectors.ResolveMaxResults(limitSource, req.MaxResults))
 	if stored < len(resp.Results) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("result set truncated: only the first %d of %d results are stored and pageable", stored, len(resp.Results)))
 	}
 	return out
 }
 
-// serveResultSet answers a call that carries resultSetId from the stored set
+// serveResultSet answers a call that carries a cursor from the stored set
 // without any upstream request.
 func (s *Server) serveResultSet(req *types.SearchRequest, pg pageArgs) (*types.SearchResponse, error) {
 	var set resultset.Set
 	ok := false
 	if s.resultSets != nil {
-		set, ok = s.resultSets.Get(pg.ResultSetID)
+		set, ok = s.resultSets.Get(pg.setID)
 	}
 	if !ok {
-		return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", pg.ResultSetID)
+		return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", pg.setID)
 	}
 	limit := set.DefaultLimit
 	if req.MaxResults > 0 {
@@ -132,9 +139,9 @@ func (s *Server) serveResultSet(req *types.SearchRequest, pg pageArgs) (*types.S
 			limit = maxPageSize
 		}
 	}
-	out := sliceResponse(set.Meta, pg.ResultSetID, set.Results, pg.offset(), limit)
+	out := sliceResponse(set.Meta, pg.setID, set.Results, pg.offset, limit)
 	if q := strings.TrimSpace(req.Query); q != "" && q != strings.TrimSpace(set.Query) {
-		out.Warnings = append(out.Warnings, fmt.Sprintf("query ignored: result set %s was created for query %q; the search was not re-run", pg.ResultSetID, set.Query))
+		out.Warnings = append(out.Warnings, fmt.Sprintf("query ignored: result set %s was created for query %q; the search was not re-run", pg.setID, set.Query))
 	}
 	return normalizeSearchResponse(out), nil
 }

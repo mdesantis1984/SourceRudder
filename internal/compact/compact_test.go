@@ -79,8 +79,8 @@ func TestHeaderPagingFields(t *testing.T) {
 	resp := basicResp()
 	resp.Cached = true
 	resp.Partial = true
-	out := Format(resp, Page{ResultSetID: "rs_ABCDEFGHIJKLMNOP", Total: 30, Offset: 10, HasMore: true}, Snippets)
-	want := "query: golang generics | resultSetId=rs_ABCDEFGHIJKLMNOP | total=30 | offset=10 | hasMore=true | cached=true | partial=true"
+	out := Format(resp, Page{ResultSetID: "rs_ABCDEFGHIJKLMNOP", Total: 30, Offset: 10, NextCursor: "djE6cnNfQUJDREVGR0hJSktMTU5PUDoyMA"}, Snippets)
+	want := "query: golang generics | resultSetId=rs_ABCDEFGHIJKLMNOP | total=30 | nextCursor=djE6cnNfQUJDREVGR0hJSktMTU5PUDoyMA | cached=true | partial=true"
 	if lines(out)[0] != want {
 		t.Fatalf("header = %q\nwant     %q", lines(out)[0], want)
 	}
@@ -88,7 +88,7 @@ func TestHeaderPagingFields(t *testing.T) {
 
 func TestHeaderOmitsUnsetFlags(t *testing.T) {
 	h := lines(Format(basicResp(), Page{}, Snippets))[0]
-	for _, k := range []string{"resultSetId", "total", "offset", "hasMore", "cached", "partial"} {
+	for _, k := range []string{"resultSetId", "total", "nextCursor", "offset", "hasMore", "cached", "partial"} {
 		if strings.Contains(h, k) {
 			t.Fatalf("header %q must not contain %q", h, k)
 		}
@@ -101,8 +101,8 @@ func TestNumberingStartsAtOffsetPlusOne(t *testing.T) {
 	if !strings.HasPrefix(ls[1], "11. ") || !strings.HasPrefix(ls[2], "12. ") {
 		t.Fatalf("numbering wrong:\n%s", out)
 	}
-	if !strings.Contains(ls[0], "offset=10") {
-		t.Fatalf("header = %q", ls[0])
+	if strings.Contains(ls[0], "offset") || strings.Contains(ls[0], "hasMore") || strings.Contains(ls[0], "nextCursor") {
+		t.Fatalf("the offset only numbers lines and the last page has no nextCursor; header = %q", ls[0])
 	}
 }
 

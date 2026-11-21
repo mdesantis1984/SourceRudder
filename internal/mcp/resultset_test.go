@@ -28,8 +28,7 @@ type pagedResponse struct {
 	Results     []types.SearchResultItem `json:"results"`
 	ResultSetID string                   `json:"resultSetId"`
 	Total       *int                     `json:"total"`
-	Offset      *int                     `json:"offset"`
-	HasMore     *bool                    `json:"hasMore"`
+	NextCursor  string                   `json:"nextCursor"`
 	Cached      bool                     `json:"cached"`
 	Warnings    []string                 `json:"warnings"`
 }
@@ -139,13 +138,14 @@ func TestResultSetSchemaOnEverySearchTool(t *testing.T) {
 		}
 		checked++
 		props, _ := tool.InputSchema["properties"].(map[string]interface{})
-		offset, ok := props["offset"].(map[string]interface{})
-		if !ok || offset["type"] != "integer" || offset["minimum"] != 0 {
-			t.Errorf("%s must expose offset as integer with minimum 0, got %v", tool.Name, props["offset"])
+		cursor, ok := props["cursor"].(map[string]interface{})
+		if !ok || cursor["type"] != "string" {
+			t.Errorf("%s must expose cursor as string, got %v", tool.Name, props["cursor"])
 		}
-		id, ok := props["resultSetId"].(map[string]interface{})
-		if !ok || id["type"] != "string" {
-			t.Errorf("%s must expose resultSetId as string, got %v", tool.Name, props["resultSetId"])
+		for _, gone := range []string{"offset", "resultSetId"} {
+			if _, present := props[gone]; present {
+				t.Errorf("%s must not expose %s any more (replaced by cursor)", tool.Name, gone)
+			}
 		}
 		required, _ := tool.InputSchema["required"].([]string)
 		if len(required) != 1 || required[0] != "query" {
@@ -179,16 +179,20 @@ func TestResultSetEverySearchToolStoresFullSetAndReturnsSlice(t *testing.T) {
 			if !resultSetIDPattern.MatchString(resp.ResultSetID) {
 				t.Fatalf("resultSetId=%q", resp.ResultSetID)
 			}
-			if resp.Total == nil || *resp.Total != 25 || resp.Offset == nil || *resp.Offset != 0 || resp.HasMore == nil || !*resp.HasMore {
-				t.Fatalf("total/offset/hasMore wrong: %+v", resp)
+			if resp.Total == nil || *resp.Total != 25 || resp.NextCursor == "" {
+				t.Fatalf("total/nextCursor wrong: %+v", resp)
 			}
 
-			page := mustPaged(t, s, tool, map[string]interface{}{"query": "kubernetes", "maxResults": 10, "offset": 20, "resultSetId": resp.ResultSetID})
+			mid := mustPaged(t, s, tool, map[string]interface{}{"query": "kubernetes", "maxResults": 10, "cursor": resp.NextCursor})
+			if len(mid.Results) != 10 || mid.Results[0].Title != connectorName+" result 10" || mid.NextCursor == "" {
+				t.Fatalf("middle page wrong: len=%d next=%q", len(mid.Results), mid.NextCursor)
+			}
+			page := mustPaged(t, s, tool, map[string]interface{}{"query": "kubernetes", "maxResults": 10, "cursor": mid.NextCursor})
 			if len(page.Results) != 5 || page.Results[0].Title != connectorName+" result 20" {
 				t.Fatalf("last page wrong: len=%d", len(page.Results))
 			}
-			if *page.Total != 25 || *page.Offset != 20 || *page.HasMore || page.ResultSetID != resp.ResultSetID {
-				t.Fatalf("last page fields wrong: total=%d offset=%d hasMore=%v id=%s", *page.Total, *page.Offset, *page.HasMore, page.ResultSetID)
+			if *page.Total != 25 || page.NextCursor != "" || page.ResultSetID != resp.ResultSetID {
+				t.Fatalf("last page fields wrong: total=%d next=%q id=%s", *page.Total, page.NextCursor, page.ResultSetID)
 			}
 			if fake.callCount() != 1 {
 				t.Fatalf("paging by resultSetId must not call the connector again; calls=%d", fake.callCount())
@@ -206,14 +210,19 @@ func TestResultSetPagingByIDIsLocalAndCoversTheWholeSet(t *testing.T) {
 	for _, r := range first.Results {
 		all = append(all, r.Title)
 	}
-	for offset := 10; offset < 30; offset += 10 {
-		page := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "maxResults": 10, "offset": offset, "resultSetId": first.ResultSetID})
+	cursor := first.NextCursor
+	for pages := 0; cursor != ""; pages++ {
+		if pages > 5 {
+			t.Fatal("cursor chain does not terminate")
+		}
+		page := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "maxResults": 10, "cursor": cursor})
 		for _, r := range page.Results {
 			all = append(all, r.Title)
 		}
-		if offset == 10 && (*page.HasMore != true || len(page.Results) != 10) {
-			t.Fatalf("middle page wrong: len=%d hasMore=%v", len(page.Results), *page.HasMore)
+		if pages == 0 && (page.NextCursor == "" || len(page.Results) != 10) {
+			t.Fatalf("middle page wrong: len=%d next=%q", len(page.Results), page.NextCursor)
 		}
+		cursor = page.NextCursor
 	}
 	if len(all) != 25 {
 		t.Fatalf("paging must cover all 25 results, got %d", len(all))
@@ -224,8 +233,8 @@ func TestResultSetPagingByIDIsLocalAndCoversTheWholeSet(t *testing.T) {
 		}
 	}
 
-	beyond := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "offset": 99, "resultSetId": first.ResultSetID})
-	if len(beyond.Results) != 0 || *beyond.Total != 25 || *beyond.HasMore {
+	beyond := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor(first.ResultSetID, 99)})
+	if len(beyond.Results) != 0 || *beyond.Total != 25 || beyond.NextCursor != "" {
 		t.Fatalf("offset past the end must be an empty page: %+v", beyond)
 	}
 	if fake.callCount() != 1 {
@@ -233,12 +242,14 @@ func TestResultSetPagingByIDIsLocalAndCoversTheWholeSet(t *testing.T) {
 	}
 }
 
-func TestResultSetOffsetWithoutIDSlicesTheFreshSearch(t *testing.T) {
+// The retired T7 argument must not change a fresh search: an unknown
+// `offset` is ignored and the first page comes back.
+func TestResultSetRetiredOffsetArgumentIsIgnored(t *testing.T) {
 	fake := &fakeResultsConnector{name: "npm", n: 25}
 	s := newResultSetServer(t, fake)
 	resp := mustPaged(t, s, "search_npm", map[string]interface{}{"query": "q", "maxResults": 10, "offset": 10})
-	if len(resp.Results) != 10 || resp.Results[0].Title != "npm result 10" || *resp.Offset != 10 || !*resp.HasMore || *resp.Total != 25 {
-		t.Fatalf("unexpected offset slice: len=%d offset=%d", len(resp.Results), *resp.Offset)
+	if len(resp.Results) != 10 || resp.Results[0].Title != "npm result 0" || resp.NextCursor == "" || *resp.Total != 25 {
+		t.Fatalf("unexpected first page: len=%d next=%q", len(resp.Results), resp.NextCursor)
 	}
 }
 
@@ -247,14 +258,14 @@ func TestResultSetDifferentQueryAddsWarning(t *testing.T) {
 	s := newResultSetServer(t, fake)
 	first := mustPaged(t, s, "search_web", map[string]interface{}{"query": "original query", "maxResults": 5})
 
-	same := mustPaged(t, s, "search_web", map[string]interface{}{"query": "original query", "maxResults": 5, "offset": 5, "resultSetId": first.ResultSetID})
+	same := mustPaged(t, s, "search_web", map[string]interface{}{"query": "original query", "maxResults": 5, "cursor": first.NextCursor})
 	for _, w := range same.Warnings {
 		if strings.Contains(w, "result set") {
 			t.Fatalf("same query must not warn: %q", w)
 		}
 	}
 
-	other := mustPaged(t, s, "search_web", map[string]interface{}{"query": "something else", "maxResults": 5, "offset": 5, "resultSetId": first.ResultSetID})
+	other := mustPaged(t, s, "search_web", map[string]interface{}{"query": "something else", "maxResults": 5, "cursor": first.NextCursor})
 	found := false
 	for _, w := range other.Warnings {
 		if strings.Contains(w, "original query") && strings.Contains(w, first.ResultSetID) {
@@ -275,7 +286,7 @@ func TestResultSetDifferentQueryAddsWarning(t *testing.T) {
 func TestResultSetUnknownIDIsAToolError(t *testing.T) {
 	fake := &fakeResultsConnector{name: "web", n: 3}
 	s := newResultSetServer(t, fake)
-	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "resultSetId": "rs_AAAAAAAAAAAAAAAA"})
+	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "cursor": encodeCursor("rs_AAAAAAAAAAAAAAAA", 0)})
 	if err == nil {
 		t.Fatal("unknown resultSetId must be an error")
 	}
@@ -285,18 +296,6 @@ func TestResultSetUnknownIDIsAToolError(t *testing.T) {
 	}
 	if fake.callCount() != 0 {
 		t.Fatalf("an unknown id must not trigger a search; calls=%d", fake.callCount())
-	}
-}
-
-func TestResultSetNegativeOffsetIsRejected(t *testing.T) {
-	fake := &fakeResultsConnector{name: "web", n: 3}
-	s := newResultSetServer(t, fake)
-	_, err := callPaged(t, s, "search_web", map[string]interface{}{"query": "q", "offset": -1})
-	if err == nil || !strings.Contains(err.Error(), "offset must be >= 0") {
-		t.Fatalf("negative offset must be rejected, got %v", err)
-	}
-	if fake.callCount() != 0 {
-		t.Fatalf("rejected input must not search; calls=%d", fake.callCount())
 	}
 }
 
@@ -369,10 +368,11 @@ func TestResultSetCacheHitReturnsPageableID(t *testing.T) {
 	if !resultSetIDPattern.MatchString(second.ResultSetID) || second.ResultSetID == first.ResultSetID {
 		t.Fatalf("cache hit must get its own pageable id: first=%q second=%q", first.ResultSetID, second.ResultSetID)
 	}
-	if *second.Total != 8 || len(second.Results) != 3 || !*second.HasMore {
+	if *second.Total != 8 || len(second.Results) != 3 || second.NextCursor == "" {
 		t.Fatalf("cache hit must expose the full cached set: total=%d len=%d", *second.Total, len(second.Results))
 	}
-	page := mustPaged(t, s, "search_web", map[string]interface{}{"query": "cached query", "maxResults": 3, "offset": 6, "resultSetId": second.ResultSetID})
+	mid := mustPaged(t, s, "search_web", map[string]interface{}{"query": "cached query", "maxResults": 3, "cursor": second.NextCursor})
+	page := mustPaged(t, s, "search_web", map[string]interface{}{"query": "cached query", "maxResults": 3, "cursor": mid.NextCursor})
 	if len(page.Results) != 2 || page.Results[0].URL != "https://example.test/a/6" {
 		t.Fatalf("paging a cache-hit id failed: %+v", page.Results)
 	}
@@ -396,14 +396,16 @@ func TestResultSetDefaultCallResultsAreUnchanged(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("default results changed:\n got %s\nwant %s", got, want)
 	}
-	if *resp.Total != 3 || *resp.Offset != 0 || *resp.HasMore {
-		t.Fatalf("fields wrong: total=%d offset=%d hasMore=%v", *resp.Total, *resp.Offset, *resp.HasMore)
+	if *resp.Total != 3 || resp.NextCursor != "" {
+		t.Fatalf("fields wrong: total=%d nextCursor=%q", *resp.Total, resp.NextCursor)
 	}
 }
 
-// D4: no extra network requests; the page-2 fill rule is evaluated against
-// offset+maxResults.
-func TestResultSetWebPageTwoRuleUsesOffsetPlusMaxResults(t *testing.T) {
+// D4: no extra network requests. With cursor paging a fresh search always
+// starts at the first result, so the page-2 fill rule is evaluated against
+// maxResults alone (the former offset+maxResults variant is gone with the
+// retired offset argument).
+func TestResultSetWebPageTwoRuleUsesMaxResults(t *testing.T) {
 	pages := map[string][]string{"1": numbered("p1", 5), "2": numbered("p2", 5)}
 
 	// 5 unique results already satisfy maxResults=3: one request, all 5 kept.
@@ -412,17 +414,6 @@ func TestResultSetWebPageTwoRuleUsesOffsetPlusMaxResults(t *testing.T) {
 	first := mustPaged(t, s, "search_web", map[string]interface{}{"query": "q", "maxResults": 3})
 	if fake.requestCount() != 1 || *first.Total != 5 || len(first.Results) != 3 {
 		t.Fatalf("maxResults=3: requests=%d total=%d len=%d (want 1/5/3)", fake.requestCount(), *first.Total, len(first.Results))
-	}
-
-	// offset=4,maxResults=3 needs 7 results: page 2 is requested exactly once.
-	fake2 := newSearxngFake(t, pages)
-	s2 := newWebServer(t, fake2)
-	resp := mustPaged(t, s2, "search_web", map[string]interface{}{"query": "q", "maxResults": 3, "offset": 4})
-	if fake2.requestCount() != 2 {
-		t.Fatalf("offset+maxResults=7 > 5 page-1 results: want exactly 2 upstream requests, got %d (%v)", fake2.requestCount(), fake2.hits)
-	}
-	if *resp.Total != 10 || len(resp.Results) != 3 || resp.Results[0].URL != "https://example.test/p1/4" || resp.Results[1].URL != "https://example.test/p2/0" {
-		t.Fatalf("unexpected slice: total=%d %+v", *resp.Total, resp.Results)
 	}
 }
 
@@ -469,7 +460,7 @@ func TestResultSetConnectorsKeepEveryUniqueResult(t *testing.T) {
 			s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", fake.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
 			resp := mustPaged(t, s, tc.tool, map[string]interface{}{"query": "golang", "maxResults": 5})
-			if len(resp.Results) != 5 || resp.Total == nil || *resp.Total != 15 || !*resp.HasMore {
+			if len(resp.Results) != 5 || resp.Total == nil || *resp.Total != 15 || resp.NextCursor == "" {
 				t.Fatalf("want 5 results of 15 stored, got len=%d total=%v", len(resp.Results), resp.Total)
 			}
 			// Descending score order is unchanged inside the returned window.
@@ -478,8 +469,8 @@ func TestResultSetConnectorsKeepEveryUniqueResult(t *testing.T) {
 					t.Fatalf("scores must stay strictly descending: %v then %v", resp.Results[i-1].Score, resp.Results[i].Score)
 				}
 			}
-			rest := mustPaged(t, s, tc.tool, map[string]interface{}{"query": "golang", "maxResults": 20, "offset": 5, "resultSetId": resp.ResultSetID})
-			if len(rest.Results) != 10 || *rest.HasMore {
+			rest := mustPaged(t, s, tc.tool, map[string]interface{}{"query": "golang", "maxResults": 20, "cursor": resp.NextCursor})
+			if len(rest.Results) != 10 || rest.NextCursor != "" {
 				t.Fatalf("remaining page wrong: len=%d", len(rest.Results))
 			}
 			if fake.requestCount() != 1 {
@@ -495,11 +486,11 @@ func TestResultSetWebDefaultWindowIsTwentyAndRestIsPageable(t *testing.T) {
 	fake := newSearxngFake(t, map[string][]string{"1": numbered("a", 12), "2": numbered("b", 15)})
 	s := newWebServer(t, fake)
 	resp := mustPaged(t, s, "search_web", map[string]interface{}{"query": "window"})
-	if len(resp.Results) != 20 || *resp.Total != 27 || !*resp.HasMore {
-		t.Fatalf("default window wrong: len=%d total=%d hasMore=%v", len(resp.Results), *resp.Total, *resp.HasMore)
+	if len(resp.Results) != 20 || *resp.Total != 27 || resp.NextCursor == "" {
+		t.Fatalf("default window wrong: len=%d total=%d next=%q", len(resp.Results), *resp.Total, resp.NextCursor)
 	}
-	rest := mustPaged(t, s, "search_web", map[string]interface{}{"query": "window", "offset": 20, "resultSetId": resp.ResultSetID})
-	if len(rest.Results) != 7 || *rest.HasMore {
+	rest := mustPaged(t, s, "search_web", map[string]interface{}{"query": "window", "cursor": resp.NextCursor})
+	if len(rest.Results) != 7 || rest.NextCursor != "" {
 		t.Fatalf("rest wrong: len=%d", len(rest.Results))
 	}
 	if fake.requestCount() != 2 {
@@ -527,7 +518,7 @@ func TestResultSetConcurrentMismatchedQueryPagingDoesNotShareWarningStorage(t *t
 		go func(i int) {
 			defer wg.Done()
 			q := fmt.Sprintf("other query %d", i)
-			resp, err := callPaged(t, s, "search_web", map[string]interface{}{"query": q, "maxResults": 5, "offset": 5, "resultSetId": first.ResultSetID})
+			resp, err := callPaged(t, s, "search_web", map[string]interface{}{"query": q, "maxResults": 5, "cursor": first.NextCursor})
 			if err != nil {
 				errs <- err.Error()
 				return
@@ -555,7 +546,7 @@ func TestResultSetLocalIndexCapsMaxResultsAtFifty(t *testing.T) {
 	if len(resp.Results) != 50 {
 		t.Fatalf("results=%d want 50 (local_index cap)", len(resp.Results))
 	}
-	if resp.Total == nil || *resp.Total != 80 || resp.HasMore == nil || !*resp.HasMore {
+	if resp.Total == nil || *resp.Total != 80 || resp.NextCursor == "" {
 		t.Fatalf("full set must stay pageable: %+v", resp)
 	}
 }
