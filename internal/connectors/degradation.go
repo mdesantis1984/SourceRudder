@@ -24,7 +24,9 @@ func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, r
 		return
 	}
 	var cap time.Duration
-	if resp.Partial {
+	// Partial responses and empty responses (even healthy ones) are cached
+	// briefly so a transient miss is not served for the full TTL.
+	if resp.Partial || len(resp.Results) == 0 {
 		cap = DegradedSearchCacheTTL
 	}
 	svc.SetWithMaxTTL(ctx, key, data, resp.SourcesUsed, cap)

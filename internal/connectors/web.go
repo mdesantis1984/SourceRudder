@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ func (c *WebConnector) Name() string { return "web" }
 func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
 	start := time.Now()
 	query := strings.TrimSpace(req.Query)
-	maxResults := getMaxResults(req.MaxResults, 10)
+	maxResults := getMaxResults(req.MaxResults, defaultWebMaxResults)
 
 	ctx, span := observability.StartSpan(ctx, c.Name(), req.Query)
 	defer func() {
@@ -71,7 +72,7 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		SourcesUsed: []string{"searxng"},
 		Cached:      false,
 	}
-	recordSearxngError("web", results, err, resp)
+	recordWebSearchError(results, err, resp)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -79,11 +80,119 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 	return resp, nil
 }
 
+// defaultWebMaxResults is the search_web default when maxResults is omitted
+// or non-positive. SearXNG returns about 30 results per page, so the previous
+// default of 10 threw most of them away.
+const defaultWebMaxResults = 20
+
+// searxngPage is one decoded SearXNG response page.
+type searxngPage struct {
+	items   []searxngItem
+	engines [][]interface{}
+}
+
+type searxngItem struct {
+	Title     string      `json:"title"`
+	URL       string      `json:"url"`
+	Content   string      `json:"content"`
+	Source    string      `json:"source"`
+	Engine    string      `json:"engine"`
+	ParsedURL interface{} `json:"parsed_url"`
+}
+
 func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
+	page1, err := c.fetchSearxngPage(ctx, query, 1, req)
+	if err != nil {
+		return []types.SearchResultItem{}, err
+	}
+
+	items := make([]searxngItem, 0, maxResults)
+	seen := make(map[string]struct{}, maxResults)
+	appendUnique := func(page *searxngPage) {
+		for _, item := range page.items {
+			if len(items) >= maxResults {
+				return
+			}
+			if _, dup := seen[item.URL]; dup {
+				continue
+			}
+			seen[item.URL] = struct{}{}
+			items = append(items, item)
+		}
+	}
+	appendUnique(page1)
+	engines := append([][]interface{}(nil), page1.engines...)
+
+	var page2Err error
+	if len(items) < maxResults {
+		page2, err := c.fetchSearxngPage(ctx, query, 2, req)
+		if err != nil {
+			page2Err = fmt.Errorf("searxng page 2 failed: %w", err)
+		} else {
+			appendUnique(page2)
+			engines = append(engines, page2.engines...)
+		}
+	}
+
+	results := make([]types.SearchResultItem, 0, len(items))
+	for i, item := range items {
+		results = append(results, types.SearchResultItem{
+			Title:      item.Title,
+			URL:        item.URL,
+			Snippet:    item.Content,
+			Source:     "searxng",
+			Engine:     item.Engine,
+			Type:       "web",
+			Score:      float64(maxResults - i),
+			CitationID: fmt.Sprintf("web:%s", extractDomain(item.ParsedURL)),
+		})
+	}
+
+	engines = dedupeUnresponsiveEngines(engines)
+	if len(engines) > 0 {
+		unresponsive := newSearxngUnresponsiveError(engines)
+		if page2Err != nil {
+			return results, &webPageTwoError{unresponsive: unresponsive, page2: page2Err}
+		}
+		return results, unresponsive
+	}
+	if page2Err != nil {
+		return results, &webPageTwoError{page2: page2Err}
+	}
+	return results, nil
+}
+
+// webPageTwoError carries a failed page-2 request (and any unresponsive
+// engines page 1 reported) back to Search without failing the call.
+type webPageTwoError struct {
+	unresponsive error
+	page2        error
+}
+
+func (e *webPageTwoError) Error() string { return e.page2.Error() }
+
+func dedupeUnresponsiveEngines(entries [][]interface{}) [][]interface{} {
+	seen := make(map[string]struct{}, len(entries))
+	out := make([][]interface{}, 0, len(entries))
+	for _, entry := range entries {
+		key := fmt.Sprint(entry...)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func (c *WebConnector) fetchSearxngPage(ctx context.Context, query string, pageno int, req *types.SearchRequest) (*searxngPage, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
 	params.Set("engines", "")
+	if pageno > 1 {
+		params.Set("pageno", strconv.Itoa(pageno))
+	}
 	if req.Language != "" {
 		params.Set("language", req.Language)
 	}
@@ -98,59 +207,28 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return []types.SearchResultItem{}, err
+		return nil, err
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return []types.SearchResultItem{}, fmt.Errorf("searxng request failed: %w", err)
+		return nil, fmt.Errorf("searxng request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return []types.SearchResultItem{}, fmt.Errorf("searxng error: %d", resp.StatusCode)
+		return nil, fmt.Errorf("searxng error: %d", resp.StatusCode)
 	}
 
 	var searxngResp struct {
-		Results []struct {
-			Title     string      `json:"title"`
-			URL       string      `json:"url"`
-			Content   string      `json:"content"`
-			Source    string      `json:"source"`
-			Engine    string      `json:"engine"`
-			ParsedURL interface{} `json:"parsed_url"`
-		} `json:"results"`
+		Results             []searxngItem   `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&searxngResp); err != nil {
-		return []types.SearchResultItem{}, fmt.Errorf("searxng decode error: %w", err)
+		return nil, fmt.Errorf("searxng decode error: %w", err)
 	}
-
-	results := make([]types.SearchResultItem, 0, len(searxngResp.Results))
-	for i, item := range searxngResp.Results {
-		if i >= maxResults {
-			break
-		}
-		parsedDomain := extractDomain(item.ParsedURL)
-		results = append(results, types.SearchResultItem{
-			Title:      item.Title,
-			URL:        item.URL,
-			Snippet:    item.Content,
-			Source:     "searxng",
-			Engine:     item.Engine,
-			Type:       "web",
-			Score:      float64(maxResults - i),
-			CitationID: fmt.Sprintf("web:%s", parsedDomain),
-		})
-	}
-
-	if len(searxngResp.UnresponsiveEngines) > 0 {
-		return results, newSearxngUnresponsiveError(searxngResp.UnresponsiveEngines)
-	}
-
-	return results, nil
+	return &searxngPage{items: searxngResp.Results, engines: searxngResp.UnresponsiveEngines}, nil
 }
 
 func (c *WebConnector) searchGeneric(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
@@ -184,4 +262,19 @@ func extractDomain(parsedURL interface{}) string {
 		return v
 	}
 	return "unknown"
+}
+
+// recordWebSearchError extends recordSearxngError with the page-2 failure
+// path: page-1 results are kept and the failure is surfaced as a degradation
+// warning instead of failing the call.
+func recordWebSearchError(results []types.SearchResultItem, err error, resp *types.SearchResponse) {
+	p2, ok := err.(*webPageTwoError)
+	if !ok {
+		recordSearxngError("web", results, err, resp)
+		return
+	}
+	if p2.unresponsive != nil {
+		recordSearxngError("web", results, p2.unresponsive, resp)
+	}
+	recordDegraded("web", "page2_failed", resp, p2.page2)
 }

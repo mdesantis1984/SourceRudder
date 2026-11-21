@@ -28,7 +28,7 @@ SourceRudder 2.0 is **unreleased**. It is an MCP research service that keeps its
 
 - MCP tools use stable wire envelopes; clients must inspect `strategy`, `partial`, `warnings`, and `errors` instead of treating an empty result as a transport failure.
 - SearXNG-backed results expose an optional `engine` field containing the upstream engine name when provided. This adds provenance without changing existing `source` values; absent engine names are omitted.
-- Cache and history are in-process operational aids, not a distributed audit system. SearXNG response caching uses versioned request-aware keys and caps degraded-response lifetimes at 30 seconds or the configured TTL, whichever is shorter.
+- Cache and history are in-process operational aids, not a distributed audit system. SearXNG response caching uses versioned request-aware keys and caps degraded and empty response lifetimes at 30 seconds or the configured TTL, whichever is shorter.
 - Fetching is deliberately separate from search. SSRF protections apply before network access and across redirects.
 - Local-index input is validated at startup and remains operator-owned data.
 

@@ -39,6 +39,12 @@ All notable SourceRudder changes are documented here.
   `query relaxed: <shortened query>`. Errors (429, 4xx, 5xx, transport) are never
   retried. Empty or partial GitHub and StackOverflow responses are cached for at
   most 30 seconds.
+- `search_web` returns up to 20 results when `maxResults` is omitted (was 10;
+  explicit values are honored, capped at 100), removes duplicate URLs, and
+  requests SearXNG page 2 once when page 1 has fewer results than requested. A
+  failed page 2 keeps the page-1 results with a warning.
+- SearXNG-backed searches cache zero-result responses for at most 30 seconds,
+  like degraded ones, so a transient empty answer is not served for the full TTL.
 
 ### Security
 

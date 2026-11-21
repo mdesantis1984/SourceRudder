@@ -91,7 +91,7 @@ func TestCacheHitAcrossRepeatedSearch(t *testing.T) {
 
 	s := NewServer(cm, search.NewPlanner(), "stdio", ":8080", srv.URL, 300, 5000, fetch.NewFetcherService(5000), synthesis.NewService(), nil, observability.New(), cache.NewHistoryService(10))
 
-	callArgs, _ := json.Marshal(map[string]interface{}{"query": "repeatable query"})
+	callArgs, _ := json.Marshal(map[string]interface{}{"query": "repeatable query", "maxResults": 1})
 
 	// First call: cache miss, upstream is hit.
 	first, err := s.callToolByName(context.Background(), "search_web", callArgs)
@@ -130,7 +130,7 @@ func TestCacheStateDoesNotPersistAcrossServerInstances(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	callArgs, _ := json.Marshal(map[string]interface{}{"query": "fresh-query"})
+	callArgs, _ := json.Marshal(map[string]interface{}{"query": "fresh-query", "maxResults": 1})
 
 	// Server A: populate its cache.
 	{
