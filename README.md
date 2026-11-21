@@ -139,7 +139,7 @@ keep JSON arrays for `results`, `sourcesUsed`, `warnings`, and `errors`;
 | Surface | Verified state |
 |---|---|
 | MCP server | 29 registered tools over `stdio` and authenticated HTTP. |
-| Search | 16 source-specific tools with bounded result counts. |
+| Search | 16 source-specific tools with caller-chosen page size and cursor paging. |
 | Retrieval | URL validation, redirect/DNS checks, extraction, retries, and explicit blocked/failure outcomes. |
 | Local research | Immutable operator-curated JSON corpus with no crawling or network fallback. |
 | Operations | Prometheus metrics, health endpoint, Docker Compose, Kubernetes, and systemd assets. |
@@ -150,6 +150,24 @@ Hub, and the official-documentation registry. Relevant strategy IDs remain
 stable across tools, including `official_doc_registry_search`,
 `official_doc_web_fallback`, `local_index_lexical`, and
 `local_index_unavailable`.
+
+### Paging and token savings
+
+Every search keeps its full result set server-side and returns one page plus
+`resultSetId`, `total` and, while results remain, an opaque `nextCursor`. Pass
+it back as `cursor` to read the next page without a new upstream request (a
+cursor only works with the tool that issued it). Choose `format=compact` with
+`detail=titles`, `snippets` or `full` to get one `title | url | snippet` line
+per result instead of JSON; `structuredContent` always carries the full response.
+Failed calls return `isError: true` with a readable message.
+
+```json
+{"name": "search_web", "arguments": {"query": "golang context cancellation", "maxResults": 20, "format": "compact", "detail": "titles"}}
+{"name": "search_web", "arguments": {"query": "golang context cancellation", "cursor": "<nextCursor>", "format": "compact"}}
+```
+
+See [Configuration](docs/configuration.md#result-sets-and-paging) and the
+[before/after measurement](docs/quality/search-result-quality-measurement.md).
 
 ## Control without black-box claims
 
