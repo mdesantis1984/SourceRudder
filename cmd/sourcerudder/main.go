@@ -17,6 +17,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
 	"github.com/mdesantis1984/SourceRudder/internal/mcp"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
@@ -34,6 +35,12 @@ var (
 	redditUserAgent = flag.String("reddit-user-agent", envDefault("REDDIT_USER_AGENT", ""), "Deprecated no-op; search_reddit uses SearXNG")
 	redditBaseURL   = flag.String("reddit-base-url", envDefault("REDDIT_BASE_URL", ""), "Deprecated no-op; search_reddit uses SearXNG")
 	localIndexPath  = flag.String("local-index-path", "", "Read-only local index corpus path (env: LOCAL_INDEX_PATH)")
+
+	// Result-set store: every search keeps its full result list server-side
+	// so callers can page it with offset/resultSetId.
+	resultSetTTL        = flag.Int("result-set-ttl", envInt("RESULT_SET_TTL", 900), "Seconds a stored result set stays pageable (env: RESULT_SET_TTL)")
+	resultSetMaxSets    = flag.Int("result-set-max-sets", envInt("RESULT_SET_MAX_SETS", resultset.DefaultMaxSets), "Maximum stored result sets; oldest are evicted first (env: RESULT_SET_MAX_SETS)")
+	resultSetMaxResults = flag.Int("result-set-max-results", envInt("RESULT_SET_MAX_RESULTS", resultset.DefaultMaxResults), "Maximum results stored across all sets (env: RESULT_SET_MAX_RESULTS)")
 )
 
 // envDefault returns the value of the named environment variable when
@@ -121,6 +128,23 @@ func buildFetchConfig(flagTimeoutMs int) fetch.Config {
 	}
 }
 
+// buildResultSetConfig converts the result-set flag values into the store
+// config. Non-positive values fall back to the defaults (15 minutes, 64 sets,
+// 2,000 results) so a bad override never disables paging.
+func buildResultSetConfig(ttlSeconds, maxSets, maxResults int) resultset.Config {
+	cfg := resultset.DefaultConfig()
+	if ttlSeconds > 0 {
+		cfg.TTL = time.Duration(ttlSeconds) * time.Second
+	}
+	if maxSets > 0 {
+		cfg.MaxSets = maxSets
+	}
+	if maxResults > 0 {
+		cfg.MaxResults = maxResults
+	}
+	return cfg
+}
+
 func resolveLocalIndexPath(flagValue string) string {
 	if path := strings.TrimSpace(flagValue); path != "" {
 		return path
@@ -205,6 +229,7 @@ func main() {
 	}
 
 	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history)
+	server.SetResultSetStore(resultset.New(buildResultSetConfig(*resultSetTTL, *resultSetMaxSets, *resultSetMaxResults)))
 	if cfg, enabled := buildYouTubeConfig(); enabled {
 		server.SetYouTubeService(youtube.NewService(cfg, nil))
 	}

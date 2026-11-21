@@ -17,6 +17,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
 	"github.com/mdesantis1984/SourceRudder/internal/fetch"
 	"github.com/mdesantis1984/SourceRudder/internal/observability"
+	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
@@ -48,6 +49,9 @@ type Server struct {
 	met               *observability.Metrics
 	fetcherService    *fetch.FetcherService
 	synthesisService  *synthesis.Service
+	// resultSets keeps the full result list of every search so callers can
+	// page it by resultSetId without repeating the upstream search.
+	resultSets *resultset.Store
 	// youtube serves video transcripts. It is injected with
 	// SetYouTubeService; nil keeps the previous fetch behavior.
 	youtube       *youtube.Service
@@ -128,6 +132,7 @@ func NewServer(connectorManager *search.ConnectorManager, planner *search.Planne
 		synthesisService: synthSvc,
 		authValidator:    authValidator,
 		history:          history,
+		resultSets:       resultset.New(resultset.DefaultConfig()),
 	}
 	s.buildToolsRegistry()
 	s.registerTools()
@@ -231,7 +236,16 @@ func searchInputSchema() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda (requerido)"},
-			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados (default 10; 20 en search_web; tope 100)"},
+			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página: cuántos resultados devolver (default 10; 20 en search_web; tope 100). No limita lo que se guarda: la respuesta trae total, offset, hasMore y resultSetId para pedir el resto."},
+			"offset": map[string]interface{}{
+				"type":        "integer",
+				"minimum":     0,
+				"description": "Índice del primer resultado a devolver (default 0). Cada búsqueda guarda su lista completa en el servidor (resultSetId); con offset pides la siguiente página sin recortar nada.",
+			},
+			"resultSetId": map[string]interface{}{
+				"type":        "string",
+				"description": "ID devuelto por una búsqueda anterior (rs_...). Si se envía, no se hace ninguna petición de red: se devuelve la porción [offset, offset+maxResults) de la lista guardada (válida unos 15 minutos). query sigue siendo requerido; si difiere de la original se añade un warning. ID desconocido o vencido: error result_set_not_found.",
+			},
 			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47, ej: 'en', 'es'. Solo se reenvía a SearxNG."},
 			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Activar safesearch en SearxNG (default false)"},
 			"timeRange": map[string]interface{}{

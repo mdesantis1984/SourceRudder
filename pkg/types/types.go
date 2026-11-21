@@ -16,6 +16,12 @@ type SearchRequest struct {
 	CachePolicy  string            `json:"cachePolicy,omitempty"`
 	DeepResearch bool              `json:"deepResearch,omitempty"`
 	Filters      map[string]string `json:"filters,omitempty"`
+
+	// Offset is the index of the first result the caller wants. It is set
+	// in-process by the MCP handler (never decoded from or encoded to JSON,
+	// so it does not change cache keys) so connectors that fetch lazily can
+	// decide whether the stored page already covers offset+MaxResults.
+	Offset int `json:"-"`
 }
 
 type SearchResultItem struct {
@@ -52,6 +58,16 @@ type SearchResponse struct {
 	Partial     bool               `json:"partial,omitempty"`
 	Warnings    []string           `json:"warnings,omitempty"`
 	Errors      []string           `json:"errors,omitempty"`
+
+	// ResultSetID names the server-side copy of the full result list of this
+	// search; pass it back as resultSetId to page it without a new search.
+	// Total is the number of stored results, Offset the index of Results[0]
+	// inside them, and HasMore reports whether results exist after this slice.
+	// They are filled by the MCP search handlers.
+	ResultSetID string `json:"resultSetId,omitempty"`
+	Total       int    `json:"total"`
+	Offset      int    `json:"offset"`
+	HasMore     bool   `json:"hasMore"`
 }
 
 type FetchResponse struct {

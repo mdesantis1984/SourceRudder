@@ -58,7 +58,9 @@ func TestRedditSearchFiltersAndDeduplicatesIndexedResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(resp.Results) != 1 || resp.Results[0].Title != "first" || resp.Results[0].CanonicalURL != "https://www.reddit.com/r/golang/comments/1/" {
-		t.Fatalf("expected one canonical Reddit post, got %#v", resp.Results)
+	// S8: the duplicate is dropped, both distinct canonical posts are kept
+	// (the handler, not the connector, applies maxResults=1).
+	if len(resp.Results) != 2 || resp.Results[0].Title != "first" || resp.Results[0].CanonicalURL != "https://www.reddit.com/r/golang/comments/1/" || resp.Results[1].Title != "second" {
+		t.Fatalf("expected two distinct canonical Reddit posts, got %#v", resp.Results)
 	}
 }

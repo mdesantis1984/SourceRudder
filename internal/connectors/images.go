@@ -177,11 +177,8 @@ func (c *ImagesConnector) searchSearxng(ctx context.Context, query string, maxRe
 	})
 	candidates = deduplicateImageCandidates(candidates)
 
-	results := make([]types.SearchResultItem, 0, min(maxResults, len(candidates)))
+	results := make([]types.SearchResultItem, 0, len(candidates))
 	for outputIndex, candidate := range candidates {
-		if outputIndex >= maxResults {
-			break
-		}
 		engine := candidate.item.Engine
 		if engine == "" {
 			engine = "searxng"

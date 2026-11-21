@@ -35,7 +35,13 @@ func (c *WebConnector) Name() string { return "web" }
 func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
 	start := time.Now()
 	query := strings.TrimSpace(req.Query)
+	// target is how many unique results the caller needs to see: the page
+	// window end (offset + maxResults). It drives the page-2 fill rule and the
+	// cache key; the connector itself keeps every unique result it fetched.
 	maxResults := getMaxResults(req.MaxResults, defaultWebMaxResults)
+	if req.Offset > 0 {
+		maxResults += req.Offset
+	}
 
 	ctx, span := observability.StartSpan(ctx, c.Name(), req.Query)
 	defer func() {
@@ -110,9 +116,6 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 	seen := make(map[string]struct{}, maxResults)
 	appendUnique := func(page *searxngPage) {
 		for _, item := range page.items {
-			if len(items) >= maxResults {
-				return
-			}
 			if _, dup := seen[item.URL]; dup {
 				continue
 			}

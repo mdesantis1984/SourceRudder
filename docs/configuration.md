@@ -24,6 +24,9 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` or `30000` | Fetch timeout in milliseconds. |
 | `-auth-key` | empty | Overrides `SOURCERUDDER_AUTH_KEY`. |
 | `-local-index-path` | empty | Overrides `LOCAL_INDEX_PATH`. |
+| `-result-set-ttl` | `RESULT_SET_TTL` or `900` | Seconds a stored search result set stays pageable by `resultSetId`. |
+| `-result-set-max-sets` | `RESULT_SET_MAX_SETS` or `64` | Maximum stored result sets; the oldest are evicted first. |
+| `-result-set-max-results` | `RESULT_SET_MAX_RESULTS` or `2000` | Maximum results held across all stored sets; the oldest sets are evicted first. |
 
 ## Environment and Compose
 
@@ -37,6 +40,9 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `FETCH_MAX_REDIRECTS` | `5` | Maximum validated redirects. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Maximum fetch attempts. |
 | `LOCAL_INDEX_PATH` | empty | Enables `search_local_index`. |
+| `RESULT_SET_TTL` | `900` | Result-set lifetime in seconds; `-result-set-ttl` wins when set. Non-positive values fall back to the default. |
+| `RESULT_SET_MAX_SETS` | `64` | Maximum stored result sets; `-result-set-max-sets` wins when set. |
+| `RESULT_SET_MAX_RESULTS` | `2000` | Maximum stored results in total; `-result-set-max-results` wins when set. |
 | `YOUTUBE_TRANSCRIPTS` | enabled | `off` disables `fetch_youtube_transcript` and the YouTube delegation in `fetch_url` / `fetch_and_extract`. |
 | `YTDLP_PATH` | `yt-dlp` | yt-dlp executable. The systemd unit sets `/opt/yt-dlp/bin/yt-dlp`. |
 | `YTDLP_JS_RUNTIMES` | empty | JavaScript runtime passed to yt-dlp as `RUNTIME[:PATH]`. The systemd unit sets `node:/opt/nodejs/bin/node`. |
@@ -49,6 +55,10 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `YOUTUBE_WORK_DIR` | empty (`TMPDIR`) | Scratch directory for yt-dlp output. |
 
 Use a local, ignored `.env` file with restrictive permissions.
+
+## Result sets and paging
+
+Every search tool keeps the full list of results it obtained in an in-process store and returns the requested slice with `resultSetId`, `total`, `offset` and `hasMore`. `maxResults` is the page size, not a cap on what is kept. Send `resultSetId` and `offset` to read the rest of the set without any upstream request; an unknown or expired ID returns `result_set_not_found`. The store is per process and not durable: a restart or an eviction invalidates IDs. Memory use is bounded by `-result-set-max-results` (2,000 results by default), so size it for the replica.
 
 ## HTTP authentication
 

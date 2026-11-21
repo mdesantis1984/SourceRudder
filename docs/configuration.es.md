@@ -24,6 +24,9 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `-fetch-timeout-ms` | `FETCH_TIMEOUT_MS` o `30000` | Timeout de fetch, en milisegundos. |
 | `-auth-key` | vacío | Reemplaza `SOURCERUDDER_AUTH_KEY`. |
 | `-local-index-path` | vacío | Reemplaza `LOCAL_INDEX_PATH`. |
+| `-result-set-ttl` | `RESULT_SET_TTL` o `900` | Segundos durante los que un set de resultados guardado se puede paginar con `resultSetId`. |
+| `-result-set-max-sets` | `RESULT_SET_MAX_SETS` o `64` | Máximo de sets guardados; se expulsan primero los más antiguos. |
+| `-result-set-max-results` | `RESULT_SET_MAX_RESULTS` o `2000` | Máximo de resultados guardados entre todos los sets; se expulsan primero los sets más antiguos. |
 
 ## Entorno y Compose
 
@@ -37,6 +40,9 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `FETCH_MAX_REDIRECTS` | `5` | Máximo de redirecciones validadas. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Máximo de intentos de fetch. |
 | `LOCAL_INDEX_PATH` | vacío | Habilita `search_local_index`. |
+| `RESULT_SET_TTL` | `900` | Vida del set de resultados en segundos; `-result-set-ttl` tiene prioridad. Un valor no positivo vuelve al predeterminado. |
+| `RESULT_SET_MAX_SETS` | `64` | Máximo de sets de resultados guardados; `-result-set-max-sets` tiene prioridad. |
+| `RESULT_SET_MAX_RESULTS` | `2000` | Máximo total de resultados guardados; `-result-set-max-results` tiene prioridad. |
 | `YOUTUBE_TRANSCRIPTS` | habilitado | `off` deshabilita `fetch_youtube_transcript` y la delegación de YouTube en `fetch_url` / `fetch_and_extract`. |
 | `YTDLP_PATH` | `yt-dlp` | Ejecutable de yt-dlp. La unidad systemd usa `/opt/yt-dlp/bin/yt-dlp`. |
 | `YTDLP_JS_RUNTIMES` | vacío | Runtime de JavaScript que se pasa a yt-dlp como `RUNTIME[:RUTA]`. La unidad systemd usa `node:/opt/nodejs/bin/node`. |
@@ -89,3 +95,7 @@ Use un archivo regular, sin symlink y no escribible por grupo u otros. El loader
 ## Estado
 
 La caché tiene un TTL predeterminado de 300 segundos. Las búsquedas mediante SearXNG, GitHub y StackOverflow limitan a 30 segundos el TTL de respuestas degradadas (`partial: true`, incluidos motores sin respuesta) y vacías (sin resultados), sin extender un TTL configurado menor; las respuestas sanas con resultados conservan el TTL configurado. `search_web` devuelve hasta 20 resultados cuando se omite `maxResults` (los valores explícitos se respetan, con tope de 100), quita URLs duplicadas y pide una vez la página 2 de SearXNG cuando la página 1 trae menos resultados de los pedidos. Sus claves versionadas incluyen los parámetros de solicitud, como idioma, búsqueda segura, rango temporal y límite efectivo de resultados, y no reutilizan claves anteriores. El historial conserva las 100 búsquedas más recientes. Ambos viven en proceso, no se comparten entre réplicas y se pierden al reiniciar. No los use como auditoría durable.
+
+## Sets de resultados y paginación
+
+Cada herramienta de búsqueda guarda en un almacén en proceso la lista completa de resultados que obtuvo y devuelve la porción pedida junto con `resultSetId`, `total`, `offset` y `hasMore`. `maxResults` es el tamaño de página, no un tope de lo que se conserva. Envía `resultSetId` y `offset` para leer el resto del set sin ninguna petición al proveedor; un ID desconocido o vencido devuelve `result_set_not_found`. El almacén es por proceso y no es durable: un reinicio o una expulsión invalida los IDs. El uso de memoria está acotado por `-result-set-max-results` (2.000 resultados por defecto); dimensiónalo para la réplica.

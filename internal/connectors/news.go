@@ -123,9 +123,6 @@ func (c *NewsConnector) searchSearxng(ctx context.Context, query string, maxResu
 
 	results := make([]types.SearchResultItem, 0, len(searxngResp.Results))
 	for i, item := range searxngResp.Results {
-		if i >= maxResults {
-			break
-		}
 		parsedDomain := extractDomain(item.ParsedURL)
 
 		results = append(results, types.SearchResultItem{

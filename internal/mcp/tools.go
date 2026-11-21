@@ -90,9 +90,12 @@ func (s *Server) registerTools() {
 
 func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.ResultSetID != "" {
+			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -129,7 +132,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 		// what the operator actually saw, not what we tried.
 		s.recordSearch(ctx, source, resp)
 
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage(source, &req, resp), nil
 	}
 }
 
@@ -137,9 +140,12 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 // a library resolves unambiguously, while preserving the typed web fallback.
 func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.ResultSetID != "" {
+			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -175,7 +181,8 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 		}
 		s.recordSearch(ctx, source, resp)
 
-		return normalizeSearchResponse(resp), nil
+		// The fallback is a web search, so it pages with search_web's rules.
+		return s.storeAndPage(source, &req, resp), nil
 	}
 }
 
@@ -184,9 +191,12 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 // silently routes to generic web search.
 func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.ResultSetID != "" {
+			return s.serveResultSet(&req, pg)
 		}
 		if s.connectorManager != nil {
 			if _, ok := s.connectorManager.GetConnector("local_index"); ok {
@@ -195,7 +205,7 @@ func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.Raw
 					return nil, err
 				}
 				s.recordSearch(ctx, "local_index", resp)
-				return normalizeSearchResponse(resp), nil
+				return s.storeAndPage("local_index", &req, resp), nil
 			}
 		}
 
@@ -243,9 +253,12 @@ func normalizeSearchResponse(resp *types.SearchResponse) *types.SearchResponse {
 
 func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.ResultSetID != "" {
+			return s.serveResultSet(&req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -273,15 +286,18 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 		// search_github / search_github_issue handlers and the simple
 		// search_* handlers (which already record the connector name).
 		s.recordSearch(ctx, "github", resp)
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage("github", &req, resp), nil
 	}
 }
 
 func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
-		var req types.SearchRequest
-		if err := json.Unmarshal(args, &req); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
+		req, pg, err := parseSearchArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if pg.ResultSetID != "" {
+			return s.serveResultSet(&req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -309,7 +325,7 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 		// search_github / search_github_pr handlers and the simple
 		// search_* handlers.
 		s.recordSearch(ctx, "github", resp)
-		return normalizeSearchResponse(resp), nil
+		return s.storeAndPage("github", &req, resp), nil
 	}
 }
 

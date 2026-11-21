@@ -56,7 +56,7 @@ func (c *OfficialDocsConnector) Search(ctx context.Context, req *types.SearchReq
 		return c.fallback(ctx, req, "official registry search failed: "+err.Error())
 	}
 
-	results := filterOfficialResults(resp.Results, library.hosts, req.MaxResults, library.id)
+	results := filterOfficialResults(resp.Results, library.hosts, library.id)
 	if len(results) == 0 {
 		return c.fallback(ctx, req, "no validated authoritative results survived registry provenance checks")
 	}
@@ -133,11 +133,10 @@ func scopedOfficialQuery(query string, hosts []string) string {
 	return strings.Join(clauses, " OR ") + " " + query
 }
 
-func filterOfficialResults(results []types.SearchResultItem, hosts []string, maxResults int, libraryID string) []types.SearchResultItem {
-	limit := getMaxResults(maxResults, 10)
-	filtered := make([]types.SearchResultItem, 0, limit)
+func filterOfficialResults(results []types.SearchResultItem, hosts []string, libraryID string) []types.SearchResultItem {
+	filtered := make([]types.SearchResultItem, 0, len(results))
 	for _, result := range results {
-		if len(filtered) == limit || !isApprovedOfficialURL(result.URL, hosts) {
+		if !isApprovedOfficialURL(result.URL, hosts) {
 			continue
 		}
 		result.Source = "official_docs"

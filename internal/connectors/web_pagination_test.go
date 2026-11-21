@@ -110,8 +110,9 @@ func TestWebSearchDefaultsToTwentyAndFillsFromPageTwo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Results) != 20 {
-		t.Fatalf("expected default of 20 results, got %d", len(resp.Results))
+	// S8: all 12 + 15 unique results are kept; the handler returns the first 20.
+	if len(resp.Results) != 27 {
+		t.Fatalf("expected every unique result (27), got %d", len(resp.Results))
 	}
 	if got := srv.requests(); len(got) != 2 || got[1] != "2" {
 		t.Fatalf("expected exactly page 1 then pageno=2, got %v", got)
@@ -132,9 +133,17 @@ func TestWebSearchNonPositiveMaxResultsUsesDefault(t *testing.T) {
 	c := NewWebConnector(srv.URL, cache.NewService(300))
 	for _, n := range []int{0, -3} {
 		resp, err := c.Search(context.Background(), &types.SearchRequest{Query: fmt.Sprintf("neg%d", n), MaxResults: n})
-		if err != nil || len(resp.Results) != 20 {
+		// 30 unique results on page 1 satisfy the default target of 20: no
+		// page 2, and the connector keeps all 30 (the handler slices to 20).
+		if err != nil || len(resp.Results) != 30 {
 			t.Fatalf("maxResults=%d: results=%d err=%v", n, len(resp.Results), err)
 		}
+		if got := srv.requests(); len(got) != 1 {
+			t.Fatalf("maxResults=%d must use the default target of 20 and skip page 2, got %v", n, got)
+		}
+		srv.mu.Lock()
+		srv.pagenos = nil
+		srv.mu.Unlock()
 	}
 }
 
@@ -142,7 +151,7 @@ func TestWebSearchNoPageTwoWhenPageOneIsEnough(t *testing.T) {
 	srv := newPagedSearxng(t, map[string][]string{"1": urlRange("a", 0, 25), "2": urlRange("b", 0, 25)})
 	c := NewWebConnector(srv.URL, cache.NewService(300))
 	resp, err := c.Search(context.Background(), &types.SearchRequest{Query: "enough"})
-	if err != nil || len(resp.Results) != 20 {
+	if err != nil || len(resp.Results) != 25 {
 		t.Fatalf("results=%d err=%v", len(resp.Results), err)
 	}
 	if got := srv.requests(); len(got) != 1 {
@@ -155,7 +164,7 @@ func TestWebSearchExplicitMaxResultsHonored(t *testing.T) {
 	srv := newPagedSearxng(t, map[string][]string{"1": urlRange("a", 0, 8), "2": urlRange("b", 0, 8)})
 	c := NewWebConnector(srv.URL, cache.NewService(300))
 	resp, err := c.Search(context.Background(), &types.SearchRequest{Query: "explicit", MaxResults: 5})
-	if err != nil || len(resp.Results) != 5 {
+	if err != nil || len(resp.Results) != 8 {
 		t.Fatalf("results=%d err=%v", len(resp.Results), err)
 	}
 	if got := srv.requests(); len(got) != 1 {
@@ -168,7 +177,9 @@ func TestWebSearchCapStaysAtOneHundred(t *testing.T) {
 	srv := newPagedSearxng(t, map[string][]string{"1": urlRange("a", 0, 60), "2": urlRange("b", 0, 60)})
 	c := NewWebConnector(srv.URL, cache.NewService(300))
 	resp, err := c.Search(context.Background(), &types.SearchRequest{Query: "cap", MaxResults: 500})
-	if err != nil || len(resp.Results) != 100 {
+	// The target is capped at 100, so 60 page-1 results still trigger page 2;
+	// every unique result is kept (the handler returns the first 100).
+	if err != nil || len(resp.Results) != 120 {
 		t.Fatalf("results=%d err=%v", len(resp.Results), err)
 	}
 	assertStrictlyDescending(t, resp)
@@ -199,7 +210,7 @@ func TestWebSearchDuplicatesDoNotCountTowardMaxResults(t *testing.T) {
 	})
 	c := NewWebConnector(srv.URL, cache.NewService(300))
 	resp, err := c.Search(context.Background(), &types.SearchRequest{Query: "dedup2", MaxResults: 5})
-	if err != nil || len(resp.Results) != 5 {
+	if err != nil || len(resp.Results) != 8 {
 		t.Fatalf("results=%v err=%v", resultURLs(resp), err)
 	}
 	assertUnique(t, resp)
@@ -276,11 +287,11 @@ func TestWebSearchCacheKeyStillDistinguishesRequests(t *testing.T) {
 	ctx := context.Background()
 	first, _ := c.Search(ctx, &types.SearchRequest{Query: "keys"})
 	again, _ := c.Search(ctx, &types.SearchRequest{Query: "keys"})
-	if first.Cached || !again.Cached || len(again.Results) != 20 {
+	if first.Cached || !again.Cached || len(again.Results) != 30 {
 		t.Fatalf("identical request must hit cache: first=%v again=%v n=%d", first.Cached, again.Cached, len(again.Results))
 	}
 	other, _ := c.Search(ctx, &types.SearchRequest{Query: "keys", MaxResults: 5})
-	if other.Cached || len(other.Results) != 5 {
+	if other.Cached || len(other.Results) != 30 {
 		t.Fatalf("different maxResults must not collide: cached=%v n=%d", other.Cached, len(other.Results))
 	}
 }
