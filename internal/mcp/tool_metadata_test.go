@@ -161,13 +161,58 @@ func TestToolsListSizeStaysUnderTheTokenBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 37,604 bytes before title/annotations/outputSchema; 61,530 with the full
-	// search outputSchema (ac1671c); 53,498 with the slim one (+~5% guard).
+	// search outputSchema (ac1671c); 54,458 with the slim one (T15-T16); 43,062
+	// after trimming the repeated descriptions (T18). Guards are +~3%.
 	t.Logf("tools/list bytes: %d", len(wire))
-	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 610 {
+	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 550 {
 		t.Fatalf("the shared search outputSchema is %d bytes (16 tools repeat it); keep it lean", len(schema))
 	}
-	if len(wire) > 56200 {
+	if len(wire) > 44400 {
 		t.Fatalf("tools/list is %d bytes; keep titles and schema descriptions short", len(wire))
+	}
+}
+
+// T18 (S9, S13): the outputSchemas carry types and required only; their
+// property descriptions were dropped to save bytes on every search tool.
+func TestToolsListOutputSchemasCarryNoDescriptions(t *testing.T) {
+	for _, tool := range buildTestServer(t).ListTools() {
+		schema, ok := tool["outputSchema"]
+		if !ok {
+			continue
+		}
+		wire, _ := json.Marshal(schema)
+		if strings.Contains(string(wire), `"description"`) {
+			t.Errorf("%v: outputSchema must not carry descriptions: %s", tool["name"], wire)
+		}
+	}
+}
+
+// T18: the compact+titles advice for clients that truncate long text lives
+// only on `format`, and format/detail keep their closed value sets in enum.
+func TestToolsListFormatAdviceAppearsOnlyOnFormat(t *testing.T) {
+	checked := 0
+	for name, tool := range listedTools(t) {
+		props, _ := tool["inputSchema"].(map[string]interface{})["properties"].(map[string]interface{})
+		if _, ok := props["format"]; !ok {
+			continue
+		}
+		checked++
+		for prop, p := range props {
+			pm, _ := p.(map[string]interface{})
+			d, _ := pm["description"].(string)
+			if strings.Contains(d, "detail=titles") != (prop == "format") {
+				t.Errorf("%s.%s: the detail=titles advice must appear only on format; got %q", name, prop, d)
+			}
+		}
+		for prop, want := range map[string]int{"format": 2, "detail": 3} {
+			pm, _ := props[prop].(map[string]interface{})
+			if enum, _ := pm["enum"].([]interface{}); len(enum) != want {
+				t.Errorf("%s.%s must keep its enum (%d values), got %v", name, prop, want, pm["enum"])
+			}
+		}
+	}
+	if checked != 16 {
+		t.Fatalf("expected 16 search tools with format, got %d", checked)
 	}
 }
 

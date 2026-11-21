@@ -141,7 +141,7 @@ func searchOutputSchema() map[string]interface{} {
 			"results":     map[string]interface{}{"type": "array", "items": item},
 			"resultSetId": jsonType("string"),
 			"total":       jsonType("integer"),
-			"nextCursor":  jsonType("string", "Send as cursor for the next page"),
+			"nextCursor":  jsonType("string"),
 			"partial":     jsonType("boolean"),
 			"warnings":    stringArray(),
 			"errors":      stringArray(),
