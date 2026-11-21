@@ -402,7 +402,8 @@ func TestResultSetDefaultCallResultsAreUnchanged(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("default results changed:\n got %s\nwant %s", got, want)
 	}
-	if *resp.Total != 3 || resp.NextCursor != "" {
+	// T11: the web set may have more upstream pages, so nextCursor stays set.
+	if *resp.Total != 3 || resp.NextCursor == "" {
 		t.Fatalf("fields wrong: total=%d nextCursor=%q", *resp.Total, resp.NextCursor)
 	}
 }
@@ -496,7 +497,8 @@ func TestResultSetWebDefaultWindowIsTwentyAndRestIsPageable(t *testing.T) {
 		t.Fatalf("default window wrong: len=%d total=%d next=%q", len(resp.Results), *resp.Total, resp.NextCursor)
 	}
 	rest := mustPaged(t, s, "search_web", map[string]interface{}{"query": "window", "cursor": resp.NextCursor})
-	if len(rest.Results) != 7 || rest.NextCursor != "" {
+	// T11: pages 1 and 2 were read at search time; page 3 may still exist.
+	if len(rest.Results) != 7 || rest.NextCursor == "" {
 		t.Fatalf("rest wrong: len=%d", len(rest.Results))
 	}
 	if fake.requestCount() != 2 {

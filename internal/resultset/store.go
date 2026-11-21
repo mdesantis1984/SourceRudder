@@ -51,6 +51,25 @@ type Set struct {
 	DefaultLimit int
 	Meta         types.SearchResponse
 	Results      []types.SearchResultItem
+	// Continuation, when set, says how the set can grow past its stored
+	// results (see Store.Extend). Nil for sets that cannot grow.
+	Continuation *Continuation
+}
+
+// Continuation is the request context a lazily extended set needs to fetch
+// its next upstream page.
+type Continuation struct {
+	Query      string
+	Language   string
+	TimeRange  string
+	SafeSearch bool
+	// NextPage is the next upstream page number to request.
+	NextPage int
+	// Done is set when no further page may be requested: the page bound was
+	// reached, a page added no new results, or the result budget is full.
+	Done bool
+	// BudgetHit is set when the result budget cut the last extension short.
+	BudgetHit bool
 }
 
 // Stats reports current occupancy.
@@ -63,6 +82,10 @@ type entry struct {
 	id        string
 	set       Set
 	createdAt time.Time
+	// extendMu serializes Extend calls of this set so one upstream page is
+	// never fetched twice. It is never held together with Store.mu while
+	// calling out.
+	extendMu sync.Mutex
 }
 
 // Store is safe for concurrent use. It has its own lock and never calls out
@@ -107,6 +130,7 @@ func (s *Store) Put(set Set) (string, int) {
 	}
 	set.Results = cloneItems(results)
 	set.Meta = cloneMeta(set.Meta)
+	set.Continuation = cloneContinuation(set.Continuation)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -136,7 +160,85 @@ func (s *Store) Get(id string) (Set, bool) {
 	out := e.set
 	out.Results = cloneItems(e.set.Results)
 	out.Meta = cloneMeta(e.set.Meta)
+	out.Continuation = cloneContinuation(e.set.Continuation)
 	return out, true
+}
+
+func cloneContinuation(c *Continuation) *Continuation {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	return &cp
+}
+
+// ExtendFunc fetches more results for a set. It receives a copy of the
+// continuation and of the stored results, runs without any store lock held,
+// and returns the new results plus the updated continuation. On error the
+// set is left unchanged.
+type ExtendFunc func(cont Continuation, have []types.SearchResultItem) ([]types.SearchResultItem, Continuation, error)
+
+// Extend grows a set by one upstream page, but only while the set holds
+// no more than offset results (so a caller paging past the end triggers one
+// fetch, and concurrent callers at the same position share it), has an open
+// Continuation, and is still live. Calls for one set are serialized; fn runs
+// without the store lock. New results are appended up to the store's result
+// budget; when the budget cuts them short the continuation is closed and
+// BudgetHit is set. It returns a copy of the set as it is afterwards, false
+// when the ID is unknown, expired or was evicted meanwhile, and fn's error.
+func (s *Store) Extend(id string, offset int, fn ExtendFunc) (Set, bool, error) {
+	s.mu.RLock()
+	e, ok := s.entries[id]
+	s.mu.RUnlock()
+	if !ok {
+		return Set{}, false, nil
+	}
+	e.extendMu.Lock()
+	defer e.extendMu.Unlock()
+
+	s.mu.RLock()
+	live := s.entries[id] == e && s.cfg.Now().Before(e.createdAt.Add(s.cfg.TTL))
+	if !live {
+		s.mu.RUnlock()
+		return Set{}, false, nil
+	}
+	cont := cloneContinuation(e.set.Continuation)
+	have := cloneItems(e.set.Results)
+	s.mu.RUnlock()
+
+	if cont == nil || cont.Done || len(have) > offset {
+		set, ok := s.Get(id)
+		return set, ok, nil
+	}
+	more, next, err := fn(*cont, have)
+	if err != nil {
+		set, ok := s.Get(id)
+		return set, ok, err
+	}
+
+	s.mu.Lock()
+	if s.entries[id] != e {
+		s.mu.Unlock()
+		return Set{}, false, nil
+	}
+	room := s.cfg.MaxResults - s.results
+	if len(more) > room {
+		if room < 0 {
+			room = 0
+		}
+		more = more[:room]
+		next.Done, next.BudgetHit = true, true
+	}
+	if len(more) > 0 {
+		merged := make([]types.SearchResultItem, 0, len(e.set.Results)+len(more))
+		merged = append(merged, e.set.Results...)
+		e.set.Results = append(merged, cloneItems(more)...)
+		s.results += len(more)
+	}
+	e.set.Continuation = cloneContinuation(&next)
+	s.mu.Unlock()
+	set, ok := s.Get(id)
+	return set, ok, nil
 }
 
 // cloneItems deep-copies the slice and each item's mutable fields (Tags and

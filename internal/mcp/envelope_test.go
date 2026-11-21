@@ -319,7 +319,9 @@ func TestEnvelopeCursorRoundTripCoversTheWholeSetWithoutUpstreamRequests(t *test
 			collect(sc)
 			sizes = append(sizes, len(sc["results"].([]interface{})))
 		}
-		if !reflect.DeepEqual(sizes, []int{10, 10, 5}) {
+		// T11: a web set keeps nextCursor at its stored end while upstream pages
+		// remain; that last call fetches one SearXNG page, which here is empty.
+		if !reflect.DeepEqual(sizes, []int{10, 10, 5, 0}) {
 			t.Fatalf("page sizes=%v", sizes)
 		}
 		for i, u := range urls {
@@ -333,8 +335,8 @@ func TestEnvelopeCursorRoundTripCoversTheWholeSetWithoutUpstreamRequests(t *test
 		if _, present := sc["nextCursor"]; present {
 			t.Fatalf("the last page must not carry nextCursor: %v", sc["nextCursor"])
 		}
-		if fake.requestCount() != requestsAfterSearch {
-			t.Fatalf("cursor paging made upstream requests: %d -> %d", requestsAfterSearch, fake.requestCount())
+		if fake.requestCount() != requestsAfterSearch+1 {
+			t.Fatalf("paging the stored set must be local and past its end exactly one lazy page: %d -> %d", requestsAfterSearch, fake.requestCount())
 		}
 	})
 }

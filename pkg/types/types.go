@@ -72,6 +72,11 @@ type SearchResponse struct {
 	// in-process only (never on the wire); the compact text uses it to number
 	// result lines.
 	Offset int `json:"-"`
+
+	// SearxngPages is how many SearXNG pages a web search read. It is set by
+	// the web connector (and kept in its cache) so the MCP layer knows where
+	// lazy paging resumes; the MCP handlers clear it before replying.
+	SearxngPages int `json:"searxngPages,omitempty"`
 }
 
 type FetchResponse struct {

@@ -383,3 +383,24 @@ func TestNewsSearchEmptyCappedAndNonEmptyKeepsNormalTTL(t *testing.T) {
 		})
 	}
 }
+
+func TestWebNextPageRequestsOnePageAndReturnsOnlyNewURLs(t *testing.T) {
+	srv := newPagedSearxng(t, map[string][]string{
+		"3": append(urlRange("a", 28, 30), urlRange("c", 0, 3)...),
+	})
+	c := NewWebConnector(srv.URL, cache.NewService(300))
+	seen := map[string]struct{}{"https://example.test/a/28": {}, "https://example.test/a/29": {}}
+	got, err := c.NextPage(context.Background(), "q", 3, &types.SearchRequest{}, seen, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reqs := srv.requests(); len(reqs) != 1 || reqs[0] != "3" {
+		t.Fatalf("expected exactly one pageno=3 request, got %v", reqs)
+	}
+	if len(got) != 3 || got[0].URL != "https://example.test/c/0" || got[0].Score != 9 || got[2].Score != 7 {
+		t.Fatalf("unexpected page: %+v", got)
+	}
+	if none, err := c.NextPage(context.Background(), "q", MaxSearxngPages+1, &types.SearchRequest{}, seen, 10); err != nil || len(none) != 0 || len(srv.requests()) != 1 {
+		t.Fatalf("a page beyond the bound must not be requested: %v %v", none, err)
+	}
+}

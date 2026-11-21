@@ -57,9 +57,10 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 
 	var results []types.SearchResultItem
 	var err error
+	pages := 0
 
 	if c.searxngURL != "" {
-		results, err = c.searchSearxng(ctx, query, maxResults, req)
+		results, pages, err = c.searchSearxng(ctx, query, maxResults, req)
 	} else {
 		results, err = c.searchGeneric(ctx, query, maxResults, req)
 	}
@@ -74,6 +75,8 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		Strategy:    "searxng",
 		SourcesUsed: []string{"searxng"},
 		Cached:      false,
+		// SearxngPages tells the MCP layer where lazy paging resumes.
+		SearxngPages: pages,
 	}
 	recordWebSearchError(results, err, resp)
 
@@ -103,11 +106,18 @@ type searxngItem struct {
 	ParsedURL interface{} `json:"parsed_url"`
 }
 
-func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {
+// MaxSearxngPages bounds the SearXNG pages fetched for one stored result set,
+// counting the pages fetched at search time and the lazy ones.
+const MaxSearxngPages = 5
+
+// searchSearxng returns the unique results, how many SearXNG pages were read
+// successfully, and any degradation error.
+func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, int, error) {
 	page1, err := c.fetchSearxngPage(ctx, query, 1, req)
 	if err != nil {
-		return []types.SearchResultItem{}, err
+		return []types.SearchResultItem{}, 0, err
 	}
+	pages := 1
 
 	items := make([]searxngItem, 0, maxResults)
 	seen := make(map[string]struct{}, maxResults)
@@ -131,6 +141,7 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 		} else {
 			appendUnique(page2)
 			engines = append(engines, page2.engines...)
+			pages = 2
 		}
 	}
 
@@ -152,14 +163,51 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 	if len(engines) > 0 {
 		unresponsive := newSearxngUnresponsiveError(engines)
 		if page2Err != nil {
-			return results, &webPageTwoError{unresponsive: unresponsive, page2: page2Err}
+			return results, pages, &webPageTwoError{unresponsive: unresponsive, page2: page2Err}
 		}
-		return results, unresponsive
+		return results, pages, unresponsive
 	}
 	if page2Err != nil {
-		return results, &webPageTwoError{page2: page2Err}
+		return results, pages, &webPageTwoError{page2: page2Err}
 	}
-	return results, nil
+	return results, pages, nil
+}
+
+// NextPage requests one more SearXNG page for an existing result set and
+// returns only the results whose URL is not in seen, in page order, scored
+// strictly below lastScore. It makes exactly one upstream request and is used
+// only when a caller pages past the stored set; req supplies the original
+// language, time range and safe-search values.
+func (c *WebConnector) NextPage(ctx context.Context, query string, pageno int, req *types.SearchRequest, seen map[string]struct{}, lastScore float64) ([]types.SearchResultItem, error) {
+	if c.searxngURL == "" || pageno < 2 || pageno > MaxSearxngPages {
+		return nil, nil
+	}
+	page, err := c.fetchSearxngPage(ctx, query, pageno, req)
+	if err != nil {
+		return nil, err
+	}
+	dup := make(map[string]struct{}, len(page.items))
+	out := make([]types.SearchResultItem, 0, len(page.items))
+	for _, item := range page.items {
+		if _, ok := seen[item.URL]; ok {
+			continue
+		}
+		if _, ok := dup[item.URL]; ok {
+			continue
+		}
+		dup[item.URL] = struct{}{}
+		out = append(out, types.SearchResultItem{
+			Title:      item.Title,
+			URL:        item.URL,
+			Snippet:    item.Content,
+			Source:     "searxng",
+			Engine:     item.Engine,
+			Type:       "web",
+			Score:      lastScore - float64(len(out)+1),
+			CitationID: fmt.Sprintf("web:%s", extractDomain(item.ParsedURL)),
+		})
+	}
+	return out, nil
 }
 
 // webPageTwoError carries a failed page-2 request (and any unresponsive

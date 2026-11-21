@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mdesantis1984/SourceRudder/internal/cache"
+	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
@@ -95,7 +96,7 @@ func (s *Server) makeSearchHandler(source string) func(ctx context.Context, args
 			return nil, err
 		}
 		if pg.Cursor != "" {
-			return s.serveResultSet(&req, pg)
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -145,7 +146,7 @@ func (s *Server) makeDocOficialHandler() func(ctx context.Context, args json.Raw
 			return nil, err
 		}
 		if pg.Cursor != "" {
-			return s.serveResultSet(&req, pg)
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager == nil {
 			return normalizeSearchResponse(&types.SearchResponse{
@@ -196,7 +197,7 @@ func (s *Server) makeLocalIndexHandler() func(ctx context.Context, args json.Raw
 			return nil, err
 		}
 		if pg.Cursor != "" {
-			return s.serveResultSet(&req, pg)
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		if s.connectorManager != nil {
 			if _, ok := s.connectorManager.GetConnector("local_index"); ok {
@@ -258,7 +259,7 @@ func (s *Server) makeGitHubPRHandler() func(ctx context.Context, args json.RawMe
 			return nil, err
 		}
 		if pg.Cursor != "" {
-			return s.serveResultSet(&req, pg)
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -297,7 +298,7 @@ func (s *Server) makeGitHubIssueHandler() func(ctx context.Context, args json.Ra
 			return nil, err
 		}
 		if pg.Cursor != "" {
-			return s.serveResultSet(&req, pg)
+			return s.serveResultSet(ctx, &req, pg)
 		}
 		conn, ok := s.connectorManager.GetConnector("github")
 		if !ok {
@@ -489,13 +490,34 @@ func (s *Server) stubValidateHandler(ctx context.Context, args json.RawMessage) 
 func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 	return func(ctx context.Context, args json.RawMessage) (interface{}, error) {
 		var req struct {
-			Query   string                   `json:"query"`
-			Results []types.SearchResultItem `json:"results"`
-			Goal    string                   `json:"goal"`
-			Style   string                   `json:"style"`
+			Query       string                   `json:"query"`
+			Results     []types.SearchResultItem `json:"results"`
+			ResultSetID string                   `json:"resultSetId"`
+			Goal        string                   `json:"goal"`
+			Style       string                   `json:"style"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+
+		// resultSetId lets the caller skip resending the results of a search:
+		// the stored set is read locally (no network). When both are given,
+		// `results` wins and the call says so.
+		var warnings []string
+		if req.ResultSetID != "" {
+			if len(req.Results) > 0 {
+				warnings = append(warnings, "resultSetId ignored: results were provided in the same call; results win")
+			} else {
+				var set resultset.Set
+				ok := false
+				if s.resultSets != nil {
+					set, ok = s.resultSets.Get(req.ResultSetID)
+				}
+				if !ok {
+					return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", req.ResultSetID)
+				}
+				req.Results = set.Results
+			}
 		}
 
 		if s.synthesisService == nil {
@@ -514,22 +536,41 @@ func (s *Server) makeSynthesizeHandler(op string) func(ctx context.Context, args
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		case "deep_research":
 			result, err := s.synthesisService.DeepResearch(ctx, req.Query, req.Results)
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		case "compare_sources":
 			result, err := s.synthesisService.CompareSources(ctx, req.Results, req.Query)
 			if err != nil {
 				return nil, err
 			}
-			return result, nil
+			return withWarnings(result, warnings)
 		}
 		return nil, fmt.Errorf("unknown synthesis operation: %s", op)
 	}
+}
+
+// withWarnings returns v unchanged when there is nothing to report; otherwise
+// it adds a "warnings" array to v's JSON object, so the typed synthesis
+// results keep their shape.
+func withWarnings(v interface{}, warnings []string) (interface{}, error) {
+	if len(warnings) == 0 {
+		return v, nil
+	}
+	body, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("encode result: %w", err)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("encode result: %w", err)
+	}
+	obj["warnings"] = warnings
+	return obj, nil
 }
 
 func (s *Server) getCurrentDateHandler(ctx context.Context, args json.RawMessage) (interface{}, error) {

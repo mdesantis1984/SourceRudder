@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -60,9 +61,64 @@ func (s *Server) SetResultSetStore(store *resultset.Store) {
 	}
 }
 
+// webPager is the optional capability of the web connector that lets a set
+// grow by one SearXNG page when a caller pages past its end.
+type webPager interface {
+	NextPage(ctx context.Context, query string, pageno int, req *types.SearchRequest, seen map[string]struct{}, lastScore float64) ([]types.SearchResultItem, error)
+}
+
+func (s *Server) webPager() webPager {
+	if s.connectorManager == nil {
+		return nil
+	}
+	conn, ok := s.connectorManager.GetConnector("web")
+	if !ok {
+		return nil
+	}
+	p, _ := conn.(webPager)
+	return p
+}
+
+// canExtend reports whether a set can still grow past its stored results.
+func (s *Server) canExtend(c *resultset.Continuation) bool {
+	return c != nil && !c.Done && c.NextPage >= 2 && c.NextPage <= connectors.MaxSearxngPages && s.webPager() != nil
+}
+
+// extendSet fetches one more upstream page for a set whose stored results end
+// at or before offset. Concurrent callers share one fetch. A failed fetch
+// leaves the set unchanged and is returned as a warning.
+func (s *Server) extendSet(ctx context.Context, id string, offset int) (resultset.Set, bool, string) {
+	pager := s.webPager()
+	var failure string
+	set, ok, _ := s.resultSets.Extend(id, offset, func(cont resultset.Continuation, have []types.SearchResultItem) ([]types.SearchResultItem, resultset.Continuation, error) {
+		seen := make(map[string]struct{}, len(have))
+		for _, it := range have {
+			seen[it.URL] = struct{}{}
+		}
+		last := 0.0
+		if len(have) > 0 {
+			last = have[len(have)-1].Score
+		}
+		req := &types.SearchRequest{Language: cont.Language, TimeRange: cont.TimeRange, SafeSearch: cont.SafeSearch}
+		more, err := pager.NextPage(ctx, cont.Query, cont.NextPage, req, seen, last)
+		if err != nil {
+			failure = fmt.Sprintf("web page %d could not be fetched; the stored results are unchanged and the cursor can be retried: %v", cont.NextPage, err)
+			return nil, cont, err
+		}
+		next := cont
+		next.NextPage++
+		if len(more) == 0 || next.NextPage > connectors.MaxSearxngPages {
+			next.Done = true
+		}
+		return more, next, nil
+	})
+	return set, ok, failure
+}
+
 // sliceResponse returns the slice [offset, offset+limit) of full, plus the
-// paging fields. It never reorders results.
-func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResultItem, offset, limit int) *types.SearchResponse {
+// paging fields. It never reorders results. more says the set can still grow
+// upstream, which keeps nextCursor present at the end of the stored results.
+func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResultItem, offset, limit int, more bool) *types.SearchResponse {
 	total := len(full)
 	start := offset
 	if start > total {
@@ -83,8 +139,9 @@ func sliceResponse(meta types.SearchResponse, id string, full []types.SearchResu
 	out.ResultSetID = id
 	out.Total = total
 	out.Offset = offset
+	out.SearxngPages = 0
 	out.NextCursor = ""
-	if end < total {
+	if end < total || more {
 		out.NextCursor = encodeCursor(id, end)
 	}
 	return &out
@@ -101,6 +158,13 @@ func cloneStrings(in []string) []string {
 // opaque ID and returns the requested slice. limitSource selects the page-size
 // rules (search_web defaults to 20, the rest to 10).
 func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp *types.SearchResponse) *types.SearchResponse {
+	pages := 0
+	if resp != nil {
+		pages = resp.SearxngPages
+		cp := *resp // never mutate a response a connector or cache may share
+		cp.SearxngPages = 0
+		resp = &cp
+	}
 	resp = normalizeSearchResponse(resp)
 	if s.resultSets == nil {
 		return resp
@@ -108,13 +172,25 @@ func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp
 	meta := *resp
 	meta.Results = nil
 	meta.ResultSetID, meta.Total, meta.Offset, meta.NextCursor = "", 0, 0, ""
-	id, stored := s.resultSets.Put(resultset.Set{
+	set := resultset.Set{
 		Query:        resp.Query,
 		DefaultLimit: connectors.ResolveMaxResults(limitSource, 0),
 		Meta:         meta,
 		Results:      resp.Results,
-	})
-	out := sliceResponse(meta, id, resp.Results[:stored], 0, connectors.ResolveMaxResults(limitSource, req.MaxResults))
+	}
+	// Only a web search that read SearXNG pages can grow lazily; the request
+	// context is kept so the next page matches the original search.
+	if limitSource == "web" && pages > 0 && len(resp.Results) > 0 && len(resp.Results) <= s.resultSets.Config().MaxResults {
+		set.Continuation = &resultset.Continuation{
+			Query:      strings.TrimSpace(req.Query),
+			Language:   req.Language,
+			TimeRange:  req.TimeRange,
+			SafeSearch: req.SafeSearch,
+			NextPage:   pages + 1,
+		}
+	}
+	id, stored := s.resultSets.Put(set)
+	out := sliceResponse(meta, id, resp.Results[:stored], 0, connectors.ResolveMaxResults(limitSource, req.MaxResults), s.canExtend(set.Continuation))
 	if stored < len(resp.Results) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("result set truncated: only the first %d of %d results are stored and pageable", stored, len(resp.Results)))
 	}
@@ -123,7 +199,7 @@ func (s *Server) storeAndPage(limitSource string, req *types.SearchRequest, resp
 
 // serveResultSet answers a call that carries a cursor from the stored set
 // without any upstream request.
-func (s *Server) serveResultSet(req *types.SearchRequest, pg pageArgs) (*types.SearchResponse, error) {
+func (s *Server) serveResultSet(ctx context.Context, req *types.SearchRequest, pg pageArgs) (*types.SearchResponse, error) {
 	var set resultset.Set
 	ok := false
 	if s.resultSets != nil {
@@ -132,6 +208,23 @@ func (s *Server) serveResultSet(req *types.SearchRequest, pg pageArgs) (*types.S
 	if !ok {
 		return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", pg.setID)
 	}
+	// Past the end of a web set that may have more upstream: fetch exactly
+	// one more SearXNG page (shared by concurrent callers).
+	var extra []string
+	if pg.offset >= len(set.Results) && s.canExtend(set.Continuation) {
+		var failure string
+		var found bool
+		set, found, failure = s.extendSet(ctx, pg.setID, pg.offset)
+		if !found {
+			return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", pg.setID)
+		}
+		if failure != "" {
+			extra = append(extra, failure)
+		}
+		if set.Continuation != nil && set.Continuation.BudgetHit {
+			extra = append(extra, "result set full: the result budget stopped further web pages")
+		}
+	}
 	limit := set.DefaultLimit
 	if req.MaxResults > 0 {
 		limit = req.MaxResults
@@ -139,7 +232,8 @@ func (s *Server) serveResultSet(req *types.SearchRequest, pg pageArgs) (*types.S
 			limit = maxPageSize
 		}
 	}
-	out := sliceResponse(set.Meta, pg.setID, set.Results, pg.offset, limit)
+	out := sliceResponse(set.Meta, pg.setID, set.Results, pg.offset, limit, s.canExtend(set.Continuation))
+	out.Warnings = append(out.Warnings, extra...)
 	if q := strings.TrimSpace(req.Query); q != "" && q != strings.TrimSpace(set.Query) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("query ignored: result set %s was created for query %q; the search was not re-run", pg.setID, set.Query))
 	}
