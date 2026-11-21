@@ -33,6 +33,14 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   filtro `timeRange=week`, `deep_research`, `summarize_results` y `compare_sources`
   aclaran que solo sintetizan los `results` recibidos, y `maxResults` indica su
   valor predeterminado y su tope reales.
+- Las búsquedas de GitHub (repositorios, pull requests, issues) y StackOverflow
+  que responden bien pero con cero resultados se reintentan una vez con una consulta
+  más corta: se conservan los calificadores como `repo:`, se quitan las palabras
+  vacías en inglés y español, y quedan los primeros cuatro términos. La respuesta
+  conserva la `query` original y agrega la advertencia
+  `query relaxed: <consulta acortada>`. Los errores (429, 4xx, 5xx, transporte)
+  nunca se reintentan. Las respuestas vacías o parciales de GitHub y StackOverflow
+  se cachean como máximo 30 segundos.
 
 ### Seguridad
 

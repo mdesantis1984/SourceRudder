@@ -32,6 +32,13 @@ All notable SourceRudder changes are documented here.
   `timeRange=week` filter, `deep_research`, `summarize_results`, and
   `compare_sources` state that they only synthesize the `results` passed in, and
   `maxResults` states its real default and cap.
+- GitHub (repositories, pull requests, issues) and StackOverflow searches that
+  succeed with zero results retry once with a shortened query: qualifiers such as
+  `repo:` are kept, English and Spanish stopwords are dropped, and the first four
+  terms remain. The response keeps the original `query` and adds the warning
+  `query relaxed: <shortened query>`. Errors (429, 4xx, 5xx, transport) are never
+  retried. Empty or partial GitHub and StackOverflow responses are cached for at
+  most 30 seconds.
 
 ### Security
 
