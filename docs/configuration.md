@@ -32,7 +32,7 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `SOURCERUDDER_AUTH_KEY` | empty | Credential for HTTP `/mcp` and `/metrics`. An empty key fails closed: every protected request is rejected. |
 | `SOURCERUDDER_PORT` | `8080` in Compose | Loopback host port published by Compose. It does not replace `-http-addr`. |
 | `SEARXNG_URL` | `http://localhost:8888` | SearXNG backend URL. |
-| `FETCH_USER_AGENT` | `SourceRudder/3.0.0 (anonymous-only)` | Fetch User-Agent. |
+| `FETCH_USER_AGENT` | Desktop Chrome User-Agent (`fetch.DefaultUserAgent`) | Fetch User-Agent. Many sites reject self-identified bot agents; an explicit value is used unchanged. |
 | `FETCH_TIMEOUT_MS` | `30000` | Fetch timeout; `-fetch-timeout-ms` wins when positive. |
 | `FETCH_MAX_REDIRECTS` | `5` | Maximum validated redirects. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Maximum fetch attempts. |

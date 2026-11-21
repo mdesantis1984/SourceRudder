@@ -36,8 +36,11 @@ import (
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
-// Default User-Agent used by callers that do not provide a Config.
-const defaultUserAgent = "SourceRudder/3.0.0"
+// DefaultUserAgent is the desktop browser User-Agent used when the caller
+// (or FETCH_USER_AGENT) does not provide one. Many sites reject
+// self-identified bot agents, so the default mimics a current desktop
+// Chrome. An explicit value is always honored unchanged.
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
 
 const (
 	maxFetchResponseBytes = 4 << 20
@@ -88,14 +91,14 @@ func NewFetcherService(timeoutMs int) *FetcherService {
 
 // NewFetcherServiceWithConfig builds a fetcher with explicit config.
 // Zero fields resolve to conservative defaults:
-//   - UserAgent: defaultUserAgent
+//   - UserAgent: DefaultUserAgent
 //   - TimeoutMs: 30s
 //   - MaxRedirects: 5
 //   - MaxAttempts: 3
 //   - BaseBackoff: 200ms
 func NewFetcherServiceWithConfig(c Config) *FetcherService {
 	if c.UserAgent == "" {
-		c.UserAgent = defaultUserAgent
+		c.UserAgent = DefaultUserAgent
 	}
 	if c.TimeoutMs <= 0 {
 		c.TimeoutMs = 30000

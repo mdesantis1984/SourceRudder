@@ -195,7 +195,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
-		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). Hereda timeRange=week del planner cuando detecta intent \"news\".", InputSchema: searchInputSchema()},
+		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
 		{Name: "search_doc_oficial", Description: "Official documentation for the bounded SourceRudder registry. Use filters.library to select a registered library and filters.version as a requested, unverified version. Successful validated results use strategy=\"official_doc_registry_search\"; unknown, ambiguous, failed, or unvalidated searches use strategy=\"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
 		{Name: "search_local_index", Description: "Searches an operator-curated read-only corpus with deterministic lexical ranking and strategy=\"local_index_lexical\". When LOCAL_INDEX_PATH is unset, returns strategy=\"local_index_unavailable\" without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
@@ -215,9 +215,9 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "extract_structured", Description: "Extraer tablas, metadata y estructura de una URL como JSON en Content. Útil para páginas con datos tabulares. Ignora mode y timeoutMs.", InputSchema: fetchURLInputSchema()},
 		{Name: "validate_url", Description: "Verificar accesibilidad y seguridad (no SSRF) de una URL. Devuelve {url, valid, error}.", InputSchema: urlInputSchema()},
 		{Name: "check_link_status", Description: "Validar hasta 100 URLs en paralelo (200 ms entre requests). Devuelve [{url, valid, status, error}] en el mismo orden que el input.", InputSchema: urlListInputSchema()},
-		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
-		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
-		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "summarize_results", Description: "Síntesis breve de un array de SearchResultItem. No busca: solo sintetiza los `results` que recibe, que deben venir de una tool de búsqueda (search_*). Devuelve {summary, keyFindings, citations, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "deep_research", Description: "Síntesis consolidada con agrupación por temas heurísticos. No busca: solo sintetiza los `results` que recibe, que deben venir de una tool de búsqueda (search_*). Devuelve {summary, themes[], keyFindings, comparison{}, confidence}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
+		{Name: "compare_sources", Description: "Comparar SearchResultItem entre sí. No busca: solo sintetiza los `results` que recibe, que deben venir de una tool de búsqueda (search_*). Devuelve {sources[], consensus, divergences[]}. No acepta style ni goal.", InputSchema: synthesisInputSchema()},
 		{Name: "get_cached", Description: "Recupera una entrada de la caché en proceso por clave exacta. Devuelve {cache_hit:bool, entry:CacheEntry|null}. Si no hay entrada o expiró, devuelve cache_hit=false sin error.", InputSchema: cachedEntryInputSchema()},
 		{Name: "invalidate_cache", Description: "Elimina una entrada de la caché en proceso por clave exacta. Devuelve {key:string, invalidated:bool}. Idempotente: cuando la clave no existe, devuelve invalidated=false sin error.", InputSchema: cachedEntryInputSchema()},
 		{Name: "get_search_history", Description: "Lista las últimas invocaciones de búsqueda retenidas en el proceso (newest-first). Argumentos: limit (int, requerido) y query opcional como filtro substring case-sensitive sobre la Query almacenada. Devuelve {history:Entry[], limit:int, query:string}.", InputSchema: historyInputSchema()},
@@ -231,7 +231,7 @@ func searchInputSchema() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda (requerido)"},
-			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados (default 10, lo aplica el planner)"},
+			"maxResults": map[string]interface{}{"type": "integer", "description": "Máximo de resultados (default 10; 20 en search_web; tope 100)"},
 			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47, ej: 'en', 'es'. Solo se reenvía a SearxNG."},
 			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Activar safesearch en SearxNG (default false)"},
 			"timeRange": map[string]interface{}{

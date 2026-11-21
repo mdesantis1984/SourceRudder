@@ -113,8 +113,8 @@ func TestFetcherNewDefaultPreservedForLegacyCaller(t *testing.T) {
 	if f.cfg.UserAgent == "" {
 		t.Fatal("NewFetcherService must apply a non-empty default User-Agent")
 	}
-	if !strings.Contains(f.cfg.UserAgent, "SourceRudder") {
-		t.Fatalf("default User-Agent must reference SourceRudder identity, got %q", f.cfg.UserAgent)
+	if !strings.HasPrefix(f.cfg.UserAgent, "Mozilla/5.0 (") {
+		t.Fatalf("default User-Agent must be a desktop browser string, got %q", f.cfg.UserAgent)
 	}
 }
 

@@ -210,7 +210,7 @@ Los tools fetch, fetch_and_extract, extract_structured, validate_url y check_lin
 Configuración expuesta al operador:
 
 - --fetch-timeout-ms (default 30000) — timeout del ciclo completo. También leíble vía env var FETCH_TIMEOUT_MS; el flag CLI gana cuando ambos están configurados.
-- Variable de entorno FETCH_USER_AGENT (default: SourceRudder/3.0.0).
+- Variable de entorno FETCH_USER_AGENT (default: User-Agent de Chrome de escritorio; un valor explícito se respeta sin cambios).
 - FETCH_MAX_REDIRECTS (default 5).
 - FETCH_MAX_ATTEMPTS (default 3).
 - Backoff: exponencial con jitter determinístico, base 200ms.

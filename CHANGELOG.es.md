@@ -26,6 +26,13 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 ### Cambiado
 
 - El servidor ahora registra 29 herramientas MCP (antes 28).
+- El User-Agent predeterminado del fetcher ahora es el de Chrome de escritorio
+  (`fetch.DefaultUserAgent`) en lugar de `SourceRudder/3.0.0`, porque muchos sitios
+  rechazan agentes que se identifican como bot. Un `FETCH_USER_AGENT` explícito se usa sin cambios.
+- Las descripciones de las herramientas ya no confunden: `search_news` no promete un
+  filtro `timeRange=week`, `deep_research`, `summarize_results` y `compare_sources`
+  aclaran que solo sintetizan los `results` recibidos, y `maxResults` indica su
+  valor predeterminado y su tope reales.
 
 ### Seguridad
 

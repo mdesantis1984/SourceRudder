@@ -32,7 +32,7 @@ En servidores, use `SOURCERUDDER_AUTH_KEY` antes que `-auth-key` para no exponer
 | `SOURCERUDDER_AUTH_KEY` | vacío | Credencial para `/mcp` y `/metrics`. Vacía implica rechazo total de rutas protegidas. |
 | `SOURCERUDDER_PORT` | `8080` en Compose | Puerto host loopback publicado por Compose; no reemplaza `-http-addr`. |
 | `SEARXNG_URL` | `http://localhost:8888` | URL backend de SearXNG. |
-| `FETCH_USER_AGENT` | `SourceRudder/3.0.0 (anonymous-only)` | User-Agent del fetcher. |
+| `FETCH_USER_AGENT` | User-Agent de Chrome de escritorio (`fetch.DefaultUserAgent`) | User-Agent del fetcher. Muchos sitios rechazan agentes que se identifican como bot; un valor explícito se usa sin cambios. |
 | `FETCH_TIMEOUT_MS` | `30000` | Timeout de fetch; un `-fetch-timeout-ms` positivo tiene prioridad. |
 | `FETCH_MAX_REDIRECTS` | `5` | Máximo de redirecciones validadas. |
 | `FETCH_MAX_ATTEMPTS` | `3` | Máximo de intentos de fetch. |

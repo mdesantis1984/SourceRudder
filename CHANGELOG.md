@@ -25,6 +25,13 @@ All notable SourceRudder changes are documented here.
 ### Changed
 
 - The server now registers 29 MCP tools (was 28).
+- The default fetch User-Agent is now a desktop Chrome string
+  (`fetch.DefaultUserAgent`) instead of `SourceRudder/3.0.0`, because many sites
+  reject self-identified bot agents. An explicit `FETCH_USER_AGENT` is used unchanged.
+- Tool descriptions no longer mislead callers: `search_news` does not claim a
+  `timeRange=week` filter, `deep_research`, `summarize_results`, and
+  `compare_sources` state that they only synthesize the `results` passed in, and
+  `maxResults` states its real default and cap.
 
 ### Security
 
