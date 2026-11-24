@@ -63,6 +63,7 @@ func (c *YouTubeConnector) Search(ctx context.Context, req *types.SearchRequest)
 		Cached:      false,
 	}
 	recordSearxngError("youtube", results, err, resp)
+	recordTimeRangeEmpty(req, resp, err)
 
 	c.cacheResults(ctx, cacheKey, resp)
 

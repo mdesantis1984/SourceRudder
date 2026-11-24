@@ -138,6 +138,10 @@ func sliceResponse(tool string, meta types.SearchResponse, id string, full []typ
 	out.SourcesUsed = cloneStrings(meta.SourcesUsed)
 	out.Warnings = cloneStrings(meta.Warnings)
 	out.Errors = cloneStrings(meta.Errors)
+	out.Answers = cloneStrings(meta.Answers)
+	out.Suggestions = cloneStrings(meta.Suggestions)
+	out.Corrections = cloneStrings(meta.Corrections)
+	out.Infoboxes = slices.Clip(slices.Clone(meta.Infoboxes))
 	out.Results = append([]types.SearchResultItem{}, full[start:end]...)
 	out.ResultSetID = id
 	out.Total = total

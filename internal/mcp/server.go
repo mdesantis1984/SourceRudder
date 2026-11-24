@@ -216,7 +216,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_nuget", Description: "Paquetes .NET en NuGet Gallery.", InputSchema: searchInputSchema()},
 		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
-		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
+		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv, crossref, openalex, pubmed, semantic scholar, openaire).", InputSchema: searchInputSchema()},
 		{Name: "search_reddit", Description: "Discusiones en Reddit. Backend: SearXNG local (posts públicos, filtro reddit.com). strategy=\"searxng_reddit_index\"; los fallos salen como partial con warnings.", InputSchema: searchInputSchema()},
 		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
 		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by whole-word lexical hints in title and content (no semantic relevance); partial warnings stay visible.", InputSchema: searchInputSchema()},

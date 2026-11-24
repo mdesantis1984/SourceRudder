@@ -44,9 +44,21 @@ All notable SourceRudder changes are documented here.
   `scripts/quality/measure_corpus.py` (`validate`, `run`, `compare`) to compare
   bytes, estimated tokens, latency and top-result quality before and after a change;
   results are in `docs/quality/search-result-quality-measurement.md`.
+- `search_web` returns the SearXNG `answers`, `infoboxes` (`{title, content, url}`),
+  `suggestions` and `corrections` of the first page as optional response fields
+  (omitted when empty, sanitized to single lines of at most 500 characters,
+  cached with the search, declared in the shared `outputSchema` and printed as
+  labeled lines with `format=compact`).
+- SearXNG-backed searches called with `timeRange` that return no results add the
+  warning `timeRange: SearXNG skips engines without date filtering; retry without
+  timeRange for undated results`; there is no automatic retry.
 
 ### Changed
 
+- `search_academic` requests the SearXNG engines `arxiv`, `crossref`, `openalex`,
+  `pubmed`, `semantic scholar` and `openairepublications` with no category (it
+  was `categories=science` plus `arxiv,duckduckgo`), and accepts openalex.org,
+  europepmc.org, ncbi.nlm.nih.gov, openaire.eu and crossref.org result URLs.
 - The server now registers 29 MCP tools (was 28).
 - The default fetch User-Agent is now a desktop Chrome string
   (`fetch.DefaultUserAgent`) instead of `SourceRudder/3.0.0`, because many sites

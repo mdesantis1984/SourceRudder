@@ -311,3 +311,65 @@ func TestCompactIsSmallerThanIndentedJSON(t *testing.T) {
 		t.Fatalf("expected 21 lines, got %d", got)
 	}
 }
+
+func extrasResp() types.SearchResponse {
+	r := basicResp()
+	r.Answers = []string{"42 is the answer", "a | b"}
+	r.Infoboxes = []types.Infobox{
+		{Title: "Albert Einstein", Content: "Physicist", URL: "https://en.wikipedia.org/wiki/Albert_Einstein"},
+		{Title: "Only title"},
+	}
+	r.Suggestions = []string{"go generics", "go modules"}
+	r.Corrections = []string{"golang"}
+	r.Warnings = []string{"w1"}
+	return r
+}
+
+func TestSearchExtrasRenderAsLabeledLinesInEveryDetail(t *testing.T) {
+	want := []string{
+		"answer: 42 is the answer",
+		`answer: a \| b`,
+		"infobox: Albert Einstein | Physicist | https://en.wikipedia.org/wiki/Albert_Einstein",
+		"infobox: Only title",
+		"suggestions: go generics, go modules",
+		"corrections: golang",
+	}
+	for _, d := range []Detail{Titles, Snippets, Full} {
+		out := Format(extrasResp(), Page{}, d)
+		ls := lines(out)
+		at := -1
+		for i, l := range ls {
+			if l == want[0] {
+				at = i
+			}
+		}
+		if at < 0 || at+len(want) > len(ls) {
+			t.Fatalf("%s: answer line missing:\n%s", d, out)
+		}
+		for i, w := range want {
+			if ls[at+i] != w {
+				t.Fatalf("%s: line %d = %q, want %q\n%s", d, at+i, ls[at+i], w, out)
+			}
+		}
+		if ls[len(ls)-1] != "warning: w1" {
+			t.Fatalf("%s: extras must come before warnings:\n%s", d, out)
+		}
+		if at < 3 { // header + 2 results precede the extras
+			t.Fatalf("%s: extras must come after the results:\n%s", d, out)
+		}
+	}
+}
+
+func TestSearchExtrasAbsentLeaveOutputUnchanged(t *testing.T) {
+	out := Format(basicResp(), Page{}, Snippets)
+	for _, label := range []string{"answer:", "infobox:", "suggestions:", "corrections:"} {
+		if strings.Contains(out, label) {
+			t.Fatalf("%q must not appear without data:\n%s", label, out)
+		}
+	}
+	r := basicResp()
+	r.Answers, r.Suggestions = []string{" \n "}, []string{""}
+	if got := Format(r, Page{}, Snippets); got != out {
+		t.Fatalf("blank extras must render nothing:\n%s", got)
+	}
+}

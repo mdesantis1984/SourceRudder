@@ -56,11 +56,12 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 	}
 
 	var results []types.SearchResultItem
+	var extras *searxngExtras
 	var err error
 	pages := 0
 
 	if c.searxngURL != "" {
-		results, pages, err = c.searchSearxng(ctx, query, maxResults, req)
+		results, pages, extras, err = c.searchSearxng(ctx, query, maxResults, req)
 	} else {
 		results, err = c.searchGeneric(ctx, query, maxResults, req)
 	}
@@ -78,7 +79,9 @@ func (c *WebConnector) Search(ctx context.Context, req *types.SearchRequest) (*t
 		// SearxngPages tells the MCP layer where lazy paging resumes.
 		SearxngPages: pages,
 	}
+	extras.apply(resp)
 	recordWebSearchError(results, err, resp)
+	recordTimeRangeEmpty(req, resp, err)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -95,6 +98,7 @@ const defaultWebMaxResults = 20
 type searxngPage struct {
 	items   []searxngItem
 	engines [][]interface{}
+	extras  *searxngExtras
 }
 
 type searxngItem struct {
@@ -111,11 +115,12 @@ type searxngItem struct {
 const MaxSearxngPages = 5
 
 // searchSearxng returns the unique results, how many SearXNG pages were read
-// successfully, and any degradation error.
-func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, int, error) {
+// successfully, the page 1 extras (answers, infoboxes, suggestions,
+// corrections; nil when SearXNG sent none) and any degradation error.
+func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, int, *searxngExtras, error) {
 	page1, err := c.fetchSearxngPage(ctx, query, 1, req)
 	if err != nil {
-		return []types.SearchResultItem{}, 0, err
+		return []types.SearchResultItem{}, 0, nil, err
 	}
 	pages := 1
 
@@ -163,14 +168,14 @@ func (c *WebConnector) searchSearxng(ctx context.Context, query string, maxResul
 	if len(engines) > 0 {
 		unresponsive := newSearxngUnresponsiveError(engines)
 		if page2Err != nil {
-			return results, pages, &webPageTwoError{unresponsive: unresponsive, page2: page2Err}
+			return results, pages, page1.extras, &webPageTwoError{unresponsive: unresponsive, page2: page2Err}
 		}
-		return results, pages, unresponsive
+		return results, pages, page1.extras, unresponsive
 	}
 	if page2Err != nil {
-		return results, pages, &webPageTwoError{page2: page2Err}
+		return results, pages, page1.extras, &webPageTwoError{page2: page2Err}
 	}
-	return results, pages, nil
+	return results, pages, page1.extras, nil
 }
 
 // NextPage requests one more SearXNG page for an existing result set and
@@ -272,11 +277,16 @@ func (c *WebConnector) fetchSearxngPage(ctx context.Context, query string, pagen
 	var searxngResp struct {
 		Results             []searxngItem   `json:"results"`
 		UnresponsiveEngines [][]interface{} `json:"unresponsive_engines"`
+		rawSearxngExtras
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&searxngResp); err != nil {
 		return nil, fmt.Errorf("searxng decode error: %w", err)
 	}
-	return &searxngPage{items: searxngResp.Results, engines: searxngResp.UnresponsiveEngines}, nil
+	page := &searxngPage{items: searxngResp.Results, engines: searxngResp.UnresponsiveEngines}
+	if pageno == 1 {
+		page.extras = searxngResp.rawSearxngExtras.sanitize()
+	}
+	return page, nil
 }
 
 func (c *WebConnector) searchGeneric(ctx context.Context, query string, maxResults int, req *types.SearchRequest) ([]types.SearchResultItem, error) {

@@ -79,6 +79,7 @@ func (c *RedditConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		Cached:      false,
 	}
 	recordSearxngError("reddit", results, err, resp)
+	recordTimeRangeEmpty(req, resp, err)
 
 	if resp.Results == nil {
 		resp.Results = []types.SearchResultItem{}

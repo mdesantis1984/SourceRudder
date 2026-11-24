@@ -48,9 +48,23 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   bytes, tokens estimados, latencia y calidad de los primeros resultados antes y
   después de un cambio; los resultados están en
   `docs/quality/search-result-quality-measurement.md`.
+- `search_web` devuelve los `answers`, `infoboxes` (`{title, content, url}`),
+  `suggestions` y `corrections` de SearXNG de la primera página como campos
+  opcionales de la respuesta (se omiten si están vacíos, se sanean a líneas
+  simples de hasta 500 caracteres, se cachean con la búsqueda, figuran en el
+  `outputSchema` compartido y se imprimen como líneas con etiqueta con
+  `format=compact`).
+- Las búsquedas respaldadas por SearXNG llamadas con `timeRange` que no devuelven
+  resultados agregan el warning `timeRange: SearXNG skips engines without date
+  filtering; retry without timeRange for undated results`; no hay reintento
+  automático.
 
 ### Cambiado
 
+- `search_academic` pide a SearXNG los motores `arxiv`, `crossref`, `openalex`,
+  `pubmed`, `semantic scholar` y `openairepublications` sin categoría (antes
+  `categories=science` más `arxiv,duckduckgo`), y acepta URLs de resultado de
+  openalex.org, europepmc.org, ncbi.nlm.nih.gov, openaire.eu y crossref.org.
 - El servidor ahora registra 29 herramientas MCP (antes 28).
 - El User-Agent predeterminado del fetcher ahora es el de Chrome de escritorio
   (`fetch.DefaultUserAgent`) en lugar de `SourceRudder/3.0.0`, porque muchos sitios

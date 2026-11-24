@@ -40,6 +40,14 @@ type SearchResultItem struct {
 // that produced the response (e.g. "reddit", "searxng", "official_doc_web_fallback",
 // "local_index_lexical", "local_index_unavailable"); it lets the AI distinguish a genuine empty
 // result from a tool that is not actually wired.
+// Infobox is a SearXNG knowledge panel (for example a Wikipedia summary)
+// returned next to the web results.
+type Infobox struct {
+	Title   string `json:"title,omitempty"`
+	Content string `json:"content,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
 type SearchResponse struct {
 	Query       string             `json:"query"`
 	Results     []SearchResultItem `json:"results"`
@@ -52,6 +60,15 @@ type SearchResponse struct {
 	Partial     bool               `json:"partial,omitempty"`
 	Warnings    []string           `json:"warnings,omitempty"`
 	Errors      []string           `json:"errors,omitempty"`
+
+	// Answers, Infoboxes, Suggestions and Corrections are the search-level
+	// extras SearXNG returns on page 1 of a web search. They are sanitized
+	// single-line strings, omitted when SearXNG sent none, and belong to the
+	// search, not to a result slice.
+	Answers     []string  `json:"answers,omitempty"`
+	Infoboxes   []Infobox `json:"infoboxes,omitempty"`
+	Suggestions []string  `json:"suggestions,omitempty"`
+	Corrections []string  `json:"corrections,omitempty"`
 
 	// ResultSetID names the server-side copy of the full result list of this
 	// search and Total is the number of stored results. NextCursor, present

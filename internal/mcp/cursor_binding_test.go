@@ -174,7 +174,7 @@ func TestToolsListIsByteIdenticalOnEverySerializationSite(t *testing.T) {
 func TestSearchOutputSchemaDeclaresOnlyTheSlimSet(t *testing.T) {
 	schema := searchOutputSchema()
 	props := schema["properties"].(map[string]interface{})
-	want := []string{"query", "results", "resultSetId", "total", "nextCursor", "partial", "warnings", "errors"}
+	want := []string{"query", "results", "resultSetId", "total", "nextCursor", "partial", "warnings", "errors", "answers", "infoboxes", "suggestions", "corrections"}
 	if len(props) != len(want) {
 		t.Errorf("properties=%d want %d: %v", len(props), len(want), props)
 	}

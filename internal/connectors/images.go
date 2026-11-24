@@ -95,6 +95,7 @@ func (c *ImagesConnector) Search(ctx context.Context, req *types.SearchRequest) 
 		Cached:      false,
 	}
 	recordSearxngError("images", results, err, resp)
+	recordTimeRangeEmpty(req, resp, err)
 
 	c.cacheResults(ctx, cacheKey, resp)
 

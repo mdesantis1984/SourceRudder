@@ -145,6 +145,11 @@ func searchOutputSchema() map[string]interface{} {
 			"partial":     jsonType("boolean"),
 			"warnings":    stringArray(),
 			"errors":      stringArray(),
+			// Web search extras, present only when SearXNG sent them.
+			"answers":     stringArray(),
+			"infoboxes":   map[string]interface{}{"type": "array", "items": jsonType("object")},
+			"suggestions": stringArray(),
+			"corrections": stringArray(),
 		},
 	}
 }

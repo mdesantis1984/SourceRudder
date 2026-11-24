@@ -104,3 +104,28 @@ func recordDegraded(source, kind string, resp *types.SearchResponse, err error) 
 		resp.Warnings = append(resp.Warnings, err.Error())
 	}
 }
+
+// TimeRangeEmptyWarning explains an empty answer to a search that carried
+// timeRange: SearXNG drops every engine that cannot filter by date (searxng
+// issue 6957), so undated results can disappear without any engine failing.
+const TimeRangeEmptyWarning = "timeRange: SearXNG skips engines without date filtering; retry without timeRange for undated results"
+
+// recordTimeRangeEmpty appends TimeRangeEmptyWarning when the request set
+// timeRange and the search returned no results. It only adds the warning: it
+// never retries and never marks the response partial. A hard failure (request
+// error, HTTP error, decode error) is not blamed on timeRange; unresponsive
+// engines and a failed page 2 still are, because the engines that did answer
+// returned nothing.
+func recordTimeRangeEmpty(req *types.SearchRequest, resp *types.SearchResponse, err error) {
+	if req == nil || resp == nil || req.TimeRange == "" || len(resp.Results) != 0 {
+		return
+	}
+	if err != nil {
+		switch err.(type) {
+		case *searxngUnresponsiveError, *webPageTwoError:
+		default:
+			return
+		}
+	}
+	resp.Warnings = append(resp.Warnings, TimeRangeEmptyWarning)
+}
