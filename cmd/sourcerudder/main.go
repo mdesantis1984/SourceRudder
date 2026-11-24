@@ -108,6 +108,17 @@ func buildYouTubeConfig() (youtube.Config, bool) {
 	}, true
 }
 
+// buildYouTubeConnector returns the search_youtube connector. With a yt-dlp
+// service it searches YouTube directly and keeps SearXNG as the fallback;
+// with nil (YOUTUBE_TRANSCRIPTS=off) it is SearXNG-only, as before.
+func buildYouTubeConnector(searxngURL string, cacheSvc *cache.Service, svc *youtube.Service) *connectors.YouTubeConnector {
+	c := connectors.NewYouTubeConnector(searxngURL, cacheSvc)
+	if svc != nil {
+		c.SetDirectSearch(svc)
+	}
+	return c
+}
+
 // buildFetchConfig returns the FetcherService config, layering the
 // deployment-provided FETCH_* env vars under the flag values. The
 // flag values win when both are set so an operator's CLI override
@@ -217,7 +228,11 @@ func main() {
 	cm.Register(connectors.NewDockerHubConnector(cacheSvc))
 	cm.Register(connectors.NewAcademicConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewRedditConnector(connectors.RedditConfig{SearxngURL: *searxngURL}, cacheSvc))
-	cm.Register(connectors.NewYouTubeConnector(*searxngURL, cacheSvc))
+	var ytService *youtube.Service
+	if cfg, enabled := buildYouTubeConfig(); enabled {
+		ytService = youtube.NewService(cfg, nil)
+	}
+	cm.Register(buildYouTubeConnector(*searxngURL, cacheSvc, ytService))
 	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc))
 	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc))
 	if path := resolveLocalIndexPath(*localIndexPath); path != "" {
@@ -230,8 +245,8 @@ func main() {
 
 	server := mcp.NewServer(cm, planner, *transport, *httpAddr, *searxngURL, *cacheTTL, *fetchTimeoutMs, fetchSvc, synthSvc, authValidator, met, history)
 	server.SetResultSetStore(resultset.New(buildResultSetConfig(*resultSetTTL, *resultSetMaxSets, *resultSetMaxResults)))
-	if cfg, enabled := buildYouTubeConfig(); enabled {
-		server.SetYouTubeService(youtube.NewService(cfg, nil))
+	if ytService != nil {
+		server.SetYouTubeService(ytService)
 	}
 	var trans mcp.Transport
 	switch *transport {

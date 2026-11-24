@@ -218,7 +218,7 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
 		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv, crossref, openalex, pubmed, semantic scholar, openaire).", InputSchema: searchInputSchema()},
 		{Name: "search_reddit", Description: "Discusiones en Reddit. Backend: SearXNG local (posts públicos, filtro reddit.com). strategy=\"searxng_reddit_index\"; los fallos salen como partial con warnings.", InputSchema: searchInputSchema()},
-		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
+		{Name: "search_youtube", Description: "Videos de YouTube (tutoriales, demos) con canal, duración y vistas. Backend: yt-dlp ytsearch; fallback SearxNG (youtube,brave), que también atiende timeRange.", InputSchema: searchInputSchema()},
 		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by whole-word lexical hints in title and content (no semantic relevance); partial warnings stay visible.", InputSchema: searchInputSchema()},
 		{Name: "fetch_url", Description: "HTML de una URL con title y metadata básicos. Para el contenido principal usa fetch_and_extract. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},

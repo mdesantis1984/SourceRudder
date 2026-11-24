@@ -43,7 +43,7 @@ Keep secrets out of command arguments in deployed environments. `SOURCERUDDER_AU
 | `RESULT_SET_TTL` | `900` | Result-set lifetime in seconds; `-result-set-ttl` wins when set. Non-positive values fall back to the default. |
 | `RESULT_SET_MAX_SETS` | `64` | Maximum stored result sets; `-result-set-max-sets` wins when set. |
 | `RESULT_SET_MAX_RESULTS` | `2000` | Maximum stored results in total; `-result-set-max-results` wins when set. |
-| `YOUTUBE_TRANSCRIPTS` | enabled | `off` disables `fetch_youtube_transcript` and the YouTube delegation in `fetch_url` / `fetch_and_extract`. |
+| `YOUTUBE_TRANSCRIPTS` | enabled | `off` disables `fetch_youtube_transcript`, the YouTube delegation in `fetch_url` / `fetch_and_extract` and the direct yt-dlp search of `search_youtube` (SearXNG only). |
 | `YTDLP_PATH` | `yt-dlp` | yt-dlp executable. The systemd unit sets `/opt/yt-dlp/bin/yt-dlp`. |
 | `YTDLP_JS_RUNTIMES` | empty | JavaScript runtime passed to yt-dlp as `RUNTIME[:PATH]`. The systemd unit sets `node:/opt/nodejs/bin/node`. |
 | `YOUTUBE_POT_BASE_URL` | empty (plugin default `http://127.0.0.1:4416`) | bgutil PO token server URL. |
@@ -76,6 +76,8 @@ Tool metadata and errors follow MCP 2025-11-25. `tools/list` gives every tool a 
 
 When a SearXNG-backed search (`search_web`, `search_news`, `search_images`, `search_academic`, `search_youtube`, `search_reddit`) is called with `timeRange` and returns no results, the response carries the warning `timeRange: SearXNG skips engines without date filtering; retry without timeRange for undated results`. SearXNG silently drops every engine that cannot filter by date, so an empty answer can mean "no dated results", not "no results". The server does not retry on its own. The warning is not added when the call failed outright; it does not mark the response `partial`.
 
+`search_youtube` searches YouTube directly with the same yt-dlp the transcripts use (`yt-dlp --flat-playlist --dump-single-json ytsearchN:<query>`, one argv element after `--`, no shell; N is `maxResults`, at most 50; at most 30 s per search, `YTDLP_TIMEOUT` if shorter; stdout capped at 1 MiB). Results carry `engine`/`source` `yt-dlp`, `author` (channel) and a `snippet` of channel, duration, view count and description, plus `publishedAt` when yt-dlp reports a date (flat search results usually do not). Channels, playlists, live and upcoming entries and entries without id or title are skipped. SearXNG (`engines=youtube,brave`) is the fallback when yt-dlp is missing, fails, times out, is blocked by YouTube (429 or bot check; the transcript cooldown applies) or returns nothing: the response then carries the warning `yt-dlp search failed, used SearXNG fallback: <reason>` or `yt-dlp search returned no results, used SearXNG fallback`, is not `partial`, and is cached for 30 s only. `ytsearch` has no date filter, so a call with `timeRange` skips yt-dlp and goes straight to SearXNG, with the `timeRange` warning above when it returns nothing. With `YOUTUBE_TRANSCRIPTS=off` the tool is SearXNG-only, as before.
+
 `search_academic` asks SearXNG for the engines `arxiv`, `crossref`, `openalex`, `pubmed`, `semantic scholar` and `openairepublications` (no category), the six that answered on the production instance; engines that are blocked or time out there are not requested.
 
 A failed tool call is a normal result, `{"content":[{"type":"text","text":"<message>"}],"isError":true}` with no `structuredContent`, so the model can read the message and retry. This covers argument validation (unknown `format` or `detail`, `invalid_cursor: <reason>`, wrong argument types), business errors (`result_set_not_found: <id> ...`) and upstream or handler failures. JSON-RPC errors remain only for protocol failures: an unknown tool (`-32602`), malformed JSON or malformed `tools/call` params, and an unsupported protocol version.
@@ -96,7 +98,7 @@ Authorization: Bearer <key>
 
 ## Search backends and local index
 
-SearXNG serves `search_web`, `search_news`, `search_academic`, `search_reddit`, `search_youtube`, `search_images`, and the web fallback for `search_doc_oficial`. Reddit uses the local SearXNG index filtered to public `reddit.com` content; it does not require direct Reddit credentials.
+SearXNG serves `search_web`, `search_news`, `search_academic`, `search_reddit`, `search_images`, `search_youtube` (as the fallback of its direct yt-dlp search), and the web fallback for `search_doc_oficial`. Reddit uses the local SearXNG index filtered to public `reddit.com` content; it does not require direct Reddit credentials.
 
 The local index is optional. When disabled, `search_local_index` returns `strategy="local_index_unavailable"` without web fallback. When enabled, it reads a strict, read-only JSON corpus and returns `strategy="local_index_lexical"`:
 

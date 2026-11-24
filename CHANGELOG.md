@@ -55,6 +55,15 @@ All notable SourceRudder changes are documented here.
 
 ### Changed
 
+- `search_youtube` searches YouTube directly with yt-dlp
+  (`--flat-playlist --dump-single-json ytsearchN:<query>`, the way
+  music.thiscloud.com.ar does) and adds channel (`author`), duration, view count
+  and description to the `snippet`, plus `publishedAt` when yt-dlp reports one.
+  It reuses the transcript service's yt-dlp binary, timeout and block cooldown.
+  SearXNG (`youtube,brave`) stays as the fallback when yt-dlp is missing, fails,
+  times out or finds nothing, with a warning naming the reason. A call with
+  `timeRange` goes straight to SearXNG (`ytsearch` has no date filter), and
+  `YOUTUBE_TRANSCRIPTS=off` keeps the old SearXNG-only behavior.
 - `search_academic` requests the SearXNG engines `arxiv`, `crossref`, `openalex`,
   `pubmed`, `semantic scholar` and `openairepublications` with no category (it
   was `categories=science` plus `arxiv,duckduckgo`), and accepts openalex.org,

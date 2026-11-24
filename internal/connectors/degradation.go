@@ -16,6 +16,12 @@ import (
 const DegradedSearchCacheTTL = 30 * time.Second
 
 func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, resp *types.SearchResponse) {
+	cacheSearchResponse(ctx, svc, key, resp, false)
+}
+
+// cacheSearchResponse is cacheSearxngResponse with an extra reason to keep the
+// entry short-lived: degraded is true when the response came from a fallback.
+func cacheSearchResponse(ctx context.Context, svc *cache.Service, key string, resp *types.SearchResponse, degraded bool) {
 	if svc == nil {
 		return
 	}
@@ -26,7 +32,7 @@ func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, r
 	var cap time.Duration
 	// Partial responses and empty responses (even healthy ones) are cached
 	// briefly so a transient miss is not served for the full TTL.
-	if resp.Partial || len(resp.Results) == 0 {
+	if degraded || resp.Partial || len(resp.Results) == 0 {
 		cap = DegradedSearchCacheTTL
 	}
 	svc.SetWithMaxTTL(ctx, key, data, resp.SourcesUsed, cap)
