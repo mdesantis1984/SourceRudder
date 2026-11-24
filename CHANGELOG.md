@@ -8,6 +8,16 @@ All notable SourceRudder changes are documented here.
 
 ### Added
 
+- `search_tech_news` MCP tool: technology and software engineering news with no
+  API key, from HN Algolia, Google News RSS search and 19 curated RSS/Atom feeds
+  (read concurrently, 8 s per feed, 12 s overall, cached 30 minutes per feed).
+  Curated items are filtered by the query, results are ranked by match with
+  the sources taking turns inside a tier, HN is always bounded by date, `timeRange` filters by publication date, and failed sources give one
+  summarized warning. Feed content is sanitized and size-capped.
+- `search_news` adds Google News RSS results after the SearXNG ones when SearXNG
+  returns fewer than `maxResults` or answers partly (`language` maps to the Google
+  News edition, `timeRange` to `when:1d/7d/30d/1y`); an RSS failure keeps the SearXNG results
+  and adds a warning.
 - `fetch_youtube_transcript` MCP tool (`url`, optional `language`, optional
   `maxChars`) that returns a YouTube video transcript with title, channel, date,
   duration, language, manual/automatic flag, and cache status, through yt-dlp
@@ -68,7 +78,7 @@ All notable SourceRudder changes are documented here.
   `pubmed`, `semantic scholar` and `openairepublications` with no category (it
   was `categories=science` plus `arxiv,duckduckgo`), and accepts openalex.org,
   europepmc.org, ncbi.nlm.nih.gov, openaire.eu and crossref.org result URLs.
-- The server now registers 29 MCP tools (was 28).
+- The server now registers 30 MCP tools (was 28).
 - The default fetch User-Agent is now a desktop Chrome string
   (`fetch.DefaultUserAgent`) instead of `SourceRudder/3.0.0`, because many sites
   reject self-identified bot agents. An explicit `FETCH_USER_AGENT` is used unchanged.

@@ -59,6 +59,8 @@ func (s *Server) registerTools() {
 			t.Handler = s.makeSearchHandler("images")
 		case "search_news":
 			t.Handler = s.makeSearchHandler("news")
+		case "search_tech_news":
+			t.Handler = s.makeSearchHandler("technews")
 		case "fetch_url":
 			t.Handler = s.makeFetchHandler("fetch")
 		case "fetch_and_extract":

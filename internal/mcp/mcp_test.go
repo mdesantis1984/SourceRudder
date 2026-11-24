@@ -13,8 +13,8 @@ func TestStubToolsRegistered(t *testing.T) {
 		toolsRegistry: []Tool{},
 	}
 	s.buildToolsRegistry()
-	if len(s.toolsRegistry) != 29 {
-		t.Errorf("expected 29 tools (restored runtime contract), got %d", len(s.toolsRegistry))
+	if len(s.toolsRegistry) != 30 {
+		t.Errorf("expected 30 tools (restored runtime contract), got %d", len(s.toolsRegistry))
 	}
 }
 

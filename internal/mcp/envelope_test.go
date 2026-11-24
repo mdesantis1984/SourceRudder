@@ -507,8 +507,8 @@ func TestSearchToolsAdvertiseFormatDetailAndCursor(t *testing.T) {
 			}
 		}
 	}
-	if checked != 16 {
-		t.Fatalf("expected 16 search tools, got %d", checked)
+	if checked != 17 {
+		t.Fatalf("expected 17 search tools, got %d", checked)
 	}
 }
 

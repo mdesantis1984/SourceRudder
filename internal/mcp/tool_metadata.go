@@ -11,6 +11,7 @@ import "strings"
 var toolTitles = map[string]string{
 	"search_web":               "Web search",
 	"search_news":              "News search",
+	"search_tech_news":         "Tech news search",
 	"search_doc_oficial":       "Official docs search",
 	"search_local_index":       "Local index search",
 	"search_github":            "GitHub search",

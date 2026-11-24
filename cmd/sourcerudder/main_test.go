@@ -181,8 +181,8 @@ func TestToolsCount(t *testing.T) {
 	synthSvc := synthesis.NewService()
 	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	tools := server.Tools()
-	if len(tools) != 29 {
-		t.Errorf("expected 29 tools (restored runtime contract), got %d", len(tools))
+	if len(tools) != 30 {
+		t.Errorf("expected 30 tools (restored runtime contract), got %d", len(tools))
 	}
 }
 

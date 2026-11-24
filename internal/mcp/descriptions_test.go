@@ -100,7 +100,7 @@ func TestToolsListMaxResultsDescriptionStatesRealDefaultAndCap(t *testing.T) {
 
 // Regression: the tool count is unchanged by the description fixes.
 func TestToolsListCountUnchangedByDescriptionFixes(t *testing.T) {
-	if got := len(listedTools(t)); got != 29 {
-		t.Fatalf("tools/list must still expose 29 tools, got %d", got)
+	if got := len(listedTools(t)); got != 30 {
+		t.Fatalf("tools/list must still expose 30 tools, got %d", got)
 	}
 }

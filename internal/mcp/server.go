@@ -205,8 +205,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
-		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
+		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news); con pocos resultados o fallo parcial suma Google News RSS (enlaces news.google.com). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
 		{Name: "search_doc_oficial", Description: "Official docs from the SourceRudder registry; filters.library picks the library, filters.version is requested, not verified. Validated hits: strategy=\"official_doc_registry_search\"; otherwise \"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
+		{Name: "search_tech_news", Description: "Noticias de tecnología e ingeniería de software. Fuentes: Hacker News (Algolia), Google News RSS y feeds RSS/Atom curados (InfoQ, Martin Fowler, Cloudflare, The Register, Xataka…). Sin clave; timeRange filtra por fecha de publicación.", InputSchema: searchInputSchema()},
 		{Name: "search_local_index", Description: "Operator-curated read-only corpus, lexical ranking, strategy=\"local_index_lexical\". Without LOCAL_INDEX_PATH: strategy=\"local_index_unavailable\", without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},

@@ -114,7 +114,7 @@ func (f *fakeResultsConnector) SearchIssue(_ context.Context, req *types.SearchR
 }
 func (f *fakeResultsConnector) callCount() int { return int(atomic.LoadInt32(&f.calls)) }
 
-// searchToolConnectors maps each of the 17 search tools to the connector
+// searchToolConnectors maps each of the 18 search tools to the connector
 // name its handler resolves.
 var searchToolConnectors = map[string]string{
 	"search_web":           "web",
@@ -133,6 +133,7 @@ var searchToolConnectors = map[string]string{
 	"search_youtube":       "youtube",
 	"search_images":        "images",
 	"search_news":          "news",
+	"search_tech_news":     "technews",
 }
 
 func TestResultSetSchemaOnEverySearchTool(t *testing.T) {
@@ -158,11 +159,11 @@ func TestResultSetSchemaOnEverySearchTool(t *testing.T) {
 			t.Errorf("%s must keep query as the only required argument, got %v", tool.Name, required)
 		}
 	}
-	if checked != 16 {
-		t.Fatalf("expected 16 search_* tools (12 makeSearchHandler + doc_oficial + local_index + github PR/issue; the brief said 17) with the shared schema, got %d", checked)
+	if checked != 17 {
+		t.Fatalf("expected 17 search_* tools (13 makeSearchHandler + doc_oficial + local_index + github PR/issue; the brief said 17) with the shared schema, got %d", checked)
 	}
-	if got := len(s.Tools()); got != 29 {
-		t.Fatalf("tool count must stay 29, got %d", got)
+	if got := len(s.Tools()); got != 30 {
+		t.Fatalf("tool count must stay 30, got %d", got)
 	}
 }
 

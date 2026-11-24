@@ -248,6 +248,7 @@ func TestToolDescriptionsMentionBackendAndStrategy(t *testing.T) {
 	want := map[string][]string{
 		"search_web":          {"searxng", "strategy"},
 		"search_news":         {"searxng"},
+		"search_tech_news":    {"hacker news", "rss"},
 		"search_doc_oficial":  {"official_doc_registry_search", "official_doc_web_fallback", "filters.library", "filters.version"},
 		"search_local_index":  {"local_index_lexical", "local_index_unavailable"},
 		"search_reddit":       {"searxng", "searxng_reddit_index"},

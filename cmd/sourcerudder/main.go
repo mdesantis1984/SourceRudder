@@ -234,7 +234,10 @@ func main() {
 	}
 	cm.Register(buildYouTubeConnector(*searxngURL, cacheSvc, ytService))
 	cm.Register(connectors.NewImagesConnector(*searxngURL, cacheSvc))
-	cm.Register(connectors.NewNewsConnector(*searxngURL, cacheSvc))
+	newsConnector := connectors.NewNewsConnector(*searxngURL, cacheSvc)
+	newsConnector.SetGoogleNewsRSS(connectors.GoogleNewsRSSURL)
+	cm.Register(newsConnector)
+	cm.Register(connectors.NewTechNewsConnector(cacheSvc, connectors.TechNewsConfig{}))
 	if path := resolveLocalIndexPath(*localIndexPath); path != "" {
 		localIndex, err := connectors.NewLocalIndexConnector(path)
 		if err != nil {
