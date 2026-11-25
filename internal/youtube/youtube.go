@@ -32,7 +32,11 @@ const (
 
 	defaultCacheEntries = 256
 	maxCapturedOutput   = 64 << 10
-	outputBase          = "video"
+	// maxCapturedStdout leaves room for a 50-entry search document (about
+	// 60 KB); transcript calls print nothing on stdout. Longer output is
+	// cut and then fails to parse, never read unbounded.
+	maxCapturedStdout = 1 << 20
+	outputBase        = "video"
 )
 
 var (
@@ -89,7 +93,7 @@ func (ExecRunner) Run(ctx context.Context, dir, name string, args []string) ([]b
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- configured yt-dlp binary, argv only
 	cmd.Dir = dir
 	var stdout, stderr limitedBuffer
-	stdout.limit, stderr.limit = maxCapturedOutput, maxCapturedOutput
+	stdout.limit, stderr.limit = maxCapturedStdout, maxCapturedOutput
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
@@ -408,23 +412,30 @@ func (s *Service) fetchUncached(ctx context.Context, id, lang string) (*Transcri
 }
 
 func (s *Service) invoke(ctx context.Context, dir string, args []string) error {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	_, err := s.invokeOutput(ctx, dir, args, s.cfg.Timeout)
+	return err
+}
+
+// invokeOutput runs yt-dlp with the configured binary and returns its
+// stdout, mapping failures to the youtube_* errors.
+func (s *Service) invokeOutput(ctx context.Context, dir string, args []string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stdout, stderr, err := s.runner.Run(ctx, dir, s.cfg.Binary, args)
 	if err == nil {
-		return nil
+		return stdout, nil
 	}
 	output := string(stderr) + "\n" + string(stdout)
 	if detail, blocked := blockDetail(output); blocked {
-		return &BlockedError{RetryAfter: s.cfg.BlockCooldown, Detail: detail}
+		return nil, &BlockedError{RetryAfter: s.cfg.BlockCooldown, Detail: detail}
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return fmt.Errorf("%w: %s not found", ErrUnavailable, s.cfg.Binary)
+		return nil, fmt.Errorf("%w: %s not found", ErrUnavailable, s.cfg.Binary)
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("youtube_timeout: yt-dlp did not finish within %s", s.cfg.Timeout)
+		return nil, fmt.Errorf("youtube_timeout: yt-dlp did not finish within %s", timeout)
 	}
-	return fmt.Errorf("youtube_error: yt-dlp failed: %s", lastErrorLine(output, err))
+	return nil, fmt.Errorf("youtube_error: yt-dlp failed: %s", lastErrorLine(output, err))
 }
 
 func blockDetail(output string) (string, bool) {

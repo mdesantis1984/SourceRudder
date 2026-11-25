@@ -16,6 +16,12 @@ import (
 const DegradedSearchCacheTTL = 30 * time.Second
 
 func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, resp *types.SearchResponse) {
+	cacheSearchResponse(ctx, svc, key, resp, false)
+}
+
+// cacheSearchResponse is cacheSearxngResponse with an extra reason to keep the
+// entry short-lived: degraded is true when the response came from a fallback.
+func cacheSearchResponse(ctx context.Context, svc *cache.Service, key string, resp *types.SearchResponse, degraded bool) {
 	if svc == nil {
 		return
 	}
@@ -26,7 +32,7 @@ func cacheSearxngResponse(ctx context.Context, svc *cache.Service, key string, r
 	var cap time.Duration
 	// Partial responses and empty responses (even healthy ones) are cached
 	// briefly so a transient miss is not served for the full TTL.
-	if resp.Partial || len(resp.Results) == 0 {
+	if degraded || resp.Partial || len(resp.Results) == 0 {
 		cap = DegradedSearchCacheTTL
 	}
 	svc.SetWithMaxTTL(ctx, key, data, resp.SourcesUsed, cap)
@@ -103,4 +109,29 @@ func recordDegraded(source, kind string, resp *types.SearchResponse, err error) 
 	if err != nil {
 		resp.Warnings = append(resp.Warnings, err.Error())
 	}
+}
+
+// TimeRangeEmptyWarning explains an empty answer to a search that carried
+// timeRange: SearXNG drops every engine that cannot filter by date (searxng
+// issue 6957), so undated results can disappear without any engine failing.
+const TimeRangeEmptyWarning = "timeRange: SearXNG skips engines without date filtering; retry without timeRange for undated results"
+
+// recordTimeRangeEmpty appends TimeRangeEmptyWarning when the request set
+// timeRange and the search returned no results. It only adds the warning: it
+// never retries and never marks the response partial. A hard failure (request
+// error, HTTP error, decode error) is not blamed on timeRange; unresponsive
+// engines and a failed page 2 still are, because the engines that did answer
+// returned nothing.
+func recordTimeRangeEmpty(req *types.SearchRequest, resp *types.SearchResponse, err error) {
+	if req == nil || resp == nil || req.TimeRange == "" || len(resp.Results) != 0 {
+		return
+	}
+	if err != nil {
+		switch err.(type) {
+		case *searxngUnresponsiveError, *webPageTwoError:
+		default:
+			return
+		}
+	}
+	resp.Warnings = append(resp.Warnings, TimeRangeEmptyWarning)
 }

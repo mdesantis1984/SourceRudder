@@ -13,7 +13,7 @@ curl --fail --silent \
   http://127.0.0.1:8080/metrics
 ```
 
-Then initialize an MCP client, run `tools/list` (expect 29 tools), and test one SearXNG-backed search, one direct-provider search such as `search_stackoverflow`, and `search_local_index` when it is required. Review `partial`, `warnings`, `errors`, and `strategy` before treating an empty result as an incident.
+Then initialize an MCP client, run `tools/list` (expect 30 tools), and test one SearXNG-backed search, one direct-provider search such as `search_stackoverflow`, and `search_local_index` when it is required. Review `partial`, `warnings`, `errors`, and `strategy` before treating an empty result as an incident.
 
 ## HTTP surface
 

@@ -8,6 +8,21 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ### Añadido
 
+- El `outputSchema` compartido de búsqueda declara los campos opcionales
+  `publishedAt`, `engine` y `author`, para que codemode y otros clientes
+  TypeScript vean en sus tipos la fecha, el motor y el canal o autor.
+- Herramienta MCP `search_tech_news`: noticias de tecnología e ingeniería de
+  software sin clave de API, desde HN Algolia, la búsqueda RSS de Google News y 19
+  feeds RSS/Atom curados (se leen en paralelo, 8 s por feed, 12 s en total, caché
+  de 30 minutos por feed). Los ítems curados se filtran por la consulta, el orden
+  es por coincidencia con las fuentes turnándose dentro de cada nivel, HN siempre
+  se acota por fecha, `timeRange` filtra por fecha de publicación y las
+  fuentes caídas dan un único warning resumido. El contenido de los feeds se
+  sanea y tiene tope de tamaño.
+- `search_news` agrega resultados RSS de Google News después de los de SearXNG
+  cuando SearXNG devuelve menos de `maxResults` o responde en parte (`language`
+  elige la edición de Google News, `timeRange` pasa a `when:1d/7d/30d/1y`); si falla el RSS
+  se conservan los resultados de SearXNG y se agrega un warning.
 - Herramienta MCP `fetch_youtube_transcript` (`url`, `language` opcional,
   `maxChars` opcional) que devuelve la transcripción de un video de YouTube con
   título, canal, fecha, duración, idioma, indicador manual/automática y estado
@@ -48,10 +63,33 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   bytes, tokens estimados, latencia y calidad de los primeros resultados antes y
   después de un cambio; los resultados están en
   `docs/quality/search-result-quality-measurement.md`.
+- `search_web` devuelve los `answers`, `infoboxes` (`{title, content, url}`),
+  `suggestions` y `corrections` de SearXNG de la primera página como campos
+  opcionales de la respuesta (se omiten si están vacíos, se sanean a líneas
+  simples de hasta 500 caracteres, se cachean con la búsqueda, figuran en el
+  `outputSchema` compartido y se imprimen como líneas con etiqueta con
+  `format=compact`).
+- Las búsquedas respaldadas por SearXNG llamadas con `timeRange` que no devuelven
+  resultados agregan el warning `timeRange: SearXNG skips engines without date
+  filtering; retry without timeRange for undated results`; no hay reintento
+  automático.
 
 ### Cambiado
 
-- El servidor ahora registra 29 herramientas MCP (antes 28).
+- `search_youtube` busca en YouTube directamente con yt-dlp
+  (`--flat-playlist --dump-single-json ytsearchN:<consulta>`, como lo hace
+  music.thiscloud.com.ar) y suma canal (`author`), duración, vistas y descripción
+  al `snippet`, más `publishedAt` cuando yt-dlp informa una fecha. Reutiliza el
+  binario, el timeout y el cooldown de bloqueo del servicio de transcripciones.
+  SearXNG (`youtube,brave`) queda como respaldo cuando yt-dlp falta, falla, agota
+  el tiempo o no encuentra nada, con un warning que nombra el motivo. Una llamada
+  con `timeRange` va directo a SearXNG (`ytsearch` no filtra por fecha) y
+  `YOUTUBE_TRANSCRIPTS=off` mantiene el comportamiento anterior solo con SearXNG.
+- `search_academic` pide a SearXNG los motores `arxiv`, `crossref`, `openalex`,
+  `pubmed`, `semantic scholar` y `openairepublications` sin categoría (antes
+  `categories=science` más `arxiv,duckduckgo`), y acepta URLs de resultado de
+  openalex.org, europepmc.org, ncbi.nlm.nih.gov, openaire.eu y crossref.org.
+- El servidor ahora registra 30 herramientas MCP (antes 28).
 - El User-Agent predeterminado del fetcher ahora es el de Chrome de escritorio
   (`fetch.DefaultUserAgent`) en lugar de `SourceRudder/3.0.0`, porque muchos sitios
   rechazan agentes que se identifican como bot. Un `FETCH_USER_AGENT` explícito se usa sin cambios.

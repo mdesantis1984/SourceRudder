@@ -174,7 +174,7 @@ func TestToolsListIsByteIdenticalOnEverySerializationSite(t *testing.T) {
 func TestSearchOutputSchemaDeclaresOnlyTheSlimSet(t *testing.T) {
 	schema := searchOutputSchema()
 	props := schema["properties"].(map[string]interface{})
-	want := []string{"query", "results", "resultSetId", "total", "nextCursor", "partial", "warnings", "errors"}
+	want := []string{"query", "results", "resultSetId", "total", "nextCursor", "partial", "warnings", "errors", "answers", "infoboxes", "suggestions", "corrections"}
 	if len(props) != len(want) {
 		t.Errorf("properties=%d want %d: %v", len(props), len(want), props)
 	}
@@ -188,10 +188,10 @@ func TestSearchOutputSchemaDeclaresOnlyTheSlimSet(t *testing.T) {
 	}
 	item := props["results"].(map[string]interface{})["items"].(map[string]interface{})
 	itemProps := item["properties"].(map[string]interface{})
-	if len(itemProps) != 4 {
-		t.Errorf("item properties=%v want title,url,snippet,source", itemProps)
+	if len(itemProps) != 7 {
+		t.Errorf("item properties=%v want title,url,snippet,source,publishedAt,engine,author", itemProps)
 	}
-	for _, k := range []string{"title", "url", "snippet", "source"} {
+	for _, k := range []string{"title", "url", "snippet", "source", "publishedAt", "engine", "author"} {
 		if _, ok := itemProps[k]; !ok {
 			t.Errorf("item lacks %q", k)
 		}

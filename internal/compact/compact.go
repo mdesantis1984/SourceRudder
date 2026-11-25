@@ -88,6 +88,7 @@ func Format(resp types.SearchResponse, page Page, d Detail) string {
 			out = append(out, "sourcesUsed: "+strings.Join(src, ", "))
 		}
 	}
+	out = append(out, extraLines(resp)...)
 	for _, w := range resp.Warnings {
 		out = append(out, "warning: "+clean(w))
 	}
@@ -95,6 +96,46 @@ func Format(resp types.SearchResponse, page Page, d Detail) string {
 		out = append(out, "error: "+clean(e))
 	}
 	return strings.Join(out, "\n")
+}
+
+// extraLines renders the search-level extras SearXNG returned (answers,
+// infoboxes, suggestions, corrections), one labeled line each, in every
+// detail level. Blank entries and empty groups render nothing.
+func extraLines(resp types.SearchResponse) []string {
+	var out []string
+	for _, a := range resp.Answers {
+		if a = clean(a); a != "" {
+			out = append(out, "answer: "+a)
+		}
+	}
+	for _, b := range resp.Infoboxes {
+		var parts []string
+		for _, p := range []string{b.Title, b.Content, b.URL} {
+			if p = clean(p); p != "" {
+				parts = append(parts, p)
+			}
+		}
+		if len(parts) > 0 {
+			out = append(out, "infobox: "+strings.Join(parts, " | "))
+		}
+	}
+	if s := joinClean(resp.Suggestions); s != "" {
+		out = append(out, "suggestions: "+s)
+	}
+	if s := joinClean(resp.Corrections); s != "" {
+		out = append(out, "corrections: "+s)
+	}
+	return out
+}
+
+func joinClean(in []string) string {
+	parts := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = clean(s); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func header(resp types.SearchResponse, page Page) string {

@@ -205,8 +205,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) buildToolsRegistry() {
 	s.toolsRegistry = []Tool{
 		{Name: "search_web", Description: "Búsqueda web amplia. Backend: SearxNG. Devuelve strategy=\"searxng\".", InputSchema: searchInputSchema()},
-		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
+		{Name: "search_news", Description: "Noticias y actualidad. Backend: SearxNG (categoría news); con pocos resultados o fallo parcial suma Google News RSS (enlaces news.google.com). No aplica ningún filtro temporal por defecto: usa timeRange para acotar.", InputSchema: searchInputSchema()},
 		{Name: "search_doc_oficial", Description: "Official docs from the SourceRudder registry; filters.library picks the library, filters.version is requested, not verified. Validated hits: strategy=\"official_doc_registry_search\"; otherwise \"official_doc_web_fallback\".", InputSchema: officialDocsInputSchema()},
+		{Name: "search_tech_news", Description: "Noticias de tecnología e ingeniería de software. Fuentes: Hacker News (Algolia), Google News RSS y feeds RSS/Atom curados (InfoQ, Martin Fowler, Cloudflare, The Register, Xataka…). Sin clave; timeRange filtra por fecha de publicación.", InputSchema: searchInputSchema()},
 		{Name: "search_local_index", Description: "Operator-curated read-only corpus, lexical ranking, strategy=\"local_index_lexical\". Without LOCAL_INDEX_PATH: strategy=\"local_index_unavailable\", without web fallback.", InputSchema: searchInputSchema()},
 		{Name: "search_github", Description: "Búsqueda en GitHub: repositorios, archivos y commits. Backend: GitHub API.", InputSchema: searchInputSchema()},
 		{Name: "search_github_pr", Description: "Pull requests en GitHub. Acepta filters.state=open|closed. Backend: GitHub API.", InputSchema: githubFiltersInputSchema()},
@@ -216,9 +217,9 @@ func (s *Server) buildToolsRegistry() {
 		{Name: "search_nuget", Description: "Paquetes .NET en NuGet Gallery.", InputSchema: searchInputSchema()},
 		{Name: "search_pypi", Description: "Paquetes Python en PyPI.", InputSchema: searchInputSchema()},
 		{Name: "search_docker_hub", Description: "Imágenes Docker en Docker Hub.", InputSchema: searchInputSchema()},
-		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv).", InputSchema: searchInputSchema()},
+		{Name: "search_academic", Description: "Papers, preprints y referencias académicas. Backend: SearxNG (arxiv, crossref, openalex, pubmed, semantic scholar, openaire).", InputSchema: searchInputSchema()},
 		{Name: "search_reddit", Description: "Discusiones en Reddit. Backend: SearXNG local (posts públicos, filtro reddit.com). strategy=\"searxng_reddit_index\"; los fallos salen como partial con warnings.", InputSchema: searchInputSchema()},
-		{Name: "search_youtube", Description: "Tutoriales y demos en YouTube. Backend: SearxNG (youtube,brave).", InputSchema: searchInputSchema()},
+		{Name: "search_youtube", Description: "Videos de YouTube (tutoriales, demos) con canal, duración y vistas. Backend: yt-dlp ytsearch; fallback SearxNG (youtube,brave), que también atiende timeRange.", InputSchema: searchInputSchema()},
 		{Name: "search_images", Description: "Image search through SearXNG. Candidates are validated and ranked by whole-word lexical hints in title and content (no semantic relevance); partial warnings stay visible.", InputSchema: searchInputSchema()},
 		{Name: "fetch_url", Description: "HTML de una URL con title y metadata básicos. Para el contenido principal usa fetch_and_extract. SSRF bloquea localhost/privados.", InputSchema: fetchURLInputSchema()},
 		{Name: "fetch_and_extract", Description: "Extraer el contenido principal de una URL según el modo (auto/article/documentation/raw). Ignora timeoutMs.", InputSchema: fetchAndExtractInputSchema()},

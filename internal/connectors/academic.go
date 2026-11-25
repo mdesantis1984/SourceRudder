@@ -29,6 +29,9 @@ func NewAcademicConnector(searxngURL string, cacheSvc *cache.Service) *AcademicC
 	}
 }
 
+// academicEngines is the SearXNG engine list search_academic requests.
+const academicEngines = "arxiv,crossref,openalex,pubmed,semantic scholar,openairepublications"
+
 func (c *AcademicConnector) Name() string { return "academic" }
 
 func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
@@ -63,6 +66,7 @@ func (c *AcademicConnector) Search(ctx context.Context, req *types.SearchRequest
 		Cached:      false,
 	}
 	recordSearxngError("academic", results, err, resp)
+	recordTimeRangeEmpty(req, resp, err)
 
 	c.cacheResults(ctx, cacheKey, resp)
 
@@ -74,8 +78,9 @@ func (c *AcademicConnector) searchSearxng(ctx context.Context, query string, max
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
-	params.Set("categories", "science")
-	params.Set("engines", "arxiv,duckduckgo")
+	// Only engines that answered live on the production instance; no
+	// categories, so SearXNG does not union in the blocked science engines.
+	params.Set("engines", academicEngines)
 	if req.Language != "" {
 		params.Set("language", req.Language)
 	} else {
@@ -170,6 +175,11 @@ func isAcademicURL(urlStr string) bool {
 		"wiley.com",
 		"arxiv.org/abs",
 		"doi.org",
+		"openalex.org",
+		"europepmc.org",
+		"ncbi.nlm.nih.gov",
+		"openaire.eu",
+		"crossref.org",
 	}
 	urlLower := strings.ToLower(urlStr)
 	for _, host := range academicHosts {

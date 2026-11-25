@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/mdesantis1984/SourceRudder/internal/search"
 	"github.com/mdesantis1984/SourceRudder/internal/synthesis"
 	"github.com/mdesantis1984/SourceRudder/internal/youtube"
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
 // TestFetchTimeoutMsPropagatesIntoFetcherService is the Phase 6.4
@@ -178,8 +181,8 @@ func TestToolsCount(t *testing.T) {
 	synthSvc := synthesis.NewService()
 	server := mcp.NewServer(cm, planner, "stdio", ":8080", "http://localhost:8888", 300, 5000, fetchSvc, synthSvc, nil, observability.New(), cache.NewHistoryService(10))
 	tools := server.Tools()
-	if len(tools) != 29 {
-		t.Errorf("expected 29 tools (restored runtime contract), got %d", len(tools))
+	if len(tools) != 30 {
+		t.Errorf("expected 30 tools (restored runtime contract), got %d", len(tools))
 	}
 }
 
@@ -307,5 +310,32 @@ func TestResultSetFlagsAreRegisteredWithDocumentedDefaults(t *testing.T) {
 		if f.DefValue != want {
 			t.Errorf("flag -%s default = %q, want %q", name, f.DefValue, want)
 		}
+	}
+}
+
+type searchOnlyRunner struct{ calls int }
+
+func (r *searchOnlyRunner) Run(_ context.Context, _, _ string, _ []string) ([]byte, []byte, error) {
+	r.calls++
+	return []byte(`{"entries":[{"_type":"url","ie_key":"Youtube","id":"abcdefghijk","title":"from yt-dlp"}]}`), nil, nil
+}
+
+func TestBuildYouTubeConnectorUsesYtDlpOnlyWhenServiceExists(t *testing.T) {
+	searxng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"results":[{"title":"from searxng","url":"https://www.youtube.com/watch?v=sxsxsxsxsx1","engine":"youtube"}],"unresponsive_engines":[]}`))
+	}))
+	defer searxng.Close()
+
+	runner := &searchOnlyRunner{}
+	with := buildYouTubeConnector(searxng.URL, cache.NewService(60), youtube.NewService(youtube.Config{}, runner))
+	resp, err := with.Search(context.Background(), &types.SearchRequest{Query: "wiring-with"})
+	if err != nil || len(resp.Results) != 1 || resp.Results[0].Engine != "yt-dlp" || runner.calls != 1 {
+		t.Fatalf("with service: resp=%+v err=%v runs=%d", resp, err, runner.calls)
+	}
+
+	without := buildYouTubeConnector(searxng.URL, cache.NewService(60), nil)
+	resp, err = without.Search(context.Background(), &types.SearchRequest{Query: "wiring-without"})
+	if err != nil || len(resp.Results) != 1 || resp.Results[0].Title != "from searxng" || len(resp.Warnings) != 0 || runner.calls != 1 {
+		t.Fatalf("without service: resp=%+v err=%v runs=%d", resp, err, runner.calls)
 	}
 }

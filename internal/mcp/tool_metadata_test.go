@@ -162,12 +162,18 @@ func TestToolsListSizeStaysUnderTheTokenBudget(t *testing.T) {
 	}
 	// 37,604 bytes before title/annotations/outputSchema; 61,530 with the full
 	// search outputSchema (ac1671c); 54,458 with the slim one (T15-T16); 43,062
-	// after trimming the repeated descriptions (T18). Guards are +~3%.
+	// after trimming the repeated descriptions (T18); 43,118 before the web
+	// search extras (answers, infoboxes, suggestions, corrections) joined the
+	// shared outputSchema, 46,670 with them (searxng-capabilities T8), 49,086
+	// with the 30th tool search_tech_news, whose input and output schemas repeat
+	// like every search tool's (searxng-capabilities T14), 50,905 once the
+	// result item declares publishedAt, engine and author for codemode
+	// (searxng-capabilities T16). Guards are +~3%.
 	t.Logf("tools/list bytes: %d", len(wire))
-	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 550 {
-		t.Fatalf("the shared search outputSchema is %d bytes (16 tools repeat it); keep it lean", len(schema))
+	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 890 {
+		t.Fatalf("the shared search outputSchema is %d bytes (17 tools repeat it); keep it lean", len(schema))
 	}
-	if len(wire) > 44400 {
+	if len(wire) > 52400 {
 		t.Fatalf("tools/list is %d bytes; keep titles and schema descriptions short", len(wire))
 	}
 }
@@ -211,8 +217,8 @@ func TestToolsListFormatAdviceAppearsOnlyOnFormat(t *testing.T) {
 			}
 		}
 	}
-	if checked != 16 {
-		t.Fatalf("expected 16 search tools with format, got %d", checked)
+	if checked != 17 {
+		t.Fatalf("expected 17 search tools with format, got %d", checked)
 	}
 }
 

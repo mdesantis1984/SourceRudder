@@ -16,18 +16,18 @@ import (
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
-// TestToolsListExactly29 locks in the architecture contract: tools/list
-// returns exactly 29 tools including the three stateful tools
+// TestToolsListExactly30 locks in the architecture contract: tools/list
+// returns exactly 30 tools including the three stateful tools
 // (get_cached, invalidate_cache, get_search_history). The positive
 // assertions live in tools_count_test.go; this test stays here so
 // the per-architecture lock remains next to the buildTestServer
 // helper that exercises it.
-func TestToolsListExactly29(t *testing.T) {
+func TestToolsListExactly30(t *testing.T) {
 	s := buildTestServer(t)
 
 	tools := s.Tools()
-	if len(tools) != 29 {
-		t.Errorf("expected 29 tools, got %d", len(tools))
+	if len(tools) != 30 {
+		t.Errorf("expected 30 tools, got %d", len(tools))
 	}
 
 	names := make(map[string]bool, len(tools))
@@ -43,9 +43,9 @@ func TestToolsListExactly29(t *testing.T) {
 	}
 }
 
-// TestHandleToolsListExactly29 covers the same contract through the
+// TestHandleToolsListExactly30 covers the same contract through the
 // higher-level HandleToolsList path that real MCP clients hit.
-func TestHandleToolsListExactly29(t *testing.T) {
+func TestHandleToolsListExactly30(t *testing.T) {
 	s := buildTestServer(t)
 
 	res, err := s.HandleToolsList(context.Background(), nil)
@@ -57,8 +57,8 @@ func TestHandleToolsListExactly29(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected []map[string]interface{}, got %T", m["tools"])
 	}
-	if len(toolsList) != 29 {
-		t.Errorf("expected 29 tools, got %d", len(toolsList))
+	if len(toolsList) != 30 {
+		t.Errorf("expected 30 tools, got %d", len(toolsList))
 	}
 
 	names := make(map[string]bool, len(toolsList))
