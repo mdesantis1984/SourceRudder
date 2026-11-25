@@ -188,10 +188,10 @@ func TestSearchOutputSchemaDeclaresOnlyTheSlimSet(t *testing.T) {
 	}
 	item := props["results"].(map[string]interface{})["items"].(map[string]interface{})
 	itemProps := item["properties"].(map[string]interface{})
-	if len(itemProps) != 4 {
-		t.Errorf("item properties=%v want title,url,snippet,source", itemProps)
+	if len(itemProps) != 7 {
+		t.Errorf("item properties=%v want title,url,snippet,source,publishedAt,engine,author", itemProps)
 	}
-	for _, k := range []string{"title", "url", "snippet", "source"} {
+	for _, k := range []string{"title", "url", "snippet", "source", "publishedAt", "engine", "author"} {
 		if _, ok := itemProps[k]; !ok {
 			t.Errorf("item lacks %q", k)
 		}

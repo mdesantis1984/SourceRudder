@@ -8,6 +8,9 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ### Añadido
 
+- El `outputSchema` compartido de búsqueda declara los campos opcionales
+  `publishedAt`, `engine` y `author`, para que codemode y otros clientes
+  TypeScript vean en sus tipos la fecha, el motor y el canal o autor.
 - Herramienta MCP `search_tech_news`: noticias de tecnología e ingeniería de
   software sin clave de API, desde HN Algolia, la búsqueda RSS de Google News y 19
   feeds RSS/Atom curados (se leen en paralelo, 8 s por feed, 12 s en total, caché

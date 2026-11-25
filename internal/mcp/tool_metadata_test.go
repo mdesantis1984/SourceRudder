@@ -166,12 +166,14 @@ func TestToolsListSizeStaysUnderTheTokenBudget(t *testing.T) {
 	// search extras (answers, infoboxes, suggestions, corrections) joined the
 	// shared outputSchema, 46,670 with them (searxng-capabilities T8), 49,086
 	// with the 30th tool search_tech_news, whose input and output schemas repeat
-	// like every search tool's (searxng-capabilities T14). Guards are +~3%.
+	// like every search tool's (searxng-capabilities T14), 50,905 once the
+	// result item declares publishedAt, engine and author for codemode
+	// (searxng-capabilities T16). Guards are +~3%.
 	t.Logf("tools/list bytes: %d", len(wire))
-	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 780 {
+	if schema, _ := json.Marshal(searchOutputSchema()); len(schema) > 890 {
 		t.Fatalf("the shared search outputSchema is %d bytes (17 tools repeat it); keep it lean", len(schema))
 	}
-	if len(wire) > 50500 {
+	if len(wire) > 52400 {
 		t.Fatalf("tools/list is %d bytes; keep titles and schema descriptions short", len(wire))
 	}
 }

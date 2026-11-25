@@ -132,6 +132,12 @@ func searchOutputSchema() map[string]interface{} {
 			"url":     jsonType("string"),
 			"snippet": jsonType("string"),
 			"source":  jsonType("string"),
+			// Optional, but declared so codemode and other TypeScript clients
+			// type them: news callers need the date, video callers the
+			// channel, and every caller the engine behind each item.
+			"publishedAt": map[string]interface{}{"type": "string", "format": "date-time"},
+			"engine":      jsonType("string"),
+			"author":      jsonType("string"),
 		},
 	}
 	return map[string]interface{}{
