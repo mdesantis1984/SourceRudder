@@ -179,9 +179,10 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   según la cantidad de hosts distintos de los resultados (1 host 0,3; 2 hosts 0,5;
   3-4 hosts 0,75; 5 o más 0,9), de modo que una lista larga de una sola fuente ya
   no figura con 0,9.
-- Las peticiones a HN Algolia y Google News RSS se reintentan una vez tras 500 ms
-  ante un error de red, HTTP 429 o 5xx; el resto de los 4xx y los feeds curados
-  no se reintentan.
+- Las peticiones a HN Algolia, Google News RSS, npm, PyPI, NuGet y Docker Hub se
+  reintentan una vez tras 500 ms ante un error de red, HTTP 429 o 5xx; el resto
+  de los 4xx, los feeds curados, GitHub y StackOverflow (APIs con límite de
+  consultas) no se reintentan.
 - Las búsquedas web, noticias, YouTube, imágenes, académicas y Reddit mediante
   SearXNG limitan la caché de respuestas degradadas a 30 segundos (o al TTL
   configurado si es menor); las respuestas sanas conservan el TTL configurado.

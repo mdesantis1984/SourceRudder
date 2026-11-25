@@ -99,7 +99,7 @@ func (c *PyPIConnector) tryExactMatch(ctx context.Context, pkgName string) (*typ
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, c.httpClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (c *PyPIConnector) searchByPrefix(ctx context.Context, query string, maxRes
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("User-Agent", "SourceRudder/3.0.0")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, c.httpClient, req)
 	if err != nil {
 		return nil, err
 	}

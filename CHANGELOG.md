@@ -161,8 +161,9 @@ All notable SourceRudder changes are documented here.
 - `deep_research` and `summarize_results` cap `confidence` by
   the number of distinct result hosts (1 host 0.3, 2 hosts 0.5, 3-4 hosts 0.75,
   5 or more 0.9), so a long list from one source no longer reads as 0.9.
-- HN Algolia and Google News RSS requests retry once after 500 ms on a network
-  error, HTTP 429 or 5xx; other 4xx answers and curated feeds are not retried.
+- HN Algolia, Google News RSS, npm, PyPI, NuGet and Docker Hub requests retry
+  once after 500 ms on a network error, HTTP 429 or 5xx; other 4xx answers,
+  curated feeds, GitHub and StackOverflow (rate-limited APIs) are not retried.
 - SearXNG-backed web, news, YouTube, images, academic, and Reddit searches now
   cap degraded-response caching at 30 seconds (or the configured TTL if shorter),
   while healthy responses retain the configured TTL. Versioned cache keys include
