@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdesantis1984/SourceRudder/internal/resultfilter"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
 
@@ -40,7 +41,7 @@ func (s *Service) Summarize(ctx context.Context, query string, results []types.S
 		}
 	}
 
-	confidence := calculateConfidence(len(results), results)
+	confidence := calculateConfidence(len(results), resultfilter.DistinctHosts(results), results)
 
 	useCount := min(3, len(results))
 	summaryParts := make([]string, 0, useCount)
@@ -75,7 +76,7 @@ func (s *Service) DeepResearch(ctx context.Context, query string, results []type
 	themes := groupByTheme(results)
 	keyFindings := extractKeyFindings(query, results)
 	comparison := buildComparisonMap(results)
-	confidence := calculateConfidence(len(results), results)
+	confidence := calculateConfidence(len(results), resultfilter.DistinctHosts(results), results)
 
 	summary := buildDeepSummary(query, themes)
 
@@ -225,17 +226,39 @@ func convertResults(items []*types.SearchResultItem) []types.SearchResultItem {
 	return result
 }
 
-func calculateConfidence(count int, results []types.SearchResultItem) float64 {
+// calculateConfidence is the lower of two scores: one from the number of
+// results and one from the number of distinct result hosts, so a long list
+// from a single source (or a tainted list) never reads as well corroborated.
+func calculateConfidence(count, hosts int, results []types.SearchResultItem) float64 {
 	if count == 0 {
 		return 0.0
 	}
-	if count > 5 {
+	byCount, byHosts := countConfidence(count), hostConfidence(hosts)
+	if byHosts < byCount {
+		return byHosts
+	}
+	return byCount
+}
+
+func countConfidence(count int) float64 {
+	switch {
+	case count > 5:
 		return 0.9
-	}
-	if count > 3 {
+	case count > 3:
 		return 0.75
+	case count > 1:
+		return 0.5
 	}
-	if count > 1 {
+	return 0.3
+}
+
+func hostConfidence(hosts int) float64 {
+	switch {
+	case hosts >= 5:
+		return 0.9
+	case hosts >= 3:
+		return 0.75
+	case hosts == 2:
 		return 0.5
 	}
 	return 0.3
