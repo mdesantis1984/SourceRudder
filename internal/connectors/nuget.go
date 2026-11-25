@@ -126,7 +126,7 @@ func (c *NuGetConnector) doNuGetRequest(ctx context.Context, apiURL string) ([]t
 
 		results = append(results, types.SearchResultItem{
 			Title:      title,
-			URL:        item.ProjectURL,
+			URL:        nugetPackageURL(item.ProjectURL, item.ID),
 			Snippet:    snippet,
 			Source:     "nuget",
 			Type:       "package",
@@ -149,4 +149,13 @@ func (c *NuGetConnector) cacheResults(ctx context.Context, cacheKey string, resp
 		return
 	}
 	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+}
+
+// nugetPackageURL links a package to its project page, or to its gallery page
+// when the package declares none.
+func nugetPackageURL(projectURL, id string) string {
+	if strings.TrimSpace(projectURL) != "" {
+		return projectURL
+	}
+	return "https://www.nuget.org/packages/" + url.PathEscape(id)
 }
