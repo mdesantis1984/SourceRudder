@@ -470,7 +470,7 @@ func (c *TechNewsConnector) searchHN(ctx context.Context, query, timeRange strin
 	}
 	httpReq.Header.Set("User-Agent", feedUserAgent)
 	httpReq.Header.Set("Accept", "application/json")
-	resp, err := c.client.Do(httpReq)
+	resp, err := doWithRetry(ctx, c.client, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -539,7 +539,7 @@ func truncateRunes(s string, max int) string {
 func (c *TechNewsConnector) searchGoogleNews(ctx context.Context, query string, req *types.SearchRequest) ([]techCandidate, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.feedTimeout)
 	defer cancel()
-	items, err := fetchFeed(ctx, c.client, googleNewsSearchURL(c.gnURL, query, req.Language, req.TimeRange))
+	items, err := fetchFeedRetry(ctx, c.client, googleNewsSearchURL(c.gnURL, query, req.Language, req.TimeRange))
 	if err != nil {
 		return nil, err
 	}

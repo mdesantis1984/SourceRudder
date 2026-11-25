@@ -183,7 +183,7 @@ func (c *NewsConnector) supplementWithRSS(ctx context.Context, query string, max
 	if c.rssURL == "" || (len(resp.Results) >= maxResults && !resp.Partial) {
 		return false
 	}
-	items, err := fetchFeed(ctx, c.rssClient, googleNewsSearchURL(c.rssURL, query, req.Language, req.TimeRange))
+	items, err := fetchFeedRetry(ctx, c.rssClient, googleNewsSearchURL(c.rssURL, query, req.Language, req.TimeRange))
 	if err != nil {
 		log.Printf("[news] %s supplement error: %v", googleNewsEngine, err)
 		resp.Warnings = append(resp.Warnings, googleNewsEngine+" supplement failed: "+err.Error())
