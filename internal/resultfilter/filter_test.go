@@ -48,9 +48,9 @@ func TestIsAdultHost(t *testing.T) {
 		"essex.ac.uk", "sussex.ac.uk", "www.essex.ac.uk", "en.wikipedia.org", "go.dev",
 		"sexton.example.com", "middlesex.edu", "example.com", "notxnxx.com", "xnxx.com.example.org",
 		"", "localhost", "unisex-clothes.example.com",
-		// "sex" alone and "porn" inside a longer label are no longer adult
-		// markers: they removed sex-education and town sites (ville-pornic.fr).
-		"sex.example.com", "megaporn.example.com",
+		// "sex" alone is no longer an adult marker: it removed sex-education
+		// sites.
+		"sex.example.com",
 	}
 	for _, h := range clean {
 		if IsAdultHost(h) {
@@ -130,6 +130,23 @@ func TestAdultHostBrandsTLDsAndKnownFalsePositives(t *testing.T) {
 	}
 	for _, h := range []string{"ville-pornic.fr", "pornichet.fr", "pornography-studies.org", "sex-education.org",
 		"sex-ed.example.org", "essex.ac.uk", "sussex.ac.uk", "middlesex.edu", "unisex.com", "go.dev"} {
+		if IsAdultHost(h) {
+			t.Errorf("%s must not be adult", h)
+		}
+	}
+}
+
+// Hosts seen live for "xnxx forum" with safe search on (2026-11-25): brands
+// joined with '-' and labels containing "porn" are adult, while the Pornic
+// town hosts and pornography studies stay.
+func TestAdultHostLiveLeaksAndPornicExceptions(t *testing.T) {
+	for _, h := range []string{"m-xnxx.com", "xnxx-com.us", "forum.pornchat.com", "www.youpornlist.com",
+		"theporndude.com", "porngeek.com", "megaporn.example.com"} {
+		if !IsAdultHost(h) {
+			t.Errorf("%s must be adult", h)
+		}
+	}
+	for _, h := range []string{"ville-pornic.fr", "pornichet.fr", "www.pornic.com", "pornography-studies.org"} {
 		if IsAdultHost(h) {
 			t.Errorf("%s must not be adult", h)
 		}

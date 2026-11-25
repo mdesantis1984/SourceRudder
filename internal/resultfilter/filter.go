@@ -64,7 +64,8 @@ func HasValidHost(raw string) bool {
 
 // IsAdultHost reports whether host belongs to an adult site: a listed domain
 // (or one of its subdomains), an adult TLD, a brand label (with an optional
-// mirror number) under any TLD, or a whole-token match on a label.
+// mirror number, also joined with '-') under any TLD, a label containing
+// "porn" (except pornExceptions), or a whole-token match on a label.
 func IsAdultHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	if host == "" {
@@ -83,6 +84,9 @@ func IsAdultHost(host string) bool {
 		return true
 	}
 	for _, label := range labels {
+		if hasPornLabel(label) {
+			return true
+		}
 		for _, tok := range strings.Split(label, "-") {
 			if _, ok := adultTokens[tok]; ok {
 				return true
@@ -186,6 +190,28 @@ func isAdultBrand(labels []string) bool {
 	if _, ok := secondLevelLabels[brand]; ok && n >= 3 {
 		brand = labels[n-3]
 	}
-	_, ok := adultBrands[strings.TrimRight(brand, "0123456789")]
-	return ok
+	for _, tok := range strings.Split(brand, "-") {
+		if _, ok := adultBrands[strings.TrimRight(tok, "0123456789")]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// pornExceptions are legitimate label fragments that contain "porn": the
+// French towns Pornic and Pornichet and pornography research.
+var pornExceptions = []string{"pornic", "pornograph"}
+
+// hasPornLabel reports whether label contains "porn" outside the known
+// legitimate fragments (theporndude, youpornlist, porngeek).
+func hasPornLabel(label string) bool {
+	if !strings.Contains(label, "porn") {
+		return false
+	}
+	for _, ex := range pornExceptions {
+		if strings.Contains(label, ex) {
+			return false
+		}
+	}
+	return true
 }
