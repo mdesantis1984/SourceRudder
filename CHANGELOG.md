@@ -154,7 +154,7 @@ All notable SourceRudder changes are documented here.
   `invalid_arguments: provide query or cursor`.
 - A cursor page keeps the page size of the first page unless the call sends its
   own `maxResults` (it returned the tool default before).
-- `deep_research`, `summarize_results` and `compare_sources` cap `confidence` by
+- `deep_research` and `summarize_results` cap `confidence` by
   the number of distinct result hosts (1 host 0.3, 2 hosts 0.5, 3-4 hosts 0.75,
   5 or more 0.9), so a long list from one source no longer reads as 0.9.
 - HN Algolia and Google News RSS requests retry once after 500 ms on a network

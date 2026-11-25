@@ -27,9 +27,25 @@ var adultDomains = []string{
 }
 
 // adultTokens are host labels (split on '.' and '-') that mark a host as
-// adult when they appear as a whole token.
+// adult when they appear as a whole token. "sex" is not one of them: it
+// would drop sex-education and health sites.
 var adultTokens = map[string]struct{}{
-	"porn": {}, "porno": {}, "xxx": {}, "nsfw": {}, "hentai": {}, "sex": {},
+	"porn": {}, "porno": {}, "xxx": {}, "nsfw": {}, "hentai": {},
+}
+
+// adultBrands are labels of well-known adult sites, optionally followed by a
+// mirror number (xvideos2, xhamster3). They match under any TLD, so country
+// and mirror domains such as xvideos.es or redtube.com.br are caught.
+var adultBrands = map[string]struct{}{
+	"xnxx": {}, "xvideos": {}, "pornhub": {}, "xhamster": {}, "redtube": {},
+	"youporn": {}, "spankbang": {}, "eporner": {}, "chaturbate": {},
+	"onlyfans": {}, "brazzers": {}, "stripchat": {}, "bongacams": {},
+	"livejasmin": {}, "tnaflix": {}, "txxx": {}, "xtube": {},
+}
+
+// adultTLDs are top-level domains reserved for adult content.
+var adultTLDs = map[string]struct{}{
+	"xxx": {}, "adult": {}, "porn": {}, "sex": {}, "sexy": {},
 }
 
 // HasValidHost reports whether raw is an http(s) URL with a non-empty host.
@@ -47,8 +63,8 @@ func HasValidHost(raw string) bool {
 }
 
 // IsAdultHost reports whether host belongs to an adult site: a listed domain
-// (or one of its subdomains), a whole-token match on a label, or any label
-// containing "porn".
+// (or one of its subdomains), an adult TLD, a brand label (with an optional
+// mirror number) under any TLD, or a whole-token match on a label.
 func IsAdultHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	if host == "" {
@@ -59,10 +75,14 @@ func IsAdultHost(host string) bool {
 			return true
 		}
 	}
-	for _, label := range strings.Split(host, ".") {
-		if strings.Contains(label, "porn") {
-			return true
-		}
+	labels := strings.Split(host, ".")
+	if _, ok := adultTLDs[labels[len(labels)-1]]; ok && len(labels) > 1 {
+		return true
+	}
+	if isAdultBrand(labels) {
+		return true
+	}
+	for _, label := range labels {
 		for _, tok := range strings.Split(label, "-") {
 			if _, ok := adultTokens[tok]; ok {
 				return true
@@ -145,4 +165,27 @@ func DistinctHosts(items []types.SearchResultItem) int {
 		}
 	}
 	return len(seen)
+}
+
+// secondLevelLabels are generic second-level labels of country domains
+// (redtube.com.br): the brand is the label before them.
+var secondLevelLabels = map[string]struct{}{
+	"com": {}, "co": {}, "org": {}, "net": {}, "ac": {}, "edu": {}, "gov": {},
+}
+
+// isAdultBrand reports whether the registrable label of the host (the one
+// before the TLD, or before a generic second-level label) is an adult brand,
+// optionally followed by a mirror number. Brands deeper in the host
+// (xnxx.com.example.org) belong to another site and do not match.
+func isAdultBrand(labels []string) bool {
+	n := len(labels)
+	if n < 2 {
+		return false
+	}
+	brand := labels[n-2]
+	if _, ok := secondLevelLabels[brand]; ok && n >= 3 {
+		brand = labels[n-3]
+	}
+	_, ok := adultBrands[strings.TrimRight(brand, "0123456789")]
+	return ok
 }

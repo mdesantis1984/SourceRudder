@@ -172,7 +172,7 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 - Una página por cursor conserva el tamaño de la primera página salvo que la
   llamada envíe su propio `maxResults` (antes devolvía el valor por defecto de
   la herramienta).
-- `deep_research`, `summarize_results` y `compare_sources` limitan `confidence`
+- `deep_research` y `summarize_results` limitan `confidence`
   según la cantidad de hosts distintos de los resultados (1 host 0,3; 2 hosts 0,5;
   3-4 hosts 0,75; 5 o más 0,9), de modo que una lista larga de una sola fuente ya
   no figura con 0,9.

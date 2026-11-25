@@ -37,7 +37,6 @@ func TestIsAdultHost(t *testing.T) {
 		"xhamster.com", "redtube.com", "youporn.com", "spankbang.com", "eporner.com",
 		"chaturbate.com", "onlyfans.com", "brazzers.com", "rule34.xxx", "www.rule34.xxx",
 		"free-porn-videos.net", "best.xxx", "hentai.example.org", "nsfw.reddit.example",
-		"megaporn.example.com", "sex.example.com", "super-sex-cams.com",
 		"XNXX.COM", "forum.xnxx.com.",
 	}
 	for _, h := range adult {
@@ -49,6 +48,9 @@ func TestIsAdultHost(t *testing.T) {
 		"essex.ac.uk", "sussex.ac.uk", "www.essex.ac.uk", "en.wikipedia.org", "go.dev",
 		"sexton.example.com", "middlesex.edu", "example.com", "notxnxx.com", "xnxx.com.example.org",
 		"", "localhost", "unisex-clothes.example.com",
+		// "sex" alone and "porn" inside a longer label are no longer adult
+		// markers: they removed sex-education and town sites (ville-pornic.fr).
+		"sex.example.com", "megaporn.example.com",
 	}
 	for _, h := range clean {
 		if IsAdultHost(h) {
@@ -114,5 +116,22 @@ func TestDistinctHosts(t *testing.T) {
 	}
 	if got := DistinctHosts(items); got != 2 {
 		t.Errorf("DistinctHosts = %d, want 2", got)
+	}
+}
+
+// Brand labels match on any TLD or numbered mirror, adult TLDs match, and
+// legitimate hosts that merely contain "porn" or "sex" are kept.
+func TestAdultHostBrandsTLDsAndKnownFalsePositives(t *testing.T) {
+	for _, h := range []string{"xvideos.es", "xvideos2.com", "xhamster.desi", "xhamster2.com", "redtube.com.br",
+		"chaturbate.global", "spankbang.party", "example.adult", "example.sexy", "example.porn", "pornhub.org"} {
+		if !IsAdultHost(h) {
+			t.Errorf("%s must be adult", h)
+		}
+	}
+	for _, h := range []string{"ville-pornic.fr", "pornichet.fr", "pornography-studies.org", "sex-education.org",
+		"sex-ed.example.org", "essex.ac.uk", "sussex.ac.uk", "middlesex.edu", "unisex.com", "go.dev"} {
+		if IsAdultHost(h) {
+			t.Errorf("%s must not be adult", h)
+		}
 	}
 }
