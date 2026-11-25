@@ -80,7 +80,7 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 }
 ` + "```" + `
 
-Sin query ni cursor la tool devuelve invalid_arguments: provide query or cursor. Se descartan los resultados sin host en la URL y, con safeSearch activo, los de dominios adultos; la respuesta lo informa en warnings con la cantidad.
+Sin query ni cursor la tool devuelve invalid_arguments: provide query or cursor. Se descartan los resultados sin host en la URL y, con safeSearch activo, los de dominios o títulos para adultos; la respuesta lo informa en warnings con la cantidad.
 
 timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran en silencio. No envíes valores fuera de ese enum; el servidor los aceptará pero el upstream los rechazará.
 

@@ -152,3 +152,24 @@ func TestAdultHostLiveLeaksAndPornicExceptions(t *testing.T) {
 		}
 	}
 }
+
+// Titles seen live for "free porn videos" with safe search on (2026-11-25):
+// generic hosts carry whole-word adult terms in the title. Words that only
+// contain them (pornography, Pornic) and safe search off keep the result.
+func TestFilterDropsAdultTitlesOnlyWithSafeSearch(t *testing.T) {
+	items := []types.SearchResultItem{
+		{URL: "https://xlxx.icu/", Title: "Free Porn XLXX.com - XXX videos"},
+		{URL: "https://nudzy.net/", Title: "Nudzy — Free Amateur Porn Videos"},
+		{URL: "https://www.tiava.com/", Title: "Free Porn Videos – Tiava"},
+		{URL: "https://example.org/law", Title: "New pornography law passed in the UK"},
+		{URL: "https://pornic.example.fr/", Title: "Pornic, France: tourism guide"},
+		{URL: "https://go.dev/blog/context", Title: "Go Concurrency Patterns: Context"},
+	}
+	kept, _, adult := Filter(items, true)
+	if adult != 3 || len(kept) != 3 || kept[0].URL != "https://example.org/law" {
+		t.Fatalf("safe search on: adult=%d kept=%v", adult, kept)
+	}
+	if kept, _, adult := Filter(items, false); adult != 0 || len(kept) != len(items) {
+		t.Fatalf("safe search off must keep every titled result: adult=%d kept=%d", adult, len(kept))
+	}
+}

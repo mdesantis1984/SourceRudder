@@ -1,13 +1,14 @@
 // Package resultfilter removes search results that must never reach a caller:
 // results whose URL has no host (cloaked engine links) and, when safe search
-// is on, results hosted on adult domains. Only the URL host is inspected;
-// titles and snippets are never matched against keywords.
+// is on, results hosted on adult domains or titled with whole-word adult
+// terms. Snippets are never matched.
 package resultfilter
 
 import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
@@ -108,7 +109,7 @@ func Filter(items []types.SearchResultItem, safeSearch bool) (kept []types.Searc
 			continue
 		}
 		if safeSearch {
-			if u, err := url.Parse(strings.TrimSpace(it.URL)); err == nil && IsAdultHost(u.Hostname()) {
+			if u, err := url.Parse(strings.TrimSpace(it.URL)); err == nil && (IsAdultHost(u.Hostname()) || IsAdultTitle(it.Title)) {
 				adult++
 				continue
 			}
@@ -123,7 +124,7 @@ func Filter(items []types.SearchResultItem, safeSearch bool) (kept []types.Searc
 func FilterAdult(items []types.SearchResultItem) (kept []types.SearchResultItem, adult int) {
 	kept = make([]types.SearchResultItem, 0, len(items))
 	for _, it := range items {
-		if u, err := url.Parse(strings.TrimSpace(it.URL)); err == nil && IsAdultHost(u.Hostname()) {
+		if u, err := url.Parse(strings.TrimSpace(it.URL)); err == nil && (IsAdultHost(u.Hostname()) || IsAdultTitle(it.Title)) {
 			adult++
 			continue
 		}
@@ -214,4 +215,20 @@ func hasPornLabel(label string) bool {
 		}
 	}
 	return true
+}
+
+// IsAdultTitle reports whether title contains an adult term as a whole word
+// (porn, porno, xxx, nsfw, hentai). Domain checks alone miss adult sites on
+// generic hosts (xlxx.icu, nudzy.net); words that only contain a term, such
+// as pornography or Pornic, do not match.
+func IsAdultTitle(title string) bool {
+	words := strings.FieldsFunc(strings.ToLower(title), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, w := range words {
+		if _, ok := adultTokens[w]; ok {
+			return true
+		}
+	}
+	return false
 }

@@ -158,10 +158,13 @@ Este archivo documenta los cambios relevantes de SourceRudder.
   todas las herramientas de búsqueda, también en las páginas pedidas de forma
   diferida con un cursor; la respuesta avisa cuántos se eliminaron.
   `search_local_index` conserva sus URL `local-index://`.
-- Con safe search activo se eliminan los resultados de dominios para adultos
-  (una lista de dominios conocidos más etiquetas del host como `porn`, `xxx`,
-  `nsfw`, `hentai` o `sex`; nunca se evalúan títulos ni fragmentos) y la
-  respuesta avisa cuántos se eliminaron.
+- Con safe search activo se eliminan los resultados para adultos y la respuesta
+  avisa cuántos: dominios para adultos conocidos y sus subdominios, marcas para
+  adultos con cualquier TLD o unidas con `-` (`xvideos.es`, `m-xnxx.com`), TLD
+  para adultos (`.xxx`, `.adult`, `.porn`, `.sex`, `.sexy`), etiquetas del host
+  que contienen `porn` (salvo Pornic y la investigación sobre pornografía) o los
+  tokens `xxx`, `nsfw`, `hentai`, y títulos con `porn`, `porno`, `xxx`, `nsfw` o
+  `hentai` como palabra completa. Los fragmentos nunca se evalúan.
 - `safeSearch` ahora vale true (moderado) por defecto cuando quien llama lo
   omite; un `safeSearch: false` explícito lo mantiene apagado y desactiva el
   filtro de dominios para adultos. Las páginas por cursor conservan el valor de
