@@ -1830,7 +1830,7 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 // The release-gate workflow at .github/workflows/release-gate.yml
 // MUST activate RELEASE_GATE_SIZE_EXCEPTION via a branch-exact
 // expression that yields the literal branch name ONLY when
-// github.head_ref equals `feat/searxng-capabilities`
+// github.head_ref equals `fix/search-hardening`
 // and the empty string '' otherwise. Before R6-NEW-001 the
 // workflow sourced the env from ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} —
 // a repo variable that must be set by a maintainer with admin
@@ -1873,11 +1873,11 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 //     does NOT match because the env key must be `RELEASE_GATE_SIZE_EXCEPTION:`
 //     at column-aligned indentation.
 //   - `\${{` — GitHub Actions expression start.
-//   - `\s*github\.head_ref\s*==\s*(?:'|")feat/searxng-capabilities(?:'|")`
+//   - `\s*github\.head_ref\s*==\s*(?:'|")fix/search-hardening(?:'|")`
 //     — equality comparison against the canonical branch
 //     literal, single- or double-quoted (exactly one quote
 //     on each side). A wrong branch literal does NOT match.
-//   - `\s*&&\s*(?:'|")feat/searxng-capabilities(?:'|")`
+//   - `\s*&&\s*(?:'|")fix/search-hardening(?:'|")`
 //     — the value-side branch literal. The branch name MUST
 //     appear in BOTH positions; if the equality literal and
 //     the value literal disagree the regex does not match.
@@ -1898,8 +1898,8 @@ func TestReleaseGateWorkflowDoesNotExportLegacyReceiptContext(t *testing.T) {
 // R6-NEW-001.
 var releaseGateSizeExceptionEnvRegex = regexp.MustCompile(
 	`(?m)^\s*RELEASE_GATE_SIZE_EXCEPTION:\s*\${{\s*` +
-		`github\.head_ref\s*==\s*(?:'|")feat/searxng-capabilities(?:'|")\s*` +
-		`&&\s*(?:'|")feat/searxng-capabilities(?:'|")\s*` +
+		`github\.head_ref\s*==\s*(?:'|")fix/search-hardening(?:'|")\s*` +
+		`&&\s*(?:'|")fix/search-hardening(?:'|")\s*` +
 		`\|\|\s*(?:''|"")\s*` +
 		`}}\s*$`)
 
@@ -1927,7 +1927,7 @@ func TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly(t *testing.T) {
 				seen = append(seen, line)
 			}
 		}
-		t.Fatalf("release-gate.yml does not carry the branch-exact RELEASE_GATE_SIZE_EXCEPTION expression matched by:\n%s\n\nThe env: section lines actually present:\n%s\n\nR6-NEW-001 contract:\n  - The env MUST be set via ${{ github.head_ref == 'feat/searxng-capabilities' && 'feat/searxng-capabilities' || '' }} so the carve-out activates for this branch only, without depending on a repo variable.\n  - The previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} form MUST be removed because the public repo has not set the variable (`gh variable list` returns empty) and the empty-env reach triggers scripts/release-gate.sh:496 fail-closed.", releaseGateSizeExceptionEnvRegex.String(), strings.Join(seen, "\n"))
+		t.Fatalf("release-gate.yml does not carry the branch-exact RELEASE_GATE_SIZE_EXCEPTION expression matched by:\n%s\n\nThe env: section lines actually present:\n%s\n\nR6-NEW-001 contract:\n  - The env MUST be set via ${{ github.head_ref == 'fix/search-hardening' && 'fix/search-hardening' || '' }} so the carve-out activates for this branch only, without depending on a repo variable.\n  - The previous ${{ vars.RELEASE_GATE_SIZE_EXCEPTION }} form MUST be removed because the public repo has not set the variable (`gh variable list` returns empty) and the empty-env reach triggers scripts/release-gate.sh:496 fail-closed.", releaseGateSizeExceptionEnvRegex.String(), strings.Join(seen, "\n"))
 	}
 
 	if strings.Contains(body, "vars.RELEASE_GATE_SIZE_EXCEPTION") {
@@ -1948,7 +1948,7 @@ func TestReleaseGateWorkflowSetsSizeExceptionForExactBranchOnly(t *testing.T) {
 // The subtests form the control surface the production test
 // relies on. (R6-NEW-001)
 func TestReleaseGateSizeExceptionEnvRegexContract(t *testing.T) {
-	const branch = "feat/searxng-capabilities"
+	const branch = "fix/search-hardening"
 
 	cases := []struct {
 		name      string
