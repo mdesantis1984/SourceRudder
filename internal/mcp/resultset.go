@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mdesantis1984/SourceRudder/internal/connectors"
+	"github.com/mdesantis1984/SourceRudder/internal/resultfilter"
 	"github.com/mdesantis1984/SourceRudder/internal/resultset"
 	"github.com/mdesantis1984/SourceRudder/pkg/types"
 )
@@ -36,12 +37,25 @@ func parseSearchArgs(ctx context.Context, args json.RawMessage) (types.SearchReq
 	// format only selects the text rendering; it never reaches a connector
 	// (or a cache key).
 	req.Format = ""
+	// safeSearch defaults to true (moderate) when the caller omits it; an
+	// explicit false keeps it off. Presence is read from the raw arguments
+	// because the request struct cannot tell false from absent.
+	var safe struct {
+		SafeSearch *bool `json:"safeSearch"`
+	}
+	if err := json.Unmarshal(args, &safe); err != nil {
+		return req, pageArgs{}, fmt.Errorf("invalid args: %w", err)
+	}
+	req.SafeSearch = safe.SafeSearch == nil || *safe.SafeSearch
 	var pg pageArgs
 	if err := json.Unmarshal(args, &pg); err != nil {
 		return req, pg, fmt.Errorf("invalid args: %w", err)
 	}
 	if _, _, err := parseRender(args); err != nil {
 		return req, pg, err
+	}
+	if pg.Cursor == "" && strings.TrimSpace(req.Query) == "" {
+		return req, pg, fmt.Errorf("invalid_arguments: provide query or cursor")
 	}
 	if pg.Cursor != "" {
 		issuer, id, offset, err := decodeCursor(pg.Cursor)
@@ -89,10 +103,12 @@ func (s *Server) canExtend(c *resultset.Continuation) bool {
 
 // extendSet fetches one more upstream page for a set whose stored results end
 // at or before offset. Concurrent callers share one fetch. A failed fetch
-// leaves the set unchanged and is returned as a warning.
-func (s *Server) extendSet(ctx context.Context, id string, offset int) (resultset.Set, bool, string) {
+// leaves the set unchanged. The returned notes are response warnings: what
+// the result filters removed from the new page, or why the fetch failed.
+func (s *Server) extendSet(ctx context.Context, id string, offset int) (resultset.Set, bool, []string) {
 	pager := s.webPager()
 	var failure string
+	var removed []string
 	set, ok, _ := s.resultSets.Extend(id, offset, func(cont resultset.Continuation, have []types.SearchResultItem) ([]types.SearchResultItem, resultset.Continuation, error) {
 		seen := make(map[string]struct{}, len(have))
 		for _, it := range have {
@@ -108,14 +124,24 @@ func (s *Server) extendSet(ctx context.Context, id string, offset int) (resultse
 			failure = fmt.Sprintf("web page %d could not be fetched; the stored results are unchanged and the cursor can be retried: %v", cont.NextPage, err)
 			return nil, cont, err
 		}
+		// The upstream page is judged by what it returned, so Done keeps
+		// meaning "the engines have nothing more" even when every result of
+		// this page is filtered out.
+		fetched := len(more)
+		var noHost, adult int
+		more, noHost, adult = filterResults("web", cont.SafeSearch, more)
+		removed = append(removed, resultfilter.Warnings(noHost, adult)...)
 		next := cont
 		next.NextPage++
-		if len(more) == 0 || next.NextPage > connectors.MaxSearxngPages {
+		if fetched == 0 || next.NextPage > connectors.MaxSearxngPages {
 			next.Done = true
 		}
 		return more, next, nil
 	})
-	return set, ok, failure
+	if failure != "" {
+		removed = append(removed, failure)
+	}
+	return set, ok, removed
 }
 
 // sliceResponse returns the slice [offset, offset+limit) of full, plus the
@@ -154,6 +180,20 @@ func sliceResponse(tool string, meta types.SearchResponse, id string, full []typ
 	return &out
 }
 
+// filterResults applies the host and adult-domain filters. The local index
+// serves its own local-index:// URLs, so its URLs are not required to be
+// http(s); every other source is.
+func filterResults(source string, safeSearch bool, items []types.SearchResultItem) ([]types.SearchResultItem, int, int) {
+	if source == "local_index" {
+		if !safeSearch {
+			return items, 0, 0
+		}
+		kept, adult := resultfilter.FilterAdult(items)
+		return kept, 0, adult
+	}
+	return resultfilter.Filter(items, safeSearch)
+}
+
 func cloneStrings(in []string) []string {
 	if in == nil {
 		return nil
@@ -173,6 +213,13 @@ func (s *Server) storeAndPage(ctx context.Context, limitSource string, req *type
 		resp = &cp
 	}
 	resp = normalizeSearchResponse(resp)
+	// Results with no usable host and, with safe search on, adult domains
+	// never reach a caller, whichever tool or cache produced them.
+	fetched := len(resp.Results)
+	var noHost, adult int
+	resp.Results, noHost, adult = filterResults(limitSource, req.SafeSearch, resp.Results)
+	filterWarnings := resultfilter.Warnings(noHost, adult)
+	resp.Warnings = append(slices.Clip(resp.Warnings), filterWarnings...)
 	if s.resultSets == nil {
 		return resp
 	}
@@ -180,14 +227,16 @@ func (s *Server) storeAndPage(ctx context.Context, limitSource string, req *type
 	meta.Results = nil
 	meta.ResultSetID, meta.Total, meta.Offset, meta.NextCursor = "", 0, 0, ""
 	set := resultset.Set{
-		Query:        resp.Query,
-		DefaultLimit: connectors.ResolveMaxResults(limitSource, 0),
+		Query: resp.Query,
+		// The first page's size is kept for the cursor pages; a maxResults
+		// sent with a cursor still overrides it for that call.
+		DefaultLimit: min(connectors.ResolveMaxResults(limitSource, req.MaxResults), maxPageSize),
 		Meta:         meta,
 		Results:      resp.Results,
 	}
 	// Only a web search that read SearXNG pages can grow lazily; the request
 	// context is kept so the next page matches the original search.
-	if limitSource == "web" && pages > 0 && len(resp.Results) > 0 && len(resp.Results) <= s.resultSets.Config().MaxResults {
+	if limitSource == "web" && pages > 0 && fetched > 0 && len(resp.Results) <= s.resultSets.Config().MaxResults {
 		set.Continuation = &resultset.Continuation{
 			Query:      strings.TrimSpace(req.Query),
 			Language:   req.Language,
@@ -219,15 +268,13 @@ func (s *Server) serveResultSet(ctx context.Context, req *types.SearchRequest, p
 	// one more SearXNG page (shared by concurrent callers).
 	var extra []string
 	if pg.offset >= len(set.Results) && s.canExtend(set.Continuation) {
-		var failure string
 		var found bool
-		set, found, failure = s.extendSet(ctx, pg.setID, pg.offset)
+		var notes []string
+		set, found, notes = s.extendSet(ctx, pg.setID, pg.offset)
 		if !found {
 			return nil, fmt.Errorf("result_set_not_found: %s (expired or unknown; run the search again)", pg.setID)
 		}
-		if failure != "" {
-			extra = append(extra, failure)
-		}
+		extra = append(extra, notes...)
 		if set.Continuation != nil && set.Continuation.BudgetHit {
 			extra = append(extra, "result set full: the result budget stopped further web pages")
 		}

@@ -154,9 +154,10 @@ func TestResultSetSchemaOnEverySearchTool(t *testing.T) {
 				t.Errorf("%s must not expose %s any more (replaced by cursor)", tool.Name, gone)
 			}
 		}
-		required, _ := tool.InputSchema["required"].([]string)
-		if len(required) != 1 || required[0] != "query" {
-			t.Errorf("%s must keep query as the only required argument, got %v", tool.Name, required)
+		// query is optional now: a call with only a cursor is valid and the
+		// handler enforces query-or-cursor (invalid_arguments).
+		if required, present := tool.InputSchema["required"]; present {
+			t.Errorf("%s must not declare required arguments, got %v", tool.Name, required)
 		}
 	}
 	if checked != 17 {

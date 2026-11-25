@@ -99,7 +99,7 @@ func (c *PyPIConnector) tryExactMatch(ctx context.Context, pkgName string) (*typ
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, c.httpClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -128,13 +128,7 @@ func (c *PyPIConnector) tryExactMatch(ctx context.Context, pkgName string) (*typ
 		return nil, err
 	}
 
-	homeURL := data.Info.HomePage
-	if homeURL == "" {
-		homeURL = data.Info.ProjectURL
-	}
-	if homeURL == "" {
-		homeURL = data.Info.PackageURL
-	}
+	homeURL := pypiPackageURL(data.Info.HomePage, data.Info.ProjectURL, data.Info.PackageURL, data.Info.Name)
 
 	return &types.SearchResultItem{
 		Title:      fmt.Sprintf("%s (%s)", data.Info.Name, data.Info.Version),
@@ -158,7 +152,7 @@ func (c *PyPIConnector) searchByPrefix(ctx context.Context, query string, maxRes
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("User-Agent", "SourceRudder/3.0.0")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, c.httpClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -228,4 +222,15 @@ func (c *PyPIConnector) cacheResults(ctx context.Context, cacheKey string, resp 
 		return
 	}
 	c.cacheSvc.Set(ctx, cacheKey, data, resp.SourcesUsed)
+}
+
+// pypiPackageURL picks the home page, project URL or package URL, falling back
+// to the PyPI project page when the metadata has none.
+func pypiPackageURL(homePage, projectURL, packageURL, name string) string {
+	for _, u := range []string{homePage, projectURL, packageURL} {
+		if strings.TrimSpace(u) != "" {
+			return u
+		}
+	}
+	return "https://pypi.org/project/" + url.PathEscape(name) + "/"
 }

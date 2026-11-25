@@ -360,6 +360,16 @@ func sanitizeFeedText(s string, maxRunes int) string {
 // fetchFeed GETs a feed and parses it. The caller controls the deadline with
 // ctx and client.Timeout.
 func fetchFeed(ctx context.Context, client *http.Client, feedURL string) ([]feedItem, error) {
+	return fetchFeedWith(ctx, client, feedURL, false)
+}
+
+// fetchFeedRetry is fetchFeed with one retry on a network error, 429 or 5xx.
+// It is used for Google News RSS searches; curated feeds fail fast.
+func fetchFeedRetry(ctx context.Context, client *http.Client, feedURL string) ([]feedItem, error) {
+	return fetchFeedWith(ctx, client, feedURL, true)
+}
+
+func fetchFeedWith(ctx context.Context, client *http.Client, feedURL string, retry bool) ([]feedItem, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 8 * time.Second}
 	}
@@ -369,7 +379,11 @@ func fetchFeed(ctx context.Context, client *http.Client, feedURL string) ([]feed
 	}
 	req.Header.Set("User-Agent", feedUserAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5")
-	resp, err := client.Do(req)
+	do := client.Do
+	if retry {
+		do = func(r *http.Request) (*http.Response, error) { return doWithRetry(ctx, client, r) }
+	}
+	resp, err := do(req)
 	if err != nil {
 		return nil, fmt.Errorf("feed request failed: %w", err)
 	}

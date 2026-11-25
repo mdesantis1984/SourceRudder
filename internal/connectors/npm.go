@@ -81,7 +81,7 @@ func (c *NPMConnector) doNPMRequest(ctx context.Context, apiURL string) ([]types
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, c.httpClient, req)
 	if err != nil {
 		return []types.SearchResultItem{}, fmt.Errorf("request failed: %w", err)
 	}
