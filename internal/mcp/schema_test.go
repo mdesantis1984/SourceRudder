@@ -213,24 +213,16 @@ func TestGitHubFiltersSchemaExposesStateEnum(t *testing.T) {
 	}
 }
 
-// TestSearchInputSchemaQueryIsRequired locks the contract that every
-// search tool requires `query` so agents cannot accidentally call
-// search_web without arguments.
-func TestSearchInputSchemaQueryIsRequired(t *testing.T) {
+// TestSearchInputSchemaQueryIsOptional locks that no search tool declares
+// required arguments: a call with only a cursor is valid, and the handler
+// returns invalid_arguments when neither query nor cursor is present.
+func TestSearchInputSchemaQueryIsOptional(t *testing.T) {
 	schema := searchInputSchema()
-	required, ok := schema["required"].([]string)
-	if !ok {
-		t.Fatalf("expected required []string, got %T", schema["required"])
+	if required, present := schema["required"]; present {
+		t.Errorf("expected no required list, got %v", required)
 	}
-	found := false
-	for _, r := range required {
-		if r == "query" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected query to be required, got %v", required)
+	if _, ok := schema["properties"].(map[string]interface{})["query"]; !ok {
+		t.Errorf("query must stay advertised as a property")
 	}
 }
 

@@ -192,10 +192,9 @@ func declaredSchemas(t *testing.T, s *Server) map[string]map[string]interface{} 
 
 func conformanceFixtures() map[string][]map[string]interface{} {
 	return map[string][]map[string]interface{}{
-		"populated":   {{"query": "q", "maxResults": 3}},
-		"paged":       {{"query": "q", "maxResults": 2}},
-		"compact":     {{"query": "q", "format": "compact", "detail": "titles"}},
-		"empty query": {{"query": ""}},
+		"populated": {{"query": "q", "maxResults": 3}},
+		"paged":     {{"query": "q", "maxResults": 2}},
+		"compact":   {{"query": "q", "format": "compact", "detail": "titles"}},
 	}
 }
 

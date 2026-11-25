@@ -138,6 +138,27 @@ All notable SourceRudder changes are documented here.
 
 ### Fixed
 
+- Search results whose URL has no host (for example the cloaked
+  `http:///go/v1/...` links some engines return, searxng#6967) are removed from
+  every search tool, including pages fetched lazily with a cursor; the response
+  warns how many were removed. `search_local_index` keeps its `local-index://`
+  URLs.
+- With safe search on, results from adult domains (a list of well-known domains
+  plus host labels such as `porn`, `xxx`, `nsfw`, `hentai` or `sex`; titles and
+  snippets are never matched) are removed, and the response warns how many.
+- `safeSearch` now defaults to true (moderate) when the caller omits it; an
+  explicit `safeSearch: false` keeps it off and disables the adult filter. The
+  cursor pages keep the value of the original search.
+- A call with only a `cursor` is valid: `query` is no longer required in the
+  search tool input schemas. A call with neither `query` nor `cursor` returns
+  `invalid_arguments: provide query or cursor`.
+- A cursor page keeps the page size of the first page unless the call sends its
+  own `maxResults` (it returned the tool default before).
+- `deep_research`, `summarize_results` and `compare_sources` cap `confidence` by
+  the number of distinct result hosts (1 host 0.3, 2 hosts 0.5, 3-4 hosts 0.75,
+  5 or more 0.9), so a long list from one source no longer reads as 0.9.
+- HN Algolia and Google News RSS requests retry once after 500 ms on a network
+  error, HTTP 429 or 5xx; other 4xx answers and curated feeds are not retried.
 - SearXNG-backed web, news, YouTube, images, academic, and Reddit searches now
   cap degraded-response caching at 30 seconds (or the configured TTL if shorter),
   while healthy responses retain the configured TTL. Versioned cache keys include

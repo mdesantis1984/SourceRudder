@@ -69,16 +69,18 @@ y cómo interpretar cada respuesta. Léela una vez antes de construir tu primer 
 
 ` + "```json" + `
 {
-  "query": "<string, requerido>",
-  "maxResults": <integer, tamaño de página: default 10 (20 en search_web), tope 100>,
-  "cursor": "<string, nextCursor de una llamada anterior, opcional>",
+  "query": "<string, requerido salvo que se envíe cursor>",
+  "maxResults": <integer, tamaño de página: default 10 (20 en search_web), tope 100; con cursor se mantiene el de la primera página>,
+  "cursor": "<string, nextCursor de una llamada anterior; sola basta, opcional>",
   "format": "<enum: 'json' (default) | 'compact'>",
   "detail": "<enum: 'titles' | 'snippets' (default) | 'full'; solo con format=compact>",
   "language": "<string BCP-47, ej: 'en', 'es'>",
-  "safeSearch": <boolean, default false>,
+  "safeSearch": <boolean, default true (moderado); false lo desactiva y deja pasar dominios adultos>,
   "timeRange": "<enum: '' | 'day' | 'week' | 'month' | 'year'>"
 }
 ` + "```" + `
+
+Sin query ni cursor la tool devuelve invalid_arguments: provide query or cursor. Se descartan los resultados sin host en la URL y, con safeSearch activo, los de dominios adultos; la respuesta lo informa en warnings con la cantidad.
 
 timeRange se reenvía a SearxNG; los conectores que no hablan SearxNG lo ignoran en silencio. No envíes valores fuera de ese enum; el servidor los aceptará pero el upstream los rechazará.
 

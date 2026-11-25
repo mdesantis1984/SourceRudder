@@ -153,6 +153,32 @@ Este archivo documenta los cambios relevantes de SourceRudder.
 
 ### Corregido
 
+- Los resultados cuya URL no tiene host (por ejemplo los enlaces ocultos
+  `http:///go/v1/...` que devuelven algunos motores, searxng#6967) se eliminan en
+  todas las herramientas de búsqueda, también en las páginas pedidas de forma
+  diferida con un cursor; la respuesta avisa cuántos se eliminaron.
+  `search_local_index` conserva sus URL `local-index://`.
+- Con safe search activo se eliminan los resultados de dominios para adultos
+  (una lista de dominios conocidos más etiquetas del host como `porn`, `xxx`,
+  `nsfw`, `hentai` o `sex`; nunca se evalúan títulos ni fragmentos) y la
+  respuesta avisa cuántos se eliminaron.
+- `safeSearch` ahora vale true (moderado) por defecto cuando quien llama lo
+  omite; un `safeSearch: false` explícito lo mantiene apagado y desactiva el
+  filtro de dominios para adultos. Las páginas por cursor conservan el valor de
+  la búsqueda original.
+- Una llamada solo con `cursor` es válida: `query` ya no es obligatorio en los
+  esquemas de entrada de las herramientas de búsqueda. Una llamada sin `query`
+  ni `cursor` devuelve `invalid_arguments: provide query or cursor`.
+- Una página por cursor conserva el tamaño de la primera página salvo que la
+  llamada envíe su propio `maxResults` (antes devolvía el valor por defecto de
+  la herramienta).
+- `deep_research`, `summarize_results` y `compare_sources` limitan `confidence`
+  según la cantidad de hosts distintos de los resultados (1 host 0,3; 2 hosts 0,5;
+  3-4 hosts 0,75; 5 o más 0,9), de modo que una lista larga de una sola fuente ya
+  no figura con 0,9.
+- Las peticiones a HN Algolia y Google News RSS se reintentan una vez tras 500 ms
+  ante un error de red, HTTP 429 o 5xx; el resto de los 4xx y los feeds curados
+  no se reintentan.
 - Las búsquedas web, noticias, YouTube, imágenes, académicas y Reddit mediante
   SearXNG limitan la caché de respuestas degradadas a 30 segundos (o al TTL
   configurado si es menor); las respuestas sanas conservan el TTL configurado.

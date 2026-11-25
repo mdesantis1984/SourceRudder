@@ -1,0 +1,118 @@
+package resultfilter
+
+import (
+	"testing"
+
+	"github.com/mdesantis1984/SourceRudder/pkg/types"
+)
+
+func TestHasValidHost(t *testing.T) {
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"https://en.wikipedia.org/wiki/Paris", true},
+		{"http://example.com", true},
+		{"HTTPS://Example.com/x", true},
+		{"http:///go/v1/AaKPaj", false},
+		{"https:///path", false},
+		{"/relative/path", false},
+		{"", false},
+		{"ftp://example.com/file", false},
+		{"javascript:alert(1)", false},
+		{"https://", false},
+		{"http://:8080/x", false},
+		{"%zz", false},
+	}
+	for _, tc := range cases {
+		if got := HasValidHost(tc.url); got != tc.want {
+			t.Errorf("HasValidHost(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}
+
+func TestIsAdultHost(t *testing.T) {
+	adult := []string{
+		"xnxx.com", "forum.xnxx.com", "www.xvideos.com", "pornhub.com", "de.pornhub.com",
+		"xhamster.com", "redtube.com", "youporn.com", "spankbang.com", "eporner.com",
+		"chaturbate.com", "onlyfans.com", "brazzers.com", "rule34.xxx", "www.rule34.xxx",
+		"free-porn-videos.net", "best.xxx", "hentai.example.org", "nsfw.reddit.example",
+		"megaporn.example.com", "sex.example.com", "super-sex-cams.com",
+		"XNXX.COM", "forum.xnxx.com.",
+	}
+	for _, h := range adult {
+		if !IsAdultHost(h) {
+			t.Errorf("IsAdultHost(%q) = false, want true", h)
+		}
+	}
+	clean := []string{
+		"essex.ac.uk", "sussex.ac.uk", "www.essex.ac.uk", "en.wikipedia.org", "go.dev",
+		"sexton.example.com", "middlesex.edu", "example.com", "notxnxx.com", "xnxx.com.example.org",
+		"", "localhost", "unisex-clothes.example.com",
+	}
+	for _, h := range clean {
+		if IsAdultHost(h) {
+			t.Errorf("IsAdultHost(%q) = true, want false", h)
+		}
+	}
+}
+
+func item(url string) types.SearchResultItem {
+	return types.SearchResultItem{Title: "t", URL: url}
+}
+
+func TestFilterCounts(t *testing.T) {
+	in := []types.SearchResultItem{
+		item("https://go.dev/doc"),
+		item("http:///go/v1/abc"),
+		item("https://forum.xnxx.com/thread/1"),
+		item("https://essex.ac.uk/a"),
+		item("https://sussex.ac.uk/b"),
+	}
+	kept, noHost, adult := Filter(in, true)
+	if noHost != 1 || adult != 1 || len(kept) != 3 {
+		t.Fatalf("safe on: kept=%d noHost=%d adult=%d", len(kept), noHost, adult)
+	}
+	for _, k := range kept {
+		if k.URL == "https://forum.xnxx.com/thread/1" || k.URL == "http:///go/v1/abc" {
+			t.Errorf("unexpected kept %q", k.URL)
+		}
+	}
+	kept, noHost, adult = Filter(in, false)
+	if noHost != 1 || adult != 0 || len(kept) != 4 {
+		t.Fatalf("safe off: kept=%d noHost=%d adult=%d", len(kept), noHost, adult)
+	}
+	if len(in) != 5 || in[1].URL != "http:///go/v1/abc" {
+		t.Fatalf("input slice must not be modified: %v", in)
+	}
+}
+
+func TestFilterKeepsOrderAndNilSafe(t *testing.T) {
+	kept, a, b := Filter(nil, true)
+	if len(kept) != 0 || a != 0 || b != 0 {
+		t.Fatalf("nil input: %v %d %d", kept, a, b)
+	}
+	in := []types.SearchResultItem{item("https://b.example.com"), item("https://a.example.com")}
+	kept, _, _ = Filter(in, true)
+	if kept[0].URL != "https://b.example.com" || kept[1].URL != "https://a.example.com" {
+		t.Fatalf("order changed: %v", kept)
+	}
+}
+
+func TestWarnings(t *testing.T) {
+	if got := NoHostWarning(3); got != "removed 3 results without a valid URL host (cloaked engine links, searxng#6967)" {
+		t.Errorf("NoHostWarning = %q", got)
+	}
+	if got := AdultWarning(2); got != "removed 2 results from adult domains (safe search)" {
+		t.Errorf("AdultWarning = %q", got)
+	}
+}
+
+func TestDistinctHosts(t *testing.T) {
+	items := []types.SearchResultItem{
+		item("https://a.example.com/1"), item("https://A.example.com/2"), item("https://b.example.com"), item("not a url"),
+	}
+	if got := DistinctHosts(items); got != 2 {
+		t.Errorf("DistinctHosts = %d, want 2", got)
+	}
+}

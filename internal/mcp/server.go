@@ -242,7 +242,7 @@ func searchInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda"},
+			"query":      map[string]interface{}{"type": "string", "description": "Texto de búsqueda; opcional si hay cursor."},
 			"maxResults": map[string]interface{}{"type": "integer", "description": "Tamaño de página que elige quien llama (default 10; 20 en search_web; tope 100)."},
 			"cursor": map[string]interface{}{
 				"type":        "string",
@@ -259,14 +259,13 @@ func searchInputSchema() map[string]interface{} {
 				"description": "Solo con format=compact; default snippets.",
 			},
 			"language":   map[string]interface{}{"type": "string", "description": "Código BCP-47 ('en', 'es'), para SearxNG."},
-			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Safesearch de SearxNG (default false)"},
+			"safeSearch": map[string]interface{}{"type": "boolean", "description": "Safesearch de SearxNG (default true; false lo desactiva)"},
 			"timeRange": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"", "day", "week", "month", "year"},
 				"description": "Rango temporal en SearxNG; vacío = sin límite.",
 			},
 		},
-		"required": []string{"query"},
 	}
 }
 
