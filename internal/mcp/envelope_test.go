@@ -223,7 +223,9 @@ func TestEnvelopeCompactFormatKeepsFullStructuredContent(t *testing.T) {
 		}
 
 		titles := mustEnvelope(t, call, s, "search_web", map[string]interface{}{"query": "compact q", "maxResults": 3, "format": "compact", "detail": "titles"})
-		if tt := titles.text(t); !strings.Contains(tt, "1. t0 | https://example.test/a/0") || strings.Contains(tt, "c0") {
+		// Only the result rows are checked for the snippet: the header carries a
+		// random resultSetId and base64 cursor that can contain "c0".
+		if tt := titles.text(t); !strings.Contains(tt, "1. t0 | https://example.test/a/0") || strings.Contains(tt[strings.Index(tt, "\n")+1:], "c0") {
 			t.Fatalf("detail=titles must drop snippets:\n%s", tt)
 		}
 		sc = decodeObject(t, titles.StructuredContent)
